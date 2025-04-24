@@ -27,9 +27,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 设置默认API选择（如果是第一次加载）
     if (!localStorage.getItem('hasInitializedDefaults')) {
-        // 仅选择黑木耳源和豆瓣资源
-        selectedAPIs = ["heimuer", "dbzy"];
-        localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+        // 默认选中所有数据源资源
+        selectAllAPIs(true);
         
         // 默认选中过滤开关
         localStorage.setItem('yellowFilterEnabled', 'true');
@@ -37,6 +36,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // 标记已初始化默认值
         localStorage.setItem('hasInitializedDefaults', 'true');
+    }
+    
+    // 如果是第一次访问或者用户手动点击了全选，则默认选中所有数据源
+    if (!localStorage.getItem('userSelectedAPIs')) {
+        selectAllAPIs(true);
+        localStorage.setItem('userSelectedAPIs', 'true');
     }
     
     // 设置黄色内容过滤开关初始状态
@@ -358,6 +363,9 @@ function updateSelectedAPIs() {
     // 保存到localStorage
     localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
     
+    // 标记用户已手动修改过API选择
+    localStorage.setItem('userSelectedAPIs', 'true');
+    
     // 更新显示选中的API数量
     updateSelectedApiCount();
 }
@@ -382,8 +390,24 @@ function selectAllAPIs(selectAll = true, excludeAdult = false) {
         }
     });
     
+    // 同时处理自定义API复选框
+    const customCheckboxes = document.querySelectorAll('#customApisList input[type="checkbox"]');
+    
+    customCheckboxes.forEach(checkbox => {
+        if (excludeAdult && checkbox.classList.contains('api-adult')) {
+            checkbox.checked = false;
+        } else {
+            checkbox.checked = selectAll;
+        }
+    });
+    
     updateSelectedAPIs();
     checkAdultAPIsSelected();
+    
+    // 标记用户已手动修改过API选择（只有在用户主动点击全选按钮时）
+    if (document.readyState === 'complete') {
+        localStorage.setItem('userSelectedAPIs', 'true');
+    }
 }
 
 // 显示添加自定义API表单

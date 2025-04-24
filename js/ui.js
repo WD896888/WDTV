@@ -201,18 +201,25 @@ function renderSearchHistory() {
     // 创建一个包含标题和清除按钮的行
     historyContainer.innerHTML = `
         <div class="flex justify-between items-center w-full mb-2">
-            <div class="text-gray-500">最近搜索:</div>
-            <button id="clearHistoryBtn" class="text-gray-500 hover:text-white transition-colors" 
+            <div class="text-gray-400 text-sm">最近搜索:</div>
+            <button id="clearHistoryBtn" class="text-gray-500 hover:text-white transition-colors text-sm flex items-center" 
                     onclick="clearSearchHistory()" aria-label="清除搜索历史">
-                清除搜索历史
+                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                清除历史
             </button>
         </div>
+        <div class="search-history-tags flex flex-wrap gap-2"></div>
     `;
     
-    history.forEach(item => {
+    const tagsContainer = historyContainer.querySelector('.search-history-tags');
+    
+    history.forEach((item, index) => {
         const tag = document.createElement('button');
         tag.className = 'search-tag';
         tag.textContent = item.text;
+        tag.style.setProperty('--tag-index', index);
         
         // 添加时间提示（如果有时间戳）
         if (item.timestamp) {
@@ -224,7 +231,7 @@ function renderSearchHistory() {
             document.getElementById('searchInput').value = item.text;
             search();
         };
-        historyContainer.appendChild(tag);
+        tagsContainer.appendChild(tag);
     });
 }
 
@@ -618,4 +625,41 @@ document.addEventListener('DOMContentLoaded', function() {
             historyPanel.classList.remove('show');
         }
     });
+});
+
+// 初始化函数
+document.addEventListener('DOMContentLoaded', function() {
+    // 渲染搜索历史
+    renderSearchHistory();
+    
+    // 绑定搜索框回车事件
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                search();
+            }
+        });
+        
+        // 添加聚焦和失焦事件
+        searchInput.addEventListener('focus', function() {
+            const searchBox = document.querySelector('.search-box-container');
+            if (searchBox) {
+                searchBox.classList.add('search-focused');
+            }
+        });
+        
+        searchInput.addEventListener('blur', function() {
+            const searchBox = document.querySelector('.search-box-container');
+            if (searchBox) {
+                searchBox.classList.remove('search-focused');
+            }
+        });
+    }
+    
+    // 如果有设置豆瓣开关为开启，则初始化豆瓣推荐
+    const doubanToggle = document.getElementById('doubanToggle');
+    if (doubanToggle && doubanToggle.checked) {
+        showDoubanRecommend();
+    }
 });
