@@ -5,10 +5,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "baidu-submit": "node functions/baidu-submit.js",
+    "baidu-cli": "node tools/baidu-submit-cli.js",
+    "postinstall": "node tools/setup-baidu-cli.js"
+  },
+  "bin": {
+    "baidu-submit": "tools/baidu-submit-cli.js"
   },
   "dependencies": {
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "xml2js": "^0.6.2"
   },
   "author": "bestZwei",
   "license": "MIT"
