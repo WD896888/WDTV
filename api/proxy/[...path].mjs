@@ -145,6 +145,10 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
         // 尝试设置一个合理的 Referer
         'Referer': requestHeaders['referer'] || new URL(targetUrl).origin,
     };
+    // 豆瓣图片CDN防盗链：必须携带豆瓣站内 Referer，否则按 URL 确定性返回 418/403
+    if (/doubanio\.com|douban\.com/i.test(targetUrl)) {
+        headers['Referer'] = 'https://movie.douban.com/';
+    }
     // 清理空值的头
     Object.keys(headers).forEach(key => headers[key] === undefined || headers[key] === null || headers[key] === '' ? delete headers[key] : {});
 
@@ -164,12 +168,12 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
             throw err; // 抛出错误
         }
 
-        // 读取响应内容
-        const content = await response.text();
+        // 以二进制读取响应（视频分片等二进制内容绝不能用 text() 读取，否则数据损坏）
+        const buffer = Buffer.from(await response.arrayBuffer());
         const contentType = response.headers.get('content-type') || '';
-        logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${content.length}`);
+        logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${buffer.length}`);
         // 返回结果
-        return { content, contentType, responseHeaders: response.headers };
+        return { buffer, contentType, responseHeaders: response.headers };
 
     } catch (error) {
         // 捕获 fetch 本身的错误（网络、超时等）或上面抛出的 HTTP 错误
@@ -177,6 +181,17 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
         // 重新抛出，确保包含原始错误信息
         throw new Error(`请求目标 URL 失败 ${targetUrl}: ${error.message}`);
     }
+}
+
+// 判断 Buffer 内容是否为 M3U8（优先看 Content-Type，再看文件头）
+function isM3u8Buffer(buffer, contentType) {
+    if (contentType && (contentType.includes('mpegurl'))) {
+        return true;
+    }
+    if (!buffer || buffer.length < 7) {
+        return false;
+    }
+    return buffer.subarray(0, 64).toString('utf8').trimStart().startsWith('#EXTM3U');
 }
 
 function isM3u8Content(content, contentType) {
@@ -288,7 +303,8 @@ async function processMasterPlaylist(url, content, recursionDepth) {
 
     logDebug(`选择的子播放列表 (带宽: ${highestBandwidth}): ${bestVariantUrl}`);
     // 请求选定的子播放列表内容 (注意：这里传递 {} 作为请求头，不传递客户端的原始请求头)
-    const { content: variantContent, contentType: variantContentType } = await fetchContentWithType(bestVariantUrl, {});
+    const { buffer: variantBuffer, contentType: variantContentType } = await fetchContentWithType(bestVariantUrl, {});
+    const variantContent = variantBuffer.toString('utf8');
 
     // 检查获取的内容是否是 M3U8
     if (!isM3u8Content(variantContent, variantContentType)) {
@@ -306,12 +322,13 @@ async function processMasterPlaylist(url, content, recursionDepth) {
 async function validateAuth(req) {
     const authHash = req.query.auth;
     const timestamp = req.query.t;
-    
+
     // 获取服务器端密码哈希
     const serverPassword = process.env.PASSWORD;
     if (!serverPassword) {
-        console.error('服务器未设置 PASSWORD 环境变量，代理访问被拒绝');
-        return false;
+        // 与本地 server.mjs 行为对齐：未配置密码时不启用鉴权（否则所有代理请求都会 401）
+        logDebug('服务器未设置 PASSWORD 环境变量，跳过鉴权');
+        return true;
     }
     
     // 使用 crypto 模块计算 SHA-256 哈希
@@ -336,6 +353,9 @@ async function validateAuth(req) {
 }
 
 // --- Vercel Handler 函数 ---
+// 函数最大执行时长（Hobby 计划上限 60s）：大视频分片转发需要足够时间
+export const maxDuration = 60;
+
 export default async function handler(req, res) {
     // --- 记录请求开始 ---
     console.info('--- Vercel 代理请求开始 ---');
@@ -413,10 +433,11 @@ export default async function handler(req, res) {
         console.info(`开始处理目标 URL 的代理请求: ${targetUrl}`);
 
         // --- 获取并处理目标内容 ---
-        const { content, contentType, responseHeaders } = await fetchContentWithType(targetUrl, req.headers);
+        const { buffer, contentType, responseHeaders } = await fetchContentWithType(targetUrl, req.headers);
 
-        // --- 如果是 M3U8，处理并返回 ---
-        if (isM3u8Content(content, contentType)) {
+        // --- 如果是 M3U8，处理并返回（文本协议，需要重写内部 URL） ---
+        if (isM3u8Buffer(buffer, contentType)) {
+            const content = buffer.toString('utf8');
             console.info(`正在处理 M3U8 内容: ${targetUrl}`);
             const processedM3u8 = await processM3u8Content(targetUrl, content);
 
@@ -431,23 +452,26 @@ export default async function handler(req, res) {
                 .send(processedM3u8); // 发送 M3U8 文本
 
         } else {
-            // --- 如果不是 M3U8，直接返回原始内容 ---
-            console.info(`直接返回非 M3U8 内容: ${targetUrl}, 类型: ${contentType}`);
+            // --- 非 M3U8（视频分片、图片等二进制内容）：按二进制原样转发 ---
+            console.info(`直接返回非 M3U8 内容: ${targetUrl}, 类型: ${contentType}, 大小: ${buffer.length}`);
 
             // 设置原始响应头，但排除有问题的头和 CORS 头（已设置）
             responseHeaders.forEach((value, key) => {
                  const lowerKey = key.toLowerCase();
                  if (!lowerKey.startsWith('access-control-') &&
-                     lowerKey !== 'content-encoding' && // 很重要！
-                     lowerKey !== 'content-length') {   // 很重要！
+                     lowerKey !== 'content-encoding' && // node-fetch 已解压，原头不再适用
+                     lowerKey !== 'content-length' &&   // 由实际转发内容决定
+                     lowerKey !== 'transfer-encoding' &&
+                     lowerKey !== 'content-type') {     // 显式设置，避免缺失
                      res.setHeader(key, value); // 设置其他原始头
                  }
              });
+            res.setHeader('Content-Type', contentType || 'application/octet-stream');
             // 设置我们自己的缓存策略
             res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
 
-            // 发送原始（已解压）内容
-            res.status(200).send(content);
+            // 以二进制发送原始内容（切勿转成字符串，否则视频数据损坏）
+            res.status(200).send(buffer);
         }
 
     // ---- 结束主处理逻辑的 try 块 ----

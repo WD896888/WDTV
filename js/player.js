@@ -486,11 +486,23 @@ function setupQualityMenu(levels) {
     }
 }
 
+// HTTPS 页面无法直接加载 HTTP 视频资源（浏览器混合内容拦截），需经本地代理转发
+async function resolvePlayableUrl(videoUrl) {
+    if (window.location.protocol === 'https:' && videoUrl.startsWith('http://')) {
+        const proxied = PROXY_URL + encodeURIComponent(videoUrl);
+        return window.ProxyAuth?.addAuthToProxyUrl ?
+            await window.ProxyAuth.addAuthToProxyUrl(proxied) :
+            proxied;
+    }
+    return videoUrl;
+}
+
 // 初始化播放器
-function initPlayer(videoUrl) {
+async function initPlayer(videoUrl) {
     if (!videoUrl) {
         return
     }
+    videoUrl = await resolvePlayableUrl(videoUrl);
 
     // 销毁旧实例
     if (art) {
@@ -996,7 +1008,7 @@ function playEpisode(index) {
     if (isWebkit) {
         initPlayer(url);
     } else {
-        art.switch = url;
+        resolvePlayableUrl(url).then((switchUrl) => { art.switch = switchUrl; });
     }
 
     // 更新UI
