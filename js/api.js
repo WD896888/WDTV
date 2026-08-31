@@ -1,6 +1,7 @@
 // 改进的API请求处理函数
 async function handleApiRequest(url) {
     const customApi = url.searchParams.get('customApi') || '';
+    const customDetail = url.searchParams.get('customDetail') || '';
     const source = url.searchParams.get('source') || 'heimuer';
     
     try {
@@ -28,7 +29,12 @@ async function handleApiRequest(url) {
             const timeoutId = setTimeout(() => controller.abort(), 10000);
             
             try {
-                const response = await fetch(PROXY_URL + encodeURIComponent(apiUrl), {
+                // 添加鉴权参数到代理URL
+                const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ? 
+                    await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(apiUrl)) :
+                    PROXY_URL + encodeURIComponent(apiUrl);
+                    
+                const response = await fetch(proxiedUrl, {
                     headers: API_CONFIG.search.headers,
                     signal: controller.signal
                 });
@@ -89,12 +95,16 @@ async function handleApiRequest(url) {
                 throw new Error('无效的API来源');
             }
 
-            // 对于特殊源，使用特殊处理方式
-            if ((sourceCode === 'ffzy' || sourceCode === 'jisu' || sourceCode === 'huangcang') && API_SITES[sourceCode].detail) {
+            // 对于有detail参数的源，都使用特殊处理方式
+            if (sourceCode !== 'custom' && API_SITES[sourceCode].detail) {
                 return await handleSpecialSourceDetail(id, sourceCode);
             }
             
             // 如果是自定义API，并且传递了detail参数，尝试特殊处理
+            // 优先 customDetail
+            if (sourceCode === 'custom' && customDetail) {
+                return await handleCustomApiSpecialDetail(id, customDetail);
+            }
             if (sourceCode === 'custom' && url.searchParams.get('useDetail') === 'true') {
                 return await handleCustomApiSpecialDetail(id, customApi);
             }
@@ -108,7 +118,12 @@ async function handleApiRequest(url) {
             const timeoutId = setTimeout(() => controller.abort(), 10000);
             
             try {
-                const response = await fetch(PROXY_URL + encodeURIComponent(detailUrl), {
+                // 添加鉴权参数到代理URL
+                const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ? 
+                    await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(detailUrl)) :
+                    PROXY_URL + encodeURIComponent(detailUrl);
+                    
+                const response = await fetch(proxiedUrl, {
                     headers: API_CONFIG.detail.headers,
                     signal: controller.signal
                 });
@@ -204,8 +219,13 @@ async function handleCustomApiSpecialDetail(id, customApi) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
         
+        // 添加鉴权参数到代理URL
+        const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ? 
+            await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(detailUrl)) :
+            PROXY_URL + encodeURIComponent(detailUrl);
+            
         // 获取详情页HTML
-        const response = await fetch(PROXY_URL + encodeURIComponent(detailUrl), {
+        const response = await fetch(proxiedUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             },
@@ -256,18 +276,6 @@ async function handleCustomApiSpecialDetail(id, customApi) {
     }
 }
 
-// 处理极速资源详情的特殊函数
-async function handleJisuDetail(id, sourceCode) {
-    // 直接复用通用的特殊源处理函数，传入相应参数
-    return await handleSpecialSourceDetail(id, sourceCode);
-}
-
-// 处理非凡影视详情的特殊函数
-async function handleFFZYDetail(id, sourceCode) {
-    // 直接复用通用的特殊源处理函数，传入相应参数
-    return await handleSpecialSourceDetail(id, sourceCode);
-}
-
 // 通用特殊源详情处理函数
 async function handleSpecialSourceDetail(id, sourceCode) {
     try {
@@ -278,8 +286,13 @@ async function handleSpecialSourceDetail(id, sourceCode) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
         
+        // 添加鉴权参数到代理URL
+        const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ? 
+            await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(detailUrl)) :
+            PROXY_URL + encodeURIComponent(detailUrl);
+            
         // 获取详情页HTML
-        const response = await fetch(PROXY_URL + encodeURIComponent(detailUrl), {
+        const response = await fetch(proxiedUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             },
@@ -363,7 +376,12 @@ async function handleAggregatedSearch(searchQuery) {
                 setTimeout(() => reject(new Error(`${source}源搜索超时`)), 8000)
             );
             
-            const fetchPromise = fetch(PROXY_URL + encodeURIComponent(apiUrl), {
+            // 添加鉴权参数到代理URL
+            const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ? 
+                await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(apiUrl)) :
+                PROXY_URL + encodeURIComponent(apiUrl);
+            
+            const fetchPromise = fetch(proxiedUrl, {
                 headers: API_CONFIG.search.headers
             });
             
@@ -472,7 +490,12 @@ async function handleMultipleCustomSearch(searchQuery, customApiUrls) {
                 setTimeout(() => reject(new Error(`自定义API ${index+1} 搜索超时`)), 8000)
             );
             
-            const fetchPromise = fetch(PROXY_URL + encodeURIComponent(fullUrl), {
+            // 添加鉴权参数到代理URL
+            const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ? 
+                await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(fullUrl)) :
+                PROXY_URL + encodeURIComponent(fullUrl);
+            
+            const fetchPromise = fetch(proxiedUrl, {
                 headers: API_CONFIG.search.headers
             });
             

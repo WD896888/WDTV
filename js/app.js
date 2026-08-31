@@ -1,5 +1,5 @@
 // 全局变量
-let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '["heimuer", "dbzy"]'); // 默认选中黑木耳和豆瓣资源
+let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '["tyyszy","bfzy","ruyi","heimuer"]'); // 默认选中资源
 let customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]'); // 存储自定义API列表
 
 // 添加当前播放的集数索引
@@ -12,53 +12,58 @@ let currentVideoTitle = '';
 let episodesReversed = false;
 
 // 页面初始化
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     // 初始化API复选框
     initAPICheckboxes();
-    
+
     // 初始化自定义API列表
     renderCustomAPIsList();
-    
+
     // 初始化显示选中的API数量
     updateSelectedApiCount();
-    
+
     // 渲染搜索历史
     renderSearchHistory();
-    
+
     // 设置默认API选择（如果是第一次加载）
     if (!localStorage.getItem('hasInitializedDefaults')) {
-        // 默认选中所有数据源资源
-        selectAllAPIs(true);
-        
+        // 默认选中资源
+        selectedAPIs = ["tyyszy", "bfzy", "ruyi", "heimuer"];
+        localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+
         // 默认选中过滤开关
         localStorage.setItem('yellowFilterEnabled', 'true');
         localStorage.setItem(PLAYER_CONFIG.adFilteringStorage, 'true');
-        
+
+        // 默认启用豆瓣功能
+        localStorage.setItem('doubanEnabled', 'true');
+
         // 标记已初始化默认值
         localStorage.setItem('hasInitializedDefaults', 'true');
     }
-    
-    // 如果是第一次访问或者用户手动点击了全选，则默认选中所有数据源
-    if (!localStorage.getItem('userSelectedAPIs')) {
-        selectAllAPIs(true);
-        localStorage.setItem('userSelectedAPIs', 'true');
-    }
-    
-    // 设置黄色内容过滤开关初始状态
+
+    // 设置黄色内容过滤器开关初始状态
     const yellowFilterToggle = document.getElementById('yellowFilterToggle');
     if (yellowFilterToggle) {
         yellowFilterToggle.checked = localStorage.getItem('yellowFilterEnabled') === 'true';
     }
-    
+
     // 设置广告过滤开关初始状态
     const adFilterToggle = document.getElementById('adFilterToggle');
     if (adFilterToggle) {
         adFilterToggle.checked = localStorage.getItem(PLAYER_CONFIG.adFilteringStorage) !== 'false'; // 默认为true
     }
-    
+
+    // 设置动态效果开关初始状态（默认开启）
+    const dynamicEffectsToggle = document.getElementById('dynamicEffectsToggle');
+    if (dynamicEffectsToggle) {
+        dynamicEffectsToggle.checked = localStorage.getItem('dynamicEffectsEnabled') !== 'false';
+        applyDynamicEffects(dynamicEffectsToggle.checked);
+    }
+
     // 设置事件监听器
     setupEventListeners();
-    
+
     // 初始检查成人API选中状态
     setTimeout(checkAdultAPIsSelected, 100);
 });
@@ -69,39 +74,57 @@ function initAPICheckboxes() {
     container.innerHTML = '';
 
     // 添加普通API组标题
+    const normaldiv = document.createElement('div');
+    normaldiv.id = 'normaldiv';
+    normaldiv.className = 'grid grid-cols-2 gap-2';
     const normalTitle = document.createElement('div');
     normalTitle.className = 'api-group-title';
     normalTitle.textContent = '普通资源';
-    container.appendChild(normalTitle);
-    
+    normaldiv.appendChild(normalTitle);
+
     // 创建普通API源的复选框
     Object.keys(API_SITES).forEach(apiKey => {
         const api = API_SITES[apiKey];
         if (api.adult) return; // 跳过成人内容API，稍后添加
-        
+
         const checked = selectedAPIs.includes(apiKey);
-        
+
         const checkbox = document.createElement('div');
         checkbox.className = 'flex items-center';
         checkbox.innerHTML = `
-            <input type="checkbox" id="api_${apiKey}" 
-                   class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333]" 
-                   ${checked ? 'checked' : ''} 
+            <input type="checkbox" id="api_${apiKey}"
+                   class="form-checkbox text-blue-600"
+                   ${checked ? 'checked' : ''}
                    data-api="${apiKey}">
-            <label for="api_${apiKey}" class="ml-1 text-xs text-gray-400 truncate">${api.name}</label>
+            <label for="api_${apiKey}" class="ml-1 text-xs text-gray-600 truncate">${api.name}</label>
         `;
-        container.appendChild(checkbox);
-        
+        normaldiv.appendChild(checkbox);
+
         // 添加事件监听器
-        checkbox.querySelector('input').addEventListener('change', function() {
+        checkbox.querySelector('input').addEventListener('change', function () {
             updateSelectedAPIs();
             checkAdultAPIsSelected();
         });
     });
-    
+    container.appendChild(normaldiv);
+
+    // 添加成人API列表
+    addAdultAPI();
+
+    // 初始检查成人内容状态
+    checkAdultAPIsSelected();
+}
+
+// 添加成人API列表
+function addAdultAPI() {
     // 仅在隐藏设置为false时添加成人API组
-    if (!HIDE_BUILTIN_ADULT_APIS) {
+    if (!HIDE_BUILTIN_ADULT_APIS && (localStorage.getItem('yellowFilterEnabled') === 'false')) {
+        const container = document.getElementById('apiCheckboxes');
+
         // 添加成人API组标题
+        const adultdiv = document.createElement('div');
+        adultdiv.id = 'adultdiv';
+        adultdiv.className = 'grid grid-cols-2 gap-2';
         const adultTitle = document.createElement('div');
         adultTitle.className = 'api-group-title adult';
         adultTitle.innerHTML = `黄色资源采集站 <span class="adult-warning">
@@ -109,66 +132,64 @@ function initAPICheckboxes() {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
         </span>`;
-        container.appendChild(adultTitle);
-        
+        adultdiv.appendChild(adultTitle);
+
         // 创建成人API源的复选框
         Object.keys(API_SITES).forEach(apiKey => {
             const api = API_SITES[apiKey];
             if (!api.adult) return; // 仅添加成人内容API
-            
+
             const checked = selectedAPIs.includes(apiKey);
-            
+
             const checkbox = document.createElement('div');
             checkbox.className = 'flex items-center';
             checkbox.innerHTML = `
-                <input type="checkbox" id="api_${apiKey}" 
-                       class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333] api-adult" 
-                       ${checked ? 'checked' : ''} 
+                <input type="checkbox" id="api_${apiKey}"
+                       class="form-checkbox text-blue-600 api-adult"
+                       ${checked ? 'checked' : ''}
                        data-api="${apiKey}">
-                <label for="api_${apiKey}" class="ml-1 text-xs text-pink-400 truncate">${api.name}</label>
+                <label for="api_${apiKey}" class="ml-1 text-xs truncate" style="color: #ff2d55;">${api.name}</label>
             `;
-            container.appendChild(checkbox);
-            
+            adultdiv.appendChild(checkbox);
+
             // 添加事件监听器
-            checkbox.querySelector('input').addEventListener('change', function() {
+            checkbox.querySelector('input').addEventListener('change', function () {
                 updateSelectedAPIs();
                 checkAdultAPIsSelected();
             });
         });
+        container.appendChild(adultdiv);
     }
-    
-    // 初始检查成人内容状态
-    checkAdultAPIsSelected();
 }
 
 // 检查是否有成人API被选中
 function checkAdultAPIsSelected() {
     // 查找所有内置成人API复选框
     const adultBuiltinCheckboxes = document.querySelectorAll('#apiCheckboxes .api-adult:checked');
-    
+
     // 查找所有自定义成人API复选框
     const customApiCheckboxes = document.querySelectorAll('#customApisList .api-adult:checked');
-    
+
     const hasAdultSelected = adultBuiltinCheckboxes.length > 0 || customApiCheckboxes.length > 0;
-    
+
     const yellowFilterToggle = document.getElementById('yellowFilterToggle');
     const yellowFilterContainer = yellowFilterToggle.closest('div').parentNode;
     const filterDescription = yellowFilterContainer.querySelector('p.filter-description');
-    
+
     // 如果选择了成人API，禁用黄色内容过滤器
     if (hasAdultSelected) {
         yellowFilterToggle.checked = false;
         yellowFilterToggle.disabled = true;
         localStorage.setItem('yellowFilterEnabled', 'false');
-        
+
         // 添加禁用样式
         yellowFilterContainer.classList.add('filter-disabled');
-        
+
         // 修改描述文字
         if (filterDescription) {
             filterDescription.innerHTML = '<strong class="text-pink-300">选中黄色资源站时无法启用此过滤</strong>';
         }
-        
+
         // 移除提示信息（如果存在）
         const existingTooltip = yellowFilterContainer.querySelector('.filter-tooltip');
         if (existingTooltip) {
@@ -178,12 +199,12 @@ function checkAdultAPIsSelected() {
         // 启用黄色内容过滤器
         yellowFilterToggle.disabled = false;
         yellowFilterContainer.classList.remove('filter-disabled');
-        
+
         // 恢复原来的描述文字
         if (filterDescription) {
             filterDescription.innerHTML = '过滤"伦理片"等黄色内容';
         }
-        
+
         // 移除提示信息
         const existingTooltip = yellowFilterContainer.querySelector('.filter-tooltip');
         if (existingTooltip) {
@@ -196,34 +217,34 @@ function checkAdultAPIsSelected() {
 function renderCustomAPIsList() {
     const container = document.getElementById('customApisList');
     if (!container) return;
-    
+
     if (customAPIs.length === 0) {
         container.innerHTML = '<p class="text-xs text-gray-500 text-center my-2">未添加自定义API</p>';
         return;
     }
-    
+
     container.innerHTML = '';
     customAPIs.forEach((api, index) => {
         const apiItem = document.createElement('div');
-        apiItem.className = 'flex items-center justify-between p-1 mb-1 bg-[#222] rounded';
-        
-        // 根据是否是成人内容设置不同的样式
-        const textColorClass = api.isAdult ? 'text-pink-400' : 'text-white';
-        
-        // 将(18+)标记移到最前面
-        const adultTag = api.isAdult ? '<span class="text-xs text-pink-400 mr-1">(18+)</span>' : '';
-        
+        apiItem.className = 'flex items-center justify-between p-1 mb-1 rounded';
+        apiItem.style.background = 'rgba(255,255,255,0.6)';
+        apiItem.style.border = '1px solid rgba(255,255,255,0.8)';
+        const textColorClass = api.isAdult ? '' : '';
+        const adultTag = api.isAdult ? '<span class="text-xs mr-1" style="color: #ff2d55;">(18+)</span>' : '';
+        // 新增 detail 地址显示
+        const detailLine = api.detail ? `<div class="text-xs text-gray-400 truncate">detail: ${api.detail}</div>` : '';
         apiItem.innerHTML = `
             <div class="flex items-center flex-1 min-w-0">
                 <input type="checkbox" id="custom_api_${index}" 
-                       class="form-checkbox h-3 w-3 text-blue-600 mr-1 ${api.isAdult ? 'api-adult' : ''}" 
+                       class="form-checkbox text-blue-600 mr-1 ${api.isAdult ? 'api-adult' : ''}" 
                        ${selectedAPIs.includes('custom_' + index) ? 'checked' : ''} 
                        data-custom-index="${index}">
                 <div class="flex-1 min-w-0">
-                    <div class="text-xs font-medium ${textColorClass} truncate">
+                    <div class="text-xs font-medium truncate" style="color: ${api.isAdult ? '#ff2d55' : '#1d1d1f'};">
                         ${adultTag}${api.name}
                     </div>
                     <div class="text-xs text-gray-500 truncate">${api.url}</div>
+                    ${detailLine}
                 </div>
             </div>
             <div class="flex items-center">
@@ -232,9 +253,7 @@ function renderCustomAPIsList() {
             </div>
         `;
         container.appendChild(apiItem);
-        
-        // 添加事件监听器
-        apiItem.querySelector('input').addEventListener('change', function() {
+        apiItem.querySelector('input').addEventListener('change', function () {
             updateSelectedAPIs();
             checkAdultAPIsSelected();
         });
@@ -244,28 +263,19 @@ function renderCustomAPIsList() {
 // 编辑自定义API
 function editCustomApi(index) {
     if (index < 0 || index >= customAPIs.length) return;
-    
     const api = customAPIs[index];
-    
-    // 填充表单数据
-    const nameInput = document.getElementById('customApiName');
-    const urlInput = document.getElementById('customApiUrl');
+    document.getElementById('customApiName').value = api.name;
+    document.getElementById('customApiUrl').value = api.url;
+    document.getElementById('customApiDetail').value = api.detail || '';
     const isAdultInput = document.getElementById('customApiIsAdult');
-    
-    nameInput.value = api.name;
-    urlInput.value = api.url;
     if (isAdultInput) isAdultInput.checked = api.isAdult || false;
-    
-    // 显示表单
     const form = document.getElementById('addCustomApiForm');
     if (form) {
         form.classList.remove('hidden');
-        
-        // 替换表单按钮操作
         const buttonContainer = form.querySelector('div:last-child');
         buttonContainer.innerHTML = `
-            <button onclick="updateCustomApi(${index})" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs">更新</button>
-            <button onclick="cancelEditCustomApi()" class="bg-[#444] hover:bg-[#555] text-white px-3 py-1 rounded text-xs">取消</button>
+            <button onclick="updateCustomApi(${index})" class="ios-primary-button" style="padding: 0.3rem 0.8rem; font-size: 0.75rem;">更新</button>
+            <button onclick="cancelEditCustomApi()" class="ios-secondary-button" style="padding: 0.3rem 0.8rem; font-size: 0.75rem;">取消</button>
         `;
     }
 }
@@ -273,50 +283,34 @@ function editCustomApi(index) {
 // 更新自定义API
 function updateCustomApi(index) {
     if (index < 0 || index >= customAPIs.length) return;
-    
     const nameInput = document.getElementById('customApiName');
     const urlInput = document.getElementById('customApiUrl');
+    const detailInput = document.getElementById('customApiDetail');
     const isAdultInput = document.getElementById('customApiIsAdult');
-    
     const name = nameInput.value.trim();
     let url = urlInput.value.trim();
+    const detail = detailInput ? detailInput.value.trim() : '';
     const isAdult = isAdultInput ? isAdultInput.checked : false;
-    
     if (!name || !url) {
         showToast('请输入API名称和链接', 'warning');
         return;
     }
-    
-    // 确保URL格式正确
     if (!/^https?:\/\/.+/.test(url)) {
         showToast('API链接格式不正确，需以http://或https://开头', 'warning');
         return;
     }
-    
-    // 移除URL末尾的斜杠
-    if (url.endsWith('/')) {
-        url = url.slice(0, -1);
-    }
-    
-    // 更新API信息
-    customAPIs[index] = { name, url, isAdult };
+    if (url.endsWith('/')) url = url.slice(0, -1);
+    // 保存 detail 字段
+    customAPIs[index] = { name, url, detail, isAdult };
     localStorage.setItem('customAPIs', JSON.stringify(customAPIs));
-    
-    // 重新渲染自定义API列表
     renderCustomAPIsList();
-    
-    // 重新检查成人API选中状态
     checkAdultAPIsSelected();
-    
-    // 恢复添加按钮
     restoreAddCustomApiButtons();
-    
-    // 清空表单并隐藏
     nameInput.value = '';
     urlInput.value = '';
+    if (detailInput) detailInput.value = '';
     if (isAdultInput) isAdultInput.checked = false;
     document.getElementById('addCustomApiForm').classList.add('hidden');
-    
     showToast('已更新自定义API: ' + name, 'success');
 }
 
@@ -325,12 +319,13 @@ function cancelEditCustomApi() {
     // 清空表单
     document.getElementById('customApiName').value = '';
     document.getElementById('customApiUrl').value = '';
+    document.getElementById('customApiDetail').value = '';
     const isAdultInput = document.getElementById('customApiIsAdult');
     if (isAdultInput) isAdultInput.checked = false;
-    
+
     // 隐藏表单
     document.getElementById('addCustomApiForm').classList.add('hidden');
-    
+
     // 恢复添加按钮
     restoreAddCustomApiButtons();
 }
@@ -340,8 +335,8 @@ function restoreAddCustomApiButtons() {
     const form = document.getElementById('addCustomApiForm');
     const buttonContainer = form.querySelector('div:last-child');
     buttonContainer.innerHTML = `
-        <button onclick="addCustomApi()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs">添加</button>
-        <button onclick="cancelAddCustomApi()" class="bg-[#444] hover:bg-[#555] text-white px-3 py-1 rounded text-xs">取消</button>
+        <button onclick="addCustomApi()" class="ios-primary-button" style="padding: 0.3rem 0.8rem; font-size: 0.75rem;">添加</button>
+        <button onclick="cancelAddCustomApi()" class="ios-secondary-button" style="padding: 0.3rem 0.8rem; font-size: 0.75rem;">取消</button>
     `;
 }
 
@@ -349,23 +344,20 @@ function restoreAddCustomApiButtons() {
 function updateSelectedAPIs() {
     // 获取所有内置API复选框
     const builtInApiCheckboxes = document.querySelectorAll('#apiCheckboxes input:checked');
-    
+
     // 获取选中的内置API
     const builtInApis = Array.from(builtInApiCheckboxes).map(input => input.dataset.api);
-    
+
     // 获取选中的自定义API
     const customApiCheckboxes = document.querySelectorAll('#customApisList input:checked');
     const customApiIndices = Array.from(customApiCheckboxes).map(input => 'custom_' + input.dataset.customIndex);
-    
+
     // 合并内置和自定义API
     selectedAPIs = [...builtInApis, ...customApiIndices];
-    
+
     // 保存到localStorage
     localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
-    
-    // 标记用户已手动修改过API选择
-    localStorage.setItem('userSelectedAPIs', 'true');
-    
+
     // 更新显示选中的API数量
     updateSelectedApiCount();
 }
@@ -381,7 +373,7 @@ function updateSelectedApiCount() {
 // 全选或取消全选API
 function selectAllAPIs(selectAll = true, excludeAdult = false) {
     const checkboxes = document.querySelectorAll('#apiCheckboxes input[type="checkbox"]');
-    
+
     checkboxes.forEach(checkbox => {
         if (excludeAdult && checkbox.classList.contains('api-adult')) {
             checkbox.checked = false;
@@ -389,25 +381,9 @@ function selectAllAPIs(selectAll = true, excludeAdult = false) {
             checkbox.checked = selectAll;
         }
     });
-    
-    // 同时处理自定义API复选框
-    const customCheckboxes = document.querySelectorAll('#customApisList input[type="checkbox"]');
-    
-    customCheckboxes.forEach(checkbox => {
-        if (excludeAdult && checkbox.classList.contains('api-adult')) {
-            checkbox.checked = false;
-        } else {
-            checkbox.checked = selectAll;
-        }
-    });
-    
+
     updateSelectedAPIs();
     checkAdultAPIsSelected();
-    
-    // 标记用户已手动修改过API选择（只有在用户主动点击全选按钮时）
-    if (document.readyState === 'complete') {
-        localStorage.setItem('userSelectedAPIs', 'true');
-    }
 }
 
 // 显示添加自定义API表单
@@ -425,9 +401,10 @@ function cancelAddCustomApi() {
         form.classList.add('hidden');
         document.getElementById('customApiName').value = '';
         document.getElementById('customApiUrl').value = '';
+        document.getElementById('customApiDetail').value = '';
         const isAdultInput = document.getElementById('customApiIsAdult');
         if (isAdultInput) isAdultInput.checked = false;
-        
+
         // 确保按钮是添加按钮
         restoreAddCustomApiButtons();
     }
@@ -437,69 +414,56 @@ function cancelAddCustomApi() {
 function addCustomApi() {
     const nameInput = document.getElementById('customApiName');
     const urlInput = document.getElementById('customApiUrl');
+    const detailInput = document.getElementById('customApiDetail');
     const isAdultInput = document.getElementById('customApiIsAdult');
-    
     const name = nameInput.value.trim();
     let url = urlInput.value.trim();
+    const detail = detailInput ? detailInput.value.trim() : '';
     const isAdult = isAdultInput ? isAdultInput.checked : false;
-    
     if (!name || !url) {
         showToast('请输入API名称和链接', 'warning');
         return;
     }
-    
-    // 确保URL格式正确
     if (!/^https?:\/\/.+/.test(url)) {
         showToast('API链接格式不正确，需以http://或https://开头', 'warning');
         return;
     }
-    
-    // 移除URL末尾的斜杠
     if (url.endsWith('/')) {
         url = url.slice(0, -1);
     }
-    
-    // 添加到自定义API列表 - 增加isAdult属性
-    customAPIs.push({ name, url, isAdult });
+    // 保存 detail 字段
+    customAPIs.push({ name, url, detail, isAdult });
     localStorage.setItem('customAPIs', JSON.stringify(customAPIs));
-    
-    // 默认选中新添加的API
     const newApiIndex = customAPIs.length - 1;
     selectedAPIs.push('custom_' + newApiIndex);
     localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
-    
+
     // 重新渲染自定义API列表
     renderCustomAPIsList();
-    
-    // 更新选中的API数量
     updateSelectedApiCount();
-    
-    // 重新检查成人API选中状态
     checkAdultAPIsSelected();
-    
-    // 清空表单并隐藏
     nameInput.value = '';
     urlInput.value = '';
+    if (detailInput) detailInput.value = '';
     if (isAdultInput) isAdultInput.checked = false;
     document.getElementById('addCustomApiForm').classList.add('hidden');
-    
     showToast('已添加自定义API: ' + name, 'success');
 }
 
 // 移除自定义API
 function removeCustomApi(index) {
     if (index < 0 || index >= customAPIs.length) return;
-    
+
     const apiName = customAPIs[index].name;
-    
+
     // 从列表中移除API
     customAPIs.splice(index, 1);
     localStorage.setItem('customAPIs', JSON.stringify(customAPIs));
-    
+
     // 从选中列表中移除此API
     const customApiId = 'custom_' + index;
     selectedAPIs = selectedAPIs.filter(id => id !== customApiId);
-    
+
     // 更新大于此索引的自定义API索引
     selectedAPIs = selectedAPIs.map(id => {
         if (id.startsWith('custom_')) {
@@ -510,54 +474,115 @@ function removeCustomApi(index) {
         }
         return id;
     });
-    
+
     localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
-    
+
     // 重新渲染自定义API列表
     renderCustomAPIsList();
-    
+
     // 更新选中的API数量
     updateSelectedApiCount();
-    
+
     // 重新检查成人API选中状态
     checkAdultAPIsSelected();
-    
+
     showToast('已移除自定义API: ' + apiName, 'info');
+}
+
+function toggleSettings(e) {
+    const settingsPanel = document.getElementById('settingsPanel');
+    if (!settingsPanel) return;
+
+    if (settingsPanel.classList.contains('show')) {
+        settingsPanel.classList.remove('show');
+    } else {
+        settingsPanel.classList.add('show');
+    }
+
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
 }
 
 // 设置事件监听器
 function setupEventListeners() {
     // 回车搜索
-    document.getElementById('searchInput').addEventListener('keypress', function(e) {
+    document.getElementById('searchInput').addEventListener('keypress', function (e) {
         if (e.key === 'Enter') {
             search();
         }
     });
 
-    // 点击外部关闭设置面板
-    document.addEventListener('click', function(e) {
-        const panel = document.getElementById('settingsPanel');
-        const settingsButton = document.querySelector('button[onclick="toggleSettings(event)"]');
-        
-        if (!panel.contains(e.target) && !settingsButton.contains(e.target) && panel.classList.contains('show')) {
-            panel.classList.remove('show');
+    // 点击外部关闭设置面板和历史记录面板
+    document.addEventListener('click', function (e) {
+        // 关闭设置面板
+        const settingsPanel = document.querySelector('#settingsPanel.show');
+        const settingsButton = document.querySelector('#settingsPanel .wdtv-close-btn');
+
+        if (settingsPanel && settingsButton &&
+            !settingsPanel.contains(e.target) &&
+            !settingsButton.contains(e.target)) {
+            settingsPanel.classList.remove('show');
+        }
+
+        // 关闭历史记录面板
+        const historyPanel = document.querySelector('#historyPanel.show');
+        const historyButton = document.querySelector('#historyPanel .wdtv-close-btn');
+
+        if (historyPanel && historyButton &&
+            !historyPanel.contains(e.target) &&
+            !historyButton.contains(e.target)) {
+            historyPanel.classList.remove('show');
         }
     });
-    
+
     // 黄色内容过滤开关事件绑定
     const yellowFilterToggle = document.getElementById('yellowFilterToggle');
     if (yellowFilterToggle) {
-        yellowFilterToggle.addEventListener('change', function(e) {
+        yellowFilterToggle.addEventListener('change', function (e) {
             localStorage.setItem('yellowFilterEnabled', e.target.checked);
+
+            // 控制黄色内容接口的显示状态
+            const adultdiv = document.getElementById('adultdiv');
+            if (adultdiv) {
+                if (e.target.checked === true) {
+                    adultdiv.style.display = 'none';
+                } else if (e.target.checked === false) {
+                    adultdiv.style.display = ''
+                }
+            } else {
+                // 添加成人API列表
+                addAdultAPI();
+            }
         });
     }
-    
+
     // 广告过滤开关事件绑定
     const adFilterToggle = document.getElementById('adFilterToggle');
     if (adFilterToggle) {
-        adFilterToggle.addEventListener('change', function(e) {
+        adFilterToggle.addEventListener('change', function (e) {
             localStorage.setItem(PLAYER_CONFIG.adFilteringStorage, e.target.checked);
         });
+    }
+
+    // 动态效果开关事件绑定
+    const dynamicEffectsToggle = document.getElementById('dynamicEffectsToggle');
+    if (dynamicEffectsToggle) {
+        dynamicEffectsToggle.addEventListener('change', function (e) {
+            localStorage.setItem('dynamicEffectsEnabled', e.target.checked);
+            applyDynamicEffects(e.target.checked);
+        });
+    }
+}
+
+// 应用动态效果开关状态：关闭时停用一切动画与视觉特效以降低性能开销
+function applyDynamicEffects(enabled) {
+    document.documentElement.classList.toggle('fx-off', !enabled);
+    if (enabled) {
+        // 重新启动首页动画循环（雨滴 / 玻璃水面）
+        if (typeof window.__fxRain === 'function') window.__fxRain();
+        if (typeof window.__fxGlass === 'function') window.__fxGlass();
     }
 }
 
@@ -566,21 +591,51 @@ function resetSearchArea() {
     // 清理搜索结果
     document.getElementById('results').innerHTML = '';
     document.getElementById('searchInput').value = '';
-    
+
+    // 重置同名筛选状态
+    lastSearchResults = [];
+    currentNameFilter = '';
+    const nameFilterBar = document.getElementById('nameFilterBar');
+    if (nameFilterBar) {
+        nameFilterBar.classList.add('hidden');
+    }
+    closeNameDropdown();
+    const nameDropdownMenu = document.getElementById('nameDropdownMenu');
+    if (nameDropdownMenu) {
+        nameDropdownMenu.innerHTML = '';
+    }
+    const nameDropdownLabel = document.getElementById('nameDropdownLabel');
+    if (nameDropdownLabel) {
+        nameDropdownLabel.textContent = '全部';
+    }
+
     // 恢复搜索区域的样式
     document.getElementById('searchArea').classList.add('flex-1');
     document.getElementById('searchArea').classList.remove('mb-8');
     document.getElementById('resultsArea').classList.add('hidden');
-    
+
     // 确保页脚正确显示，移除相对定位
     const footer = document.querySelector('.footer');
     if (footer) {
         footer.style.position = '';
     }
-    
+
     // 如果有豆瓣功能，检查是否需要显示豆瓣推荐区域
     if (typeof updateDoubanVisibility === 'function') {
         updateDoubanVisibility();
+    }
+
+    // 重置URL为主页
+    try {
+        window.history.pushState(
+            {},
+            `WDTV - 免费在线视频搜索与观看平台`,
+            `/`
+        );
+        // 更新页面标题
+        document.title = `WDTV - 免费在线视频搜索与观看平台`;
+    } catch (e) {
+        console.error('更新浏览器历史失败:', e);
     }
 }
 
@@ -593,211 +648,138 @@ function getCustomApiInfo(customApiIndex) {
     return customAPIs[index];
 }
 
-// 搜索功能 - 修改为支持多选API
+// 搜索功能 - 修改为支持多选API和多页结果
 async function search() {
-    // 密码保护校验
-    if (window.isPasswordProtected && window.isPasswordVerified) {
-        if (window.isPasswordProtected() && !window.isPasswordVerified()) {
-            showPasswordModal && showPasswordModal();
-            return;
+    // 强化的密码保护校验 - 防止绕过
+    try {
+        if (window.ensurePasswordProtection) {
+            window.ensurePasswordProtection();
+        } else {
+            // 兼容性检查
+            if (window.isPasswordProtected && window.isPasswordVerified) {
+                if (window.isPasswordProtected() && !window.isPasswordVerified()) {
+                    showPasswordModal && showPasswordModal();
+                    return;
+                }
+            }
         }
+    } catch (error) {
+        console.warn('Password protection check failed:', error.message);
+        return;
     }
     const query = document.getElementById('searchInput').value.trim();
-    
+
     if (!query) {
         showToast('请输入搜索内容', 'info');
         return;
     }
-    
+
     if (selectedAPIs.length === 0) {
         showToast('请至少选择一个API源', 'warning');
         return;
     }
-    
+
     showLoading();
-    
+
     try {
         // 保存搜索历史
         saveSearchHistory(query);
-        
+
         // 从所有选中的API源搜索
         let allResults = [];
-        const searchPromises = selectedAPIs.map(async (apiId) => {
-            try {
-                let apiUrl, apiName;
-                
-                // 处理自定义API
-                if (apiId.startsWith('custom_')) {
-                    const customIndex = apiId.replace('custom_', '');
-                    const customApi = getCustomApiInfo(customIndex);
-                    if (!customApi) return [];
-                    
-                    apiUrl = customApi.url + API_CONFIG.search.path + encodeURIComponent(query);
-                    apiName = customApi.name;
-                } else {
-                    // 内置API
-                    if (!API_SITES[apiId]) return [];
-                    apiUrl = API_SITES[apiId].api + API_CONFIG.search.path + encodeURIComponent(query);
-                    apiName = API_SITES[apiId].name;
-                }
-                
-                // 添加超时处理
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 8000);
-                
-                const response = await fetch(PROXY_URL + encodeURIComponent(apiUrl), {
-                    headers: API_CONFIG.search.headers,
-                    signal: controller.signal
-                });
-                
-                clearTimeout(timeoutId);
-                
-                if (!response.ok) {
-                    return [];
-                }
-                
-                const data = await response.json();
-                
-                if (!data || !data.list || !Array.isArray(data.list) || data.list.length === 0) {
-                    return [];
-                }
-                
-                // 添加源信息到每个结果
-                const results = data.list.map(item => ({
-                    ...item,
-                    source_name: apiName,
-                    source_code: apiId,
-                    api_url: apiId.startsWith('custom_') ? getCustomApiInfo(apiId.replace('custom_', ''))?.url : undefined
-                }));
-                
-                return results;
-            } catch (error) {
-                console.warn(`API ${apiId} 搜索失败:`, error);
-                return [];
-            }
-        });
-        
+        const searchPromises = selectedAPIs.map(apiId => 
+            searchByAPIAndKeyWord(apiId, query)
+        );
+
         // 等待所有搜索请求完成
         const resultsArray = await Promise.all(searchPromises);
-        
+
         // 合并所有结果
         resultsArray.forEach(results => {
             if (Array.isArray(results) && results.length > 0) {
                 allResults = allResults.concat(results);
             }
         });
-        
+
+        // 对搜索结果进行排序：按名称优先，名称相同时按接口源排序
+        allResults.sort((a, b) => {
+            // 首先按照视频名称排序
+            const nameCompare = (a.vod_name || '').localeCompare(b.vod_name || '');
+            if (nameCompare !== 0) return nameCompare;
+            
+            // 如果名称相同，则按照来源排序
+            return (a.source_name || '').localeCompare(b.source_name || '');
+        });
+
         // 更新搜索结果计数
         const searchResultsCount = document.getElementById('searchResultsCount');
         if (searchResultsCount) {
             searchResultsCount.textContent = allResults.length;
         }
-        
+
         // 显示结果区域，调整搜索区域
         document.getElementById('searchArea').classList.remove('flex-1');
         document.getElementById('searchArea').classList.add('mb-8');
         document.getElementById('resultsArea').classList.remove('hidden');
-        
+
         // 隐藏豆瓣推荐区域（如果存在）
         const doubanArea = document.getElementById('doubanArea');
         if (doubanArea) {
             doubanArea.classList.add('hidden');
         }
-        
+
         const resultsDiv = document.getElementById('results');
-        
+
         // 如果没有结果
         if (!allResults || allResults.length === 0) {
             resultsDiv.innerHTML = `
-                <div class="col-span-full text-center py-16">
-                    <svg class="mx-auto h-12 w-12 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <h3 class="mt-2 text-lg font-medium text-gray-400">没有找到匹配的结果</h3>
-                    <p class="mt-1 text-sm text-gray-500">请尝试其他关键词或更换数据源</p>
+                <div class="col-span-full">
+                    <div class="empty-state-glass">
+                        <svg class="mx-auto h-12 w-12" style="color: var(--text-muted);" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <h3 class="mt-2 text-lg font-medium" style="color: var(--text-color);">没有找到匹配的结果</h3>
+                        <p class="mt-1 text-sm" style="color: var(--text-muted);">请尝试其他关键词或更换数据源</p>
+                    </div>
                 </div>
             `;
             hideLoading();
             return;
         }
 
+        // 有搜索结果时，才更新URL
+        try {
+            // 使用URI编码确保特殊字符能够正确显示
+            const encodedQuery = encodeURIComponent(query);
+            // 使用HTML5 History API更新URL，不刷新页面
+            window.history.pushState(
+                { search: query },
+                `搜索: ${query} - WDTV`,
+                `/s=${encodedQuery}`
+            );
+            // 更新页面标题
+            document.title = `搜索: ${query} - WDTV`;
+        } catch (e) {
+            console.error('更新浏览器历史失败:', e);
+            // 如果更新URL失败，继续执行搜索
+        }
+
         // 处理搜索结果过滤：如果启用了黄色内容过滤，则过滤掉分类含有敏感内容的项目
         const yellowFilterEnabled = localStorage.getItem('yellowFilterEnabled') === 'true';
         if (yellowFilterEnabled) {
-            const banned = ['伦理片','门事件','萝莉少女','制服诱惑','国产传媒','cosplay','黑丝诱惑','无码','日本无码','有码','日本有码','SWAG','网红主播', '色情片','同性片','福利视频','福利片'];
+            const banned = ['伦理片', '福利', '里番动漫', '门事件', '萝莉少女', '制服诱惑', '国产传媒', 'cosplay', '黑丝诱惑', '无码', '日本无码', '有码', '日本有码', 'SWAG', '网红主播', '色情片', '同性片', '福利视频', '福利片'];
             allResults = allResults.filter(item => {
                 const typeName = item.type_name || '';
                 return !banned.some(keyword => typeName.includes(keyword));
             });
         }
 
-        // 添加XSS保护，使用textContent和属性转义
-        resultsDiv.innerHTML = allResults.map(item => {
-            const safeId = item.vod_id ? item.vod_id.toString().replace(/[^\w-]/g, '') : '';
-            const safeName = (item.vod_name || '').toString()
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
-            const sourceInfo = item.source_name ? 
-                `<span class="bg-[#222] text-xs px-1.5 py-0.5 rounded-full">${item.source_name}</span>` : '';
-            const sourceCode = item.source_code || '';
-            
-            // 添加API URL属性，用于详情获取
-            const apiUrlAttr = item.api_url ? 
-                `data-api-url="${item.api_url.replace(/"/g, '&quot;')}"` : '';
-            
-            // 更紧凑的卡片布局
-            const hasCover = item.vod_pic && item.vod_pic.startsWith('http');
-            
-            return `
-                <div class="card-hover bg-[#111] rounded-lg overflow-hidden cursor-pointer transition-all hover:scale-[1.02] h-full shadow-sm hover:shadow-md" 
-                     onclick="showDetails('${safeId}','${safeName}','${sourceCode}')" ${apiUrlAttr}>
-                    <div class="flex flex-col h-full">
-                        ${hasCover ? `
-                        <div class="relative overflow-hidden" style="height: 160px;">
-                            <img src="${item.vod_pic}" alt="${safeName}" 
-                                 class="w-full h-full object-cover transition-transform hover:scale-110" 
-                                 onerror="this.onerror=null; this.src='https://via.placeholder.com/300x450?text=无封面'; this.classList.add('object-contain');" 
-                                 loading="lazy">
-                            <div class="absolute inset-0 bg-gradient-to-t from-[#111] to-transparent opacity-60"></div>
-                        </div>` : ''}
-                        
-                        <div class="p-2 flex flex-col flex-grow">
-                            <div class="flex-grow">
-                                <h3 class="text-sm font-semibold mb-1 break-words line-clamp-2 text-center" title="${safeName}">${safeName}</h3>
-                                
-                                <div class="flex flex-wrap justify-center gap-1 mb-1">
-                                    ${(item.type_name || '').toString().replace(/</g, '&lt;') ? 
-                                      `<span class="text-xs py-0 px-1 rounded bg-opacity-20 bg-blue-500 text-blue-300">
-                                          ${(item.type_name || '').toString().replace(/</g, '&lt;')}
-                                      </span>` : ''}
-                                    ${(item.vod_year || '') ? 
-                                      `<span class="text-xs py-0 px-1 rounded bg-opacity-20 bg-purple-500 text-purple-300">
-                                          ${item.vod_year}
-                                      </span>` : ''}
-                                </div>
-                                <p class="text-gray-400 text-xs line-clamp-1 overflow-hidden text-center">
-                                    ${(item.vod_remarks || '暂无介绍').toString().replace(/</g, '&lt;')}
-                                </p>
-                            </div>
-                            
-                            <div class="flex justify-between items-center mt-1 pt-1 border-t border-gray-800 text-xs">
-                                ${sourceInfo ? `<div>${sourceInfo}</div>` : '<div></div>'}
-                                <div>
-                                    <span class="text-xs text-gray-500 flex items-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                        </svg>
-                                        播放
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        // 保存本次搜索结果，用于同名筛选
+        lastSearchResults = allResults;
+        currentNameFilter = '';
+        populateNameFilter(allResults);
+        renderFilteredSearchResults();
     } catch (error) {
         console.error('搜索错误:', error);
         if (error.name === 'AbortError') {
@@ -809,6 +791,303 @@ async function search() {
         hideLoading();
     }
 }
+
+// 同名影视筛选：保存最近一次搜索结果与当前筛选的名称
+let lastSearchResults = [];
+let currentNameFilter = '';
+
+// 转义结果卡片中使用的HTML特殊字符
+function escapeResultText(text) {
+    return (text || '').toString()
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// 从备注/标题中提取画质标签（按清晰度从高到低优先匹配）
+function extractQualityTag(texts) {
+    const text = texts.filter(Boolean).join(' ');
+    const rules = [
+        [/4K|2160[Pp]/, '4K'],
+        [/1080[PpIi]?|1080/, '1080P'],
+        [/蓝光|Blu-?Ray|\bBD\b/, '蓝光'],
+        [/超清/, '超清'],
+        [/高清/, '高清'],
+        [/\bHD\b/, 'HD'],
+        [/720[Pp]/, '720P'],
+        [/标清/, '标清'],
+        [/\bT[SC]\b|抢先|枪版/, '抢先'],
+    ];
+    for (const [re, tag] of rules) {
+        if (re.test(text)) return tag;
+    }
+    return '';
+}
+
+// 构建单个搜索结果卡片
+function buildResultCard(item) {
+    const safeId = item.vod_id ? item.vod_id.toString().replace(/[^\w-]/g, '') : '';
+    const safeName = escapeResultText(item.vod_name);
+    const sourceCode = item.source_code || '';
+
+    // 添加API URL属性，用于详情获取
+    const apiUrlAttr = item.api_url ?
+        `data-api-url="${item.api_url.replace(/"/g, '&quot;')}"` : '';
+
+    // 修改为与首页豆瓣卡片一致的垂直布局
+    const hasCover = item.vod_pic && item.vod_pic.startsWith('http');
+    const coverUrl = hasCover ? item.vod_pic : 'https://via.placeholder.com/300x450?text=无封面';
+    const safeTypeName = escapeResultText(item.type_name);
+    const safeSourceName = escapeResultText(item.source_name);
+    // 源方备注（常含清晰度标注，如 "HD国语"、"1080P"、"蓝光" 等）
+    const safeRemarks = escapeResultText(item.vod_remarks);
+    // 画质标签：从备注/标题中提取（如 4K、1080P、蓝光、HD）
+    const qualityTag = extractQualityTag([item.vod_remarks, item.vod_name]);
+
+    return `
+        <div class="douban-card flex flex-col cursor-pointer"
+             onclick="showDetails('${safeId}','${safeName}','${sourceCode}')" ${apiUrlAttr}>
+            <div class="douban-card-image">
+                <img src="${coverUrl}" alt="${safeName}"
+                     onerror="this.onerror=null; this.src='https://via.placeholder.com/300x450?text=无封面'; this.classList.add('object-contain');"
+                     loading="lazy" referrerpolicy="no-referrer">
+                <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(0,0,0,0.6), transparent 50%); pointer-events: none;"></div>
+                ${qualityTag ? `<div class="wdtv-quality-badge">${qualityTag}</div>` : ''}
+                <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-1.5">
+                    ${safeSourceName ? `
+                    <div class="douban-rate-badge truncate min-w-0" title="${safeSourceName}">
+                        ${safeSourceName}
+                    </div>
+                    ` : ''}
+                    ${safeTypeName ? `
+                    <div class="douban-rate-badge truncate shrink-0" style="padding: 0.25rem 0.5rem;">
+                        ${safeTypeName}
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+            <div class="douban-card-title-area">
+                <button onclick="event.stopPropagation(); showDetails('${safeId}','${safeName}','${sourceCode}')"
+                        class="text-sm font-medium truncate w-full transition"
+                        style="color: #1d1d1f; background: transparent; border: none; cursor: pointer; padding: 0;"
+                        title="${safeName}">
+                    ${safeName}
+                </button>
+                ${safeRemarks ? `
+                <div class="wdtv-remarks-badge" title="${safeRemarks}">
+                    ${safeRemarks}
+                </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+// 屏蔽过滤规则：localStorage键名 -> 匹配影视类型的关键词
+const BLOCK_FILTER_RULES = {
+    blockAIManhuaEnabled: ['AI漫剧', '漫剧'],
+    blockShortDramaEnabled: ['短剧']
+};
+
+// 判断某条结果是否命中启用的屏蔽规则
+function isBlockedByTypeFilter(item) {
+    const typeName = (item.type_name || '').toString();
+    if (!typeName) return false;
+    return Object.entries(BLOCK_FILTER_RULES).some(([key, keywords]) => {
+        if (localStorage.getItem(key) !== 'true') return false;
+        return keywords.some(kw => typeName.includes(kw));
+    });
+}
+
+// 根据当前名称筛选与屏蔽规则渲染搜索结果
+function renderFilteredSearchResults() {
+    const resultsDiv = document.getElementById('results');
+    if (!resultsDiv) return;
+
+    const filtered = lastSearchResults.filter(item => {
+        if (currentNameFilter && (item.vod_name || '').trim() !== currentNameFilter) return false;
+        if (isBlockedByTypeFilter(item)) return false;
+        return true;
+    });
+
+    if (filtered.length === 0 && lastSearchResults.length > 0) {
+        resultsDiv.innerHTML = `
+            <div class="col-span-full" style="text-align:center;padding:40px 0;color:var(--text-muted);font-size:0.9rem;">
+                当前筛选条件下没有可显示的结果
+            </div>
+        `;
+    } else {
+        resultsDiv.innerHTML = filtered.map(buildResultCard).join('');
+    }
+
+    // 更新计数显示
+    const searchResultsCount = document.getElementById('searchResultsCount');
+    if (searchResultsCount) {
+        searchResultsCount.textContent = filtered.length;
+    }
+}
+
+// 切换屏蔽按钮状态（localStorage持久化），并立即重新渲染列表
+function toggleBlockFilter(key) {
+    const enabled = localStorage.getItem(key) === 'true';
+    localStorage.setItem(key, enabled ? 'false' : 'true');
+    updateBlockFilterButtons();
+    renderFilteredSearchResults();
+}
+
+// 同步屏蔽按钮的高亮状态
+function updateBlockFilterButtons() {
+    Object.keys(BLOCK_FILTER_RULES).forEach(key => {
+        const btn = document.getElementById(key === 'blockAIManhuaEnabled' ? 'blockAIManhuaBtn' : 'blockShortDramaBtn');
+        if (btn) {
+            btn.classList.toggle('active', localStorage.getItem(key) === 'true');
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', updateBlockFilterButtons);
+
+// 应用同名筛选并重新渲染列表
+function applyNameFilter(name, label) {
+    currentNameFilter = name || '';
+    renderFilteredSearchResults();
+
+    // 更新下拉框按钮显示文本
+    const labelEl = document.getElementById('nameDropdownLabel');
+    if (labelEl) {
+        labelEl.textContent = label || (currentNameFilter || '全部');
+    }
+
+    // 更新菜单选中态
+    const menu = document.getElementById('nameDropdownMenu');
+    if (menu) {
+        menu.querySelectorAll('.wdtv-name-dropdown-item').forEach(el => {
+            el.classList.toggle('active', (el.dataset.name || '') === currentNameFilter);
+        });
+    }
+
+    closeNameDropdown();
+}
+
+// 展开/收起同名筛选下拉菜单
+function toggleNameDropdown(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('nameDropdownMenu');
+    const dropdown = document.getElementById('nameDropdown');
+    if (!menu || !dropdown) return;
+    menu.classList.toggle('hidden');
+    dropdown.classList.toggle('open', !menu.classList.contains('hidden'));
+}
+
+// 关闭同名筛选下拉菜单
+function closeNameDropdown() {
+    const menu = document.getElementById('nameDropdownMenu');
+    const dropdown = document.getElementById('nameDropdown');
+    if (menu) menu.classList.add('hidden');
+    if (dropdown) dropdown.classList.remove('open');
+}
+
+// 点击页面其他区域时收起菜单；点击菜单项时应用筛选（事件委托，避免片名特殊字符破坏内联事件）
+document.addEventListener('click', (e) => {
+    const item = e.target.closest('.wdtv-name-dropdown-item');
+    if (item) {
+        applyNameFilter(item.dataset.name || '', item.dataset.label || '');
+        return;
+    }
+    const dropdown = document.getElementById('nameDropdown');
+    if (dropdown && !dropdown.contains(e.target)) {
+        closeNameDropdown();
+    }
+});
+
+// 填充同名筛选下拉菜单（仅列出存在多个同名结果的名称）
+function populateNameFilter(results) {
+    const bar = document.getElementById('nameFilterBar');
+    const menu = document.getElementById('nameDropdownMenu');
+    const labelEl = document.getElementById('nameDropdownLabel');
+    if (!bar || !menu) return;
+
+    // 统计同名出现次数
+    const nameCount = new Map();
+    results.forEach(item => {
+        const name = (item.vod_name || '').trim();
+        if (!name) return;
+        nameCount.set(name, (nameCount.get(name) || 0) + 1);
+    });
+
+    // 仅保留同名（出现≥2次）的名称，按数量降序排列
+    const dupNames = [...nameCount.entries()]
+        .filter(([, count]) => count >= 2)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+
+    if (dupNames.length === 0) {
+        bar.classList.add('hidden');
+        menu.innerHTML = '';
+        closeNameDropdown();
+        return;
+    }
+
+    bar.classList.remove('hidden');
+    if (labelEl) labelEl.textContent = '全部';
+
+    const items = [
+        { name: '', label: '全部', count: results.length },
+        ...dupNames.map(([name, count]) => ({ name, label: name, count }))
+    ];
+    menu.innerHTML = items.map(({ name, label, count }) => {
+        const safeName = escapeResultText(name);
+        const safeLabel = escapeResultText(label);
+        return `<div class="wdtv-name-dropdown-item" data-name="${safeName}" data-label="${safeLabel}">
+                    <span style="overflow:hidden;text-overflow:ellipsis;">${safeLabel}</span>
+                    <span class="wdtv-name-dropdown-count">${count}</span>
+                </div>`;
+    }).join('');
+    closeNameDropdown();
+}
+
+// 切换清空按钮的显示状态
+function toggleClearButton() {
+    const searchInput = document.getElementById('searchInput');
+    const clearButton = document.getElementById('clearSearchInput');
+    if (searchInput.value !== '') {
+        clearButton.classList.remove('hidden');
+    } else {
+        clearButton.classList.add('hidden');
+    }
+}
+
+// 清空搜索框内容
+function clearSearchInput() {
+    const searchInput = document.getElementById('searchInput');
+    searchInput.value = '';
+    const clearButton = document.getElementById('clearSearchInput');
+    clearButton.classList.add('hidden');
+}
+
+// 劫持搜索框的value属性以检测外部修改
+function hookInput() {
+    const input = document.getElementById('searchInput');
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+
+    // 重写 value 属性的 getter 和 setter
+    Object.defineProperty(input, 'value', {
+        get: function () {
+            // 确保读取时返回字符串（即使原始值为 undefined/null）
+            const originalValue = descriptor.get.call(this);
+            return originalValue != null ? String(originalValue) : '';
+        },
+        set: function (value) {
+            // 显式将值转换为字符串后写入
+            const strValue = String(value);
+            descriptor.set.call(this, strValue);
+            this.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+
+    // 初始化输入框值为空字符串（避免初始值为 undefined）
+    input.value = '';
+}
+document.addEventListener('DOMContentLoaded', hookInput);
 
 // 显示详情 - 修改为支持自定义API
 async function showDetails(id, vod_name, sourceCode) {
@@ -823,12 +1102,12 @@ async function showDetails(id, vod_name, sourceCode) {
         showToast('视频ID无效', 'error');
         return;
     }
-    
+
     showLoading();
     try {
         // 构建API参数
         let apiParams = '';
-        
+
         // 处理自定义API源
         if (sourceCode.startsWith('custom_')) {
             const customIndex = sourceCode.replace('custom_', '');
@@ -838,62 +1117,101 @@ async function showDetails(id, vod_name, sourceCode) {
                 hideLoading();
                 return;
             }
-            
-            apiParams = '&customApi=' + encodeURIComponent(customApi.url) + '&source=custom';
+            // 传递 detail 字段
+            if (customApi.detail) {
+                apiParams = '&customApi=' + encodeURIComponent(customApi.url) + '&customDetail=' + encodeURIComponent(customApi.detail) + '&source=custom';
+            } else {
+                apiParams = '&customApi=' + encodeURIComponent(customApi.url) + '&source=custom';
+            }
         } else {
             // 内置API
             apiParams = '&source=' + sourceCode;
         }
-        
-        const response = await fetch('/api/detail?id=' + encodeURIComponent(id) + apiParams);
-        
+
+        // Add a timestamp to prevent caching
+        const timestamp = new Date().getTime();
+        const cacheBuster = `&_t=${timestamp}`;
+        const response = await fetch(`/api/detail?id=${encodeURIComponent(id)}${apiParams}${cacheBuster}`);
+
         const data = await response.json();
-        
+
         const modal = document.getElementById('modal');
         const modalTitle = document.getElementById('modalTitle');
         const modalContent = document.getElementById('modalContent');
-        
+
         // 显示来源信息
-        const sourceName = data.videoInfo && data.videoInfo.source_name ? 
-            ` <span class="text-sm font-normal text-gray-400">(${data.videoInfo.source_name})</span>` : '';
-        
+        const sourceName = data.videoInfo && data.videoInfo.source_name ?
+            ` <span class="wdtv-modal-source-name">(${data.videoInfo.source_name})</span>` : '';
+
         // 不对标题进行截断处理，允许完整显示
         modalTitle.innerHTML = `<span class="break-words">${vod_name || '未知视频'}</span>${sourceName}`;
         currentVideoTitle = vod_name || '未知视频';
-        
+
         if (data.episodes && data.episodes.length > 0) {
-            // 安全处理集数URL
-            const safeEpisodes = data.episodes.map(url => {
-                try {
-                    // 确保URL是有效的并且是http或https开头
-                    return url && (url.startsWith('http://') || url.startsWith('https://'))
-                        ? url.replace(/"/g, '&quot;')
-                        : '';
-                } catch (e) {
-                    return '';
+            // 构建详情信息HTML
+            let detailInfoHtml = '';
+            if (data.videoInfo) {
+                // Prepare description text, strip HTML and trim whitespace
+                const descriptionText = data.videoInfo.desc ? data.videoInfo.desc.replace(/<[^>]+>/g, '').trim() : '';
+
+                // Check if there's any actual grid content
+                const hasGridContent = data.videoInfo.type || data.videoInfo.year || data.videoInfo.area || data.videoInfo.director || data.videoInfo.actor || data.videoInfo.remarks;
+
+                if (hasGridContent || descriptionText) { // Only build if there's something to show
+                    detailInfoHtml = `
+                <div class="modal-detail-info">
+                    ${hasGridContent ? `
+                    <div class="detail-grid">
+                        ${data.videoInfo.type ? `<div class="detail-item"><span class="detail-label">类型:</span> <span class="detail-value">${data.videoInfo.type}</span></div>` : ''}
+                        ${data.videoInfo.year ? `<div class="detail-item"><span class="detail-label">年份:</span> <span class="detail-value">${data.videoInfo.year}</span></div>` : ''}
+                        ${data.videoInfo.area ? `<div class="detail-item"><span class="detail-label">地区:</span> <span class="detail-value">${data.videoInfo.area}</span></div>` : ''}
+                        ${data.videoInfo.director ? `<div class="detail-item"><span class="detail-label">导演:</span> <span class="detail-value">${data.videoInfo.director}</span></div>` : ''}
+                        ${data.videoInfo.actor ? `<div class="detail-item"><span class="detail-label">主演:</span> <span class="detail-value">${data.videoInfo.actor}</span></div>` : ''}
+                        ${data.videoInfo.remarks ? `<div class="detail-item"><span class="detail-label">备注:</span> <span class="detail-value">${data.videoInfo.remarks}</span></div>` : ''}
+                    </div>` : ''}
+                    ${descriptionText ? `
+                    <div class="detail-desc">
+                        <p class="detail-label">简介:</p>
+                        <p class="detail-desc-content">${descriptionText}</p>
+                    </div>` : ''}
+                </div>
+                `;
                 }
-            }).filter(url => url); // 过滤掉空URL
-            
-            // 保存当前视频的所有集数
-            currentEpisodes = safeEpisodes;
-            episodesReversed = false; // 默认正序
+            }
+
+            currentEpisodes = data.episodes;
+            currentEpisodeIndex = 0;
+
             modalContent.innerHTML = `
-                <div class="flex justify-end mb-2">
-                    <button onclick="toggleEpisodeOrder()" class="px-4 py-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold rounded-full shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center justify-center space-x-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clip-rule="evenodd" />
-                        </svg>
-                        <span>倒序排列</span>
+                ${detailInfoHtml}
+                <div class="flex flex-wrap items-center justify-between mb-4 gap-2">
+                    <div class="flex items-center gap-2">
+                        <button onclick="toggleEpisodeOrder('${sourceCode}', '${id}')"
+                                class="wdtv-modal-mini-btn px-3 py-1.5 text-sm">
+                            <svg class="w-4 h-4 transform ${episodesReversed ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+                            </svg>
+                            <span>${episodesReversed ? '正序排列' : '倒序排列'}</span>
+                        </button>
+                        <span class="episode-stats">共 ${data.episodes.length} 集</span>
+                    </div>
+                    <button onclick="copyLinks()" class="wdtv-modal-primary-btn text-sm">
+                        复制链接
                     </button>
                 </div>
                 <div id="episodesGrid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
-                    ${renderEpisodes(vod_name)}
+                    ${renderEpisodes(vod_name, sourceCode, id)}
                 </div>
             `;
         } else {
-            modalContent.innerHTML = '<p class="text-center text-gray-400 py-8">没有找到可播放的视频</p>';
+            modalContent.innerHTML = `
+                <div class="text-center py-8">
+                    <div class="mb-2" style="color:#e57373;">❌ 未找到播放资源</div>
+                    <div class="text-sm" style="color:rgba(180,200,230,0.65);">该视频可能暂时无法播放，请尝试其他视频</div>
+                </div>
+            `;
         }
-        
+
         modal.classList.remove('hidden');
     } catch (error) {
         console.error('获取详情错误:', error);
@@ -903,8 +1221,8 @@ async function showDetails(id, vod_name, sourceCode) {
     }
 }
 
-// 更新播放视频函数，修改为在新标签页中打开播放页面，并保存到历史记录
-function playVideo(url, vod_name, episodeIndex = 0) {
+// 更新播放视频函数，直接跳转到player.html
+function playVideo(url, vod_name, sourceCode, episodeIndex = 0, vodId = '') {
     // 密码保护校验
     if (window.isPasswordProtected && window.isPasswordVerified) {
         if (window.isPasswordProtected() && !window.isPasswordVerified()) {
@@ -912,72 +1230,101 @@ function playVideo(url, vod_name, episodeIndex = 0) {
             return;
         }
     }
-    if (!url) {
-        showToast('无效的视频链接', 'error');
-        return;
-    }
-    
-    // 获取当前视频来源名称（从模态框标题中提取）
-    let sourceName = '';
-    const modalTitle = document.getElementById('modalTitle');
-    if (modalTitle) {
-        const sourceSpan = modalTitle.querySelector('span.text-gray-400');
-        if (sourceSpan) {
-            // 提取括号内的来源名称, 例如从 "(黑木耳)" 提取 "黑木耳"
-            const sourceText = sourceSpan.textContent;
-            const match = sourceText.match(/\(([^)]+)\)/);
-            if (match && match[1]) {
-                sourceName = match[1].trim();
-            }
+
+    // 获取当前路径作为返回页面
+    let currentPath = window.location.href;
+
+    // 确定返回URL的优先级：1. 当前页面(index/首页) 2. referrer 3. 默认首页
+    let returnUrl = '';
+    if (currentPath.includes('index.html') || currentPath.endsWith('/')) {
+        returnUrl = currentPath;
+    } else {
+        const referrer = document.referrer;
+        if (referrer && referrer.trim() !== '') {
+            returnUrl = referrer;
+        } else {
+            returnUrl = '/';
         }
     }
-    
-    // 保存当前状态到localStorage，让播放页面可以获取
-    const currentVideoTitle = vod_name;
-    localStorage.setItem('currentVideoTitle', currentVideoTitle);
-    localStorage.setItem('currentEpisodeIndex', episodeIndex);
-    localStorage.setItem('currentEpisodes', JSON.stringify(currentEpisodes));
-    localStorage.setItem('episodesReversed', episodesReversed);
-    
-    // 构建视频信息对象，使用标题作为唯一标识
-    const videoTitle = vod_name || currentVideoTitle;
-    const videoInfo = {
-        title: videoTitle,
-        url: url,
-        episodeIndex: episodeIndex,
-        sourceName: sourceName,
-        timestamp: Date.now(),
-        // 重要：将完整的剧集信息也添加到历史记录中
-        episodes: currentEpisodes && currentEpisodes.length > 0 ? [...currentEpisodes] : []
-    };
-    
-    // 保存到观看历史，添加sourceName
-    if (typeof addToViewingHistory === 'function') {
-        addToViewingHistory(videoInfo);
+
+    // 构建播放页面URL，直接跳转到player.html
+    let playerUrl = `player.html?id=${vodId || ''}&source=${sourceCode || ''}&url=${encodeURIComponent(url)}&index=${episodeIndex}&title=${encodeURIComponent(vod_name || '')}&returnUrl=${encodeURIComponent(returnUrl)}`;
+
+    // 保存当前状态到localStorage
+    try {
+        localStorage.setItem('currentVideoTitle', vod_name || '未知视频');
+        localStorage.setItem('currentEpisodes', JSON.stringify(currentEpisodes));
+        localStorage.setItem('currentEpisodeIndex', episodeIndex);
+        localStorage.setItem('currentSourceCode', sourceCode || '');
+        localStorage.setItem('lastPlayTime', Date.now());
+        localStorage.setItem('lastSearchPage', currentPath);
+        localStorage.setItem('lastPageUrl', returnUrl);  // 确保保存返回页面URL
+    } catch (e) {
+        console.error('保存播放状态失败:', e);
     }
-    
-    // 构建播放页面URL，传递必要参数
-    const playerUrl = `player.html?url=${encodeURIComponent(url)}&title=${encodeURIComponent(videoTitle)}&index=${episodeIndex}&source=${encodeURIComponent(sourceName)}`;
-    
-    // 在新标签页中打开播放页面
-    window.open(playerUrl, '_blank');
+
+    // 在当前标签页中打开播放页面
+    window.location.href = playerUrl;
+}
+
+// 弹出播放器页面
+function showVideoPlayer(url) {
+    // 在打开播放器前，隐藏详情弹窗
+    const detailModal = document.getElementById('modal');
+    if (detailModal) {
+        detailModal.classList.add('hidden');
+    }
+    // 临时隐藏搜索结果和豆瓣区域，防止高度超出播放器而出现滚动条
+    document.getElementById('resultsArea').classList.add('hidden');
+    document.getElementById('doubanArea').classList.add('hidden');
+    // 在框架中打开播放页面
+    videoPlayerFrame = document.createElement('iframe');
+    videoPlayerFrame.id = 'VideoPlayerFrame';
+    videoPlayerFrame.className = 'fixed w-full h-screen z-40';
+    videoPlayerFrame.src = url;
+    document.body.appendChild(videoPlayerFrame);
+    // 将焦点移入iframe
+    videoPlayerFrame.focus();
+}
+
+// 关闭播放器页面
+function closeVideoPlayer(home = false) {
+    videoPlayerFrame = document.getElementById('VideoPlayerFrame');
+    if (videoPlayerFrame) {
+        videoPlayerFrame.remove();
+        // 恢复搜索结果显示
+        document.getElementById('resultsArea').classList.remove('hidden');
+        // 关闭播放器时也隐藏详情弹窗
+        const detailModal = document.getElementById('modal');
+        if (detailModal) {
+            detailModal.classList.add('hidden');
+        }
+        // 如果启用豆瓣区域则显示豆瓣区域
+        if (localStorage.getItem('doubanEnabled') === 'true') {
+            document.getElementById('doubanArea').classList.remove('hidden');
+        }
+    }
+    if (home) {
+        // 刷新主页
+        window.location.href = '/'
+    }
 }
 
 // 播放上一集
-function playPreviousEpisode() {
+function playPreviousEpisode(sourceCode) {
     if (currentEpisodeIndex > 0) {
         const prevIndex = currentEpisodeIndex - 1;
         const prevUrl = currentEpisodes[prevIndex];
-        playVideo(prevUrl, currentVideoTitle, prevIndex);
+        playVideo(prevUrl, currentVideoTitle, sourceCode, prevIndex);
     }
 }
 
 // 播放下一集
-function playNextEpisode() {
+function playNextEpisode(sourceCode) {
     if (currentEpisodeIndex < currentEpisodes.length - 1) {
         const nextIndex = currentEpisodeIndex + 1;
         const nextUrl = currentEpisodes[nextIndex];
-        playVideo(nextUrl, currentVideoTitle, nextIndex);
+        playVideo(nextUrl, currentVideoTitle, sourceCode, nextIndex);
     }
 }
 
@@ -988,31 +1335,42 @@ function handlePlayerError() {
 }
 
 // 辅助函数用于渲染剧集按钮（使用当前的排序状态）
-function renderEpisodes(vodName) {
+function renderEpisodes(vodName, sourceCode, vodId) {
     const episodes = episodesReversed ? [...currentEpisodes].reverse() : currentEpisodes;
     return episodes.map((episode, index) => {
         // 根据倒序状态计算真实的剧集索引
         const realIndex = episodesReversed ? currentEpisodes.length - 1 - index : index;
         return `
-            <button id="episode-${realIndex}" onclick="playVideo('${episode}','${vodName.replace(/"/g, '&quot;')}', ${realIndex})" 
-                    class="px-4 py-2 bg-[#222] hover:bg-[#333] border border-[#333] rounded-lg transition-colors text-center episode-btn">
-                第${realIndex + 1}集
+            <button id="episode-${realIndex}" onclick="playVideo('${episode}','${vodName.replace(/"/g, '&quot;')}', '${sourceCode}', ${realIndex}, '${vodId}')"
+                    class="wdtv-episode-btn px-4 py-2 text-center">
+                ${realIndex + 1}
             </button>
         `;
     }).join('');
 }
 
+// 复制视频链接到剪贴板
+function copyLinks() {
+    const episodes = episodesReversed ? [...currentEpisodes].reverse() : currentEpisodes;
+    const linkList = episodes.join('\r\n');
+    navigator.clipboard.writeText(linkList).then(() => {
+        showToast('播放链接已复制', 'success');
+    }).catch(err => {
+        showToast('复制失败，请检查浏览器权限', 'error');
+    });
+}
+
 // 切换排序状态的函数
-function toggleEpisodeOrder() {
+function toggleEpisodeOrder(sourceCode, vodId) {
     episodesReversed = !episodesReversed;
     // 重新渲染剧集区域，使用 currentVideoTitle 作为视频标题
     const episodesGrid = document.getElementById('episodesGrid');
     if (episodesGrid) {
-        episodesGrid.innerHTML = renderEpisodes(currentVideoTitle);
+        episodesGrid.innerHTML = renderEpisodes(currentVideoTitle, sourceCode, vodId);
     }
-    
+
     // 更新按钮文本和箭头方向
-    const toggleBtn = document.querySelector('button[onclick="toggleEpisodeOrder()"]');
+    const toggleBtn = document.querySelector(`button[onclick="toggleEpisodeOrder('${sourceCode}', '${vodId}')"]`);
     if (toggleBtn) {
         toggleBtn.querySelector('span').textContent = episodesReversed ? '正序排列' : '倒序排列';
         const arrowIcon = toggleBtn.querySelector('svg');
@@ -1022,14 +1380,223 @@ function toggleEpisodeOrder() {
     }
 }
 
-// app.js 或路由文件中
-const authMiddleware = require('./middleware/auth');
-const config = require('./config');
+// 从URL导入配置
+async function importConfigFromUrl() {
+    // 创建模态框元素
+    let modal = document.getElementById('importUrlModal');
+    if (modal) {
+        document.body.removeChild(modal);
+    }
 
-// 对所有请求启用鉴权（按需调整作用范围）
-if (config.auth.enabled) {
-  app.use(authMiddleware);
+    modal = document.createElement('div');
+    modal.id = 'importUrlModal';
+    modal.className = 'fixed inset-0 flex items-center justify-center z-40';
+    modal.style.background = 'rgba(255, 255, 255, 0.5)';
+    modal.style.backdropFilter = 'blur(20px) saturate(180%)';
+    modal.style.webkitBackdropFilter = 'blur(20px) saturate(180%)';
+
+    modal.innerHTML = `
+        <div class="max-w-md w-full max-h-[90vh] overflow-y-auto relative" style="background: rgba(255,255,255,0.85); backdrop-filter: blur(50px) saturate(200%); -webkit-backdrop-filter: blur(50px) saturate(200%); border: 1px solid rgba(255,255,255,0.9); border-radius: 24px; padding: 1.5rem; box-shadow: 0 24px 80px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.95); color: #1d1d1f;">
+            <button id="closeUrlModal" style="position: absolute; top: 1rem; right: 1rem; width: 2rem; height: 2rem; border-radius: 9999px; background: rgba(255,255,255,0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.85); color: #6e6e73; font-size: 1.25rem; box-shadow: 0 2px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.95);">&times;</button>
+
+            <h3 style="font-size: 1.25rem; font-weight: 700; color: #1d1d1f; margin-bottom: 1rem;">从URL导入配置</h3>
+
+            <div style="margin-bottom: 1rem;">
+                <input type="text" id="configUrl" placeholder="输入配置文件URL"
+                       style="width: 100%; padding: 0.5rem 1rem; background: rgba(255,255,255,0.6); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.8); border-radius: 9999px; color: #1d1d1f; outline: none;">
+            </div>
+            
+            <div class="flex justify-end space-x-2">
+                <button id="confirmUrlImport" class="ios-primary-button">导入</button>
+                <button id="cancelUrlImport" class="ios-secondary-button">取消</button>
+            </div>
+        </div>`;
+
+    document.body.appendChild(modal);
+
+    // 关闭按钮事件
+    document.getElementById('closeUrlModal').addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
+
+    // 取消按钮事件
+    document.getElementById('cancelUrlImport').addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
+
+    // 确认导入按钮事件
+    document.getElementById('confirmUrlImport').addEventListener('click', async () => {
+        const url = document.getElementById('configUrl').value.trim();
+        if (!url) {
+            showToast('请输入配置文件URL', 'warning');
+            return;
+        }
+
+        // 验证URL格式
+        try {
+            const urlObj = new URL(url);
+            if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+                showToast('URL必须以http://或https://开头', 'warning');
+                return;
+            }
+        } catch (e) {
+            showToast('URL格式不正确', 'warning');
+            return;
+        }
+
+        showLoading('正在从URL导入配置...');
+
+        try {
+            // 获取配置文件 - 直接请求URL
+            const response = await fetch(url, {
+                mode: 'cors',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+            if (!response.ok) throw '获取配置文件失败';
+
+            // 验证响应内容类型
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                throw '响应不是有效的JSON格式';
+            }
+
+            const config = await response.json();
+            if (config.name !== 'WDTV-Settings') throw '配置文件格式不正确';
+
+            // 验证哈希
+            const dataHash = await sha256(JSON.stringify(config.data));
+            if (dataHash !== config.hash) throw '配置文件哈希值不匹配';
+
+            // 导入配置
+            for (let item in config.data) {
+                localStorage.setItem(item, config.data[item]);
+            }
+
+            showToast('配置文件导入成功，3 秒后自动刷新本页面。', 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+        } catch (error) {
+            const message = typeof error === 'string' ? error : '导入配置失败';
+            showToast(`从URL导入配置出错 (${message})`, 'error');
+        } finally {
+            hideLoading();
+            document.body.removeChild(modal);
+        }
+    });
+
+    // 点击模态框外部关闭
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            document.body.removeChild(modal);
+        }
+    });
 }
 
-// 或者针对特定路由
-app.use('/api', authMiddleware);
+// 配置文件导入功能
+async function importConfig() {
+    showImportBox(async (file) => {
+        try {
+            // 检查文件类型
+            if (!(file.type === 'application/json' || file.name.endsWith('.json'))) throw '文件类型不正确';
+
+            // 检查文件大小
+            if (file.size > 1024 * 1024 * 10) throw new Error('文件大小超过 10MB');
+
+            // 读取文件内容
+            const content = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject('文件读取失败');
+                reader.readAsText(file);
+            });
+
+            // 解析并验证配置
+            const config = JSON.parse(content);
+            if (config.name !== 'WDTV-Settings') throw '配置文件格式不正确';
+
+            // 验证哈希
+            const dataHash = await sha256(JSON.stringify(config.data));
+            if (dataHash !== config.hash) throw '配置文件哈希值不匹配';
+
+            // 导入配置
+            for (let item in config.data) {
+                localStorage.setItem(item, config.data[item]);
+            }
+
+            showToast('配置文件导入成功，3 秒后自动刷新本页面。', 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+        } catch (error) {
+            const message = typeof error === 'string' ? error : '配置文件格式错误';
+            showToast(`配置文件读取出错 (${message})`, 'error');
+        }
+    });
+}
+
+// 配置文件导出功能
+async function exportConfig() {
+    // 存储配置数据
+    const config = {};
+    const items = {};
+
+    const settingsToExport = [
+        'selectedAPIs',
+        'customAPIs',
+        'yellowFilterEnabled',
+        'adFilteringEnabled',
+        'doubanEnabled',
+        'hasInitializedDefaults'
+    ];
+
+    // 导出设置项
+    settingsToExport.forEach(key => {
+        const value = localStorage.getItem(key);
+        if (value !== null) {
+            items[key] = value;
+        }
+    });
+
+    // 导出历史记录
+    const viewingHistory = localStorage.getItem('viewingHistory');
+    if (viewingHistory) {
+        items['viewingHistory'] = viewingHistory;
+    }
+
+    const searchHistory = localStorage.getItem(SEARCH_HISTORY_KEY);
+    if (searchHistory) {
+        items[SEARCH_HISTORY_KEY] = searchHistory;
+    }
+
+    const times = Date.now().toString();
+    config['name'] = 'WDTV-Settings';  // 配置文件名，用于校验
+    config['time'] = times;               // 配置文件生成时间
+    config['cfgVer'] = '1.0.0';           // 配置文件版本
+    config['data'] = items;               // 配置文件数据
+    config['hash'] = await sha256(JSON.stringify(config['data']));  // 计算数据的哈希值，用于校验
+
+    // 将配置数据保存为 JSON 文件
+    saveStringAsFile(JSON.stringify(config), 'WDTV-Settings_' + times + '.json');
+}
+
+// 将字符串保存为文件
+function saveStringAsFile(content, fileName) {
+    // 创建Blob对象并指定类型
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    // 生成临时URL
+    const url = window.URL.createObjectURL(blob);
+    // 创建<a>标签并触发下载
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    // 清理临时对象
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+}
+
+// 移除Node.js的require语句，因为这是在浏览器环境中运行的

@@ -5,64 +5,79 @@
  * 通过读取页面上嵌入的环境变量来检查
  */
 function isPasswordProtected() {
-    // 检查页面上嵌入的环境变量
-    const pwd = window.__ENV__ && window.__ENV__.PASSWORD;
-    // 只有当密码 hash 存在且为64位（SHA-256十六进制长度）才认为启用密码保护
-    return typeof pwd === 'string' && pwd.length === 64 && !/^0+$/.test(pwd);
+    return false;
 }
 
 /**
- * 检查用户是否已通过密码验证
- * 检查localStorage中的验证状态和时间戳是否有效，并确认密码哈希未更改
+ * 检查是否强制要求设置密码
+ * 如果没有设置有效的 PASSWORD，则认为需要强制设置密码
+ * 为了安全考虑，所有部署都必须设置密码
  */
-function isPasswordVerified() {
-    try {
-        // 如果没有设置密码保护，则视为已验证
-        if (!isPasswordProtected()) {
-            return true;
-        }
+function isPasswordRequired() {
+    return false;
+}
 
-        const verificationData = JSON.parse(localStorage.getItem(PASSWORD_CONFIG.localStorageKey) || '{}');
-        const { verified, timestamp, passwordHash } = verificationData;
-        
-        // 获取当前环境中的密码哈希
-        const currentHash = window.__ENV__ && window.__ENV__.PASSWORD;
-        
-        // 验证是否已验证、未过期，且密码哈希未更改
-        if (verified && timestamp && passwordHash === currentHash) {
-            const now = Date.now();
-            const expiry = timestamp + PASSWORD_CONFIG.verificationTTL;
-            return now < expiry;
-        }
-        
-        return false;
-    } catch (error) {
-        console.error('验证密码状态时出错:', error);
-        return false;
-    }
+/**
+ * 强制密码保护检查 - 防止绕过
+ * 在关键操作前都应该调用此函数
+ */
+function ensurePasswordProtection() {
+    return true;
 }
 
 window.isPasswordProtected = isPasswordProtected;
-window.isPasswordVerified = isPasswordVerified;
+window.isPasswordRequired = isPasswordRequired;
 
 /**
  * 验证用户输入的密码是否正确（异步，使用SHA-256哈希）
  */
 async function verifyPassword(password) {
-    const correctHash = window.__ENV__ && window.__ENV__.PASSWORD;
-    if (!correctHash) return false;
-    const inputHash = await sha256(password);
-    const isValid = inputHash === correctHash;
-    if (isValid) {
-        const verificationData = {
-            verified: true,
-            timestamp: Date.now(),
-            passwordHash: correctHash // 保存当前密码的哈希值
-        };
-        localStorage.setItem(PASSWORD_CONFIG.localStorageKey, JSON.stringify(verificationData));
+    try {
+        const correctHash = window.__ENV__?.PASSWORD;
+        if (!correctHash) return false;
+
+        const inputHash = await sha256(password);
+        const isValid = inputHash === correctHash;
+
+        if (isValid) {
+            localStorage.setItem(PASSWORD_CONFIG.localStorageKey, JSON.stringify({
+                verified: true,
+                timestamp: Date.now(),
+                passwordHash: correctHash
+            }));
+        }
+        return isValid;
+    } catch (error) {
+        console.error('验证密码时出错:', error);
+        return false;
     }
-    return isValid;
 }
+
+// 验证状态检查
+function isPasswordVerified() {
+    try {
+        if (!isPasswordProtected()) return true;
+
+        const stored = localStorage.getItem(PASSWORD_CONFIG.localStorageKey);
+        if (!stored) return false;
+
+        const { timestamp, passwordHash } = JSON.parse(stored);
+        const currentHash = window.__ENV__?.PASSWORD;
+
+        return timestamp && passwordHash === currentHash &&
+            Date.now() - timestamp < PASSWORD_CONFIG.verificationTTL;
+    } catch (error) {
+        console.error('检查密码验证状态时出错:', error);
+        return false;
+    }
+}
+
+// 更新全局导出
+window.isPasswordProtected = isPasswordProtected;
+window.isPasswordRequired = isPasswordRequired;
+window.isPasswordVerified = isPasswordVerified;
+window.verifyPassword = verifyPassword;
+window.ensurePasswordProtection = ensurePasswordProtection;
 
 // SHA-256实现，可用Web Crypto API
 async function sha256(message) {
@@ -85,15 +100,50 @@ async function sha256(message) {
 function showPasswordModal() {
     const passwordModal = document.getElementById('passwordModal');
     if (passwordModal) {
-        passwordModal.style.display = 'flex';
-        
-        // 确保输入框获取焦点
-        setTimeout(() => {
-            const passwordInput = document.getElementById('passwordInput');
-            if (passwordInput) {
-                passwordInput.focus();
+        // 防止出现豆瓣区域滚动条
+        document.getElementById('doubanArea').classList.add('hidden');
+        document.getElementById('passwordCancelBtn').classList.add('hidden');
+
+        // 检查是否需要强制设置密码
+        if (isPasswordRequired()) {
+            // 修改弹窗内容提示用户需要先设置密码
+            const title = passwordModal.querySelector('h2');
+            const description = passwordModal.querySelector('p');
+            if (title) title.textContent = '需要设置密码';
+            if (description) description.textContent = '请先在部署平台设置 PASSWORD 环境变量来保护您的实例';
+            
+            // 隐藏密码输入框和提交按钮，只显示提示信息
+            const form = passwordModal.querySelector('form');
+            const errorMsg = document.getElementById('passwordError');
+            if (form) form.style.display = 'none';
+            if (errorMsg) {
+                errorMsg.textContent = '为确保安全，必须设置 PASSWORD 环境变量才能使用本服务，请联系管理员进行配置';
+                errorMsg.classList.remove('hidden');
+                errorMsg.className = 'text-red-500 mt-2 font-medium'; // 改为更醒目的红色
             }
-        }, 100);
+        } else {
+            // 正常的密码验证模式
+            const title = passwordModal.querySelector('h2');
+            const description = passwordModal.querySelector('p');
+            if (title) title.textContent = '访问验证';
+            if (description) description.textContent = '请输入密码继续访问';
+            
+            const form = passwordModal.querySelector('form');
+            if (form) form.style.display = 'block';
+        }
+
+        passwordModal.style.display = 'flex';
+
+        // 只有在非强制设置密码模式下才聚焦输入框
+        if (!isPasswordRequired()) {
+            // 确保输入框获取焦点
+            setTimeout(() => {
+                const passwordInput = document.getElementById('passwordInput');
+                if (passwordInput) {
+                    passwordInput.focus();
+                }
+            }, 100);
+        }
     }
 }
 
@@ -103,7 +153,20 @@ function showPasswordModal() {
 function hidePasswordModal() {
     const passwordModal = document.getElementById('passwordModal');
     if (passwordModal) {
+        // 隐藏密码错误提示
+        hidePasswordError();
+
+        // 清空密码输入框
+        const passwordInput = document.getElementById('passwordInput');
+        if (passwordInput) passwordInput.value = '';
+
         passwordModal.style.display = 'none';
+
+        // 如果启用豆瓣区域则显示豆瓣区域
+        if (localStorage.getItem('doubanEnabled') === 'true') {
+            document.getElementById('doubanArea').classList.remove('hidden');
+            initDouban();
+        }
     }
 }
 
@@ -134,8 +197,10 @@ async function handlePasswordSubmit() {
     const passwordInput = document.getElementById('passwordInput');
     const password = passwordInput ? passwordInput.value.trim() : '';
     if (await verifyPassword(password)) {
-        hidePasswordError();
         hidePasswordModal();
+
+        // 触发密码验证成功事件
+        document.dispatchEvent(new CustomEvent('passwordVerified'));
     } else {
         showPasswordError();
         if (passwordInput) {
@@ -146,34 +211,14 @@ async function handlePasswordSubmit() {
 }
 
 /**
- * 初始化密码验证系统（需适配异步事件）
+ * 初始化密码验证系统
  */
 function initPasswordProtection() {
-    if (!isPasswordProtected()) {
-        return; // 如果未设置密码保护，则不进行任何操作
-    }
-    
-    // 如果未验证密码，则显示密码验证弹窗
-    if (!isPasswordVerified()) {
-        showPasswordModal();
-        
-        // 设置密码提交按钮事件监听
-        const submitButton = document.getElementById('passwordSubmitBtn');
-        if (submitButton) {
-            submitButton.addEventListener('click', handlePasswordSubmit);
-        }
-        
-        // 设置密码输入框回车键监听
-        const passwordInput = document.getElementById('passwordInput');
-        if (passwordInput) {
-            passwordInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    handlePasswordSubmit();
-                }
-            });
-        }
-    }
+    // 密码保护功能已默认关闭
+    return;
 }
 
 // 在页面加载完成后初始化密码保护
-document.addEventListener('DOMContentLoaded', initPasswordProtection);
+document.addEventListener('DOMContentLoaded', function () {
+    initPasswordProtection();
+});
