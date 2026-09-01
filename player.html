@@ -116,9 +116,14 @@
     /* 小屏不再隐藏背景图面板（#gw-slot），与桌面端保持一致；
        小屏性能优化：背景图显示后每帧都要叠加水波画布，裁掉昂贵的合成特效（全屏面板的边缘渐隐在移动端不可见，着色层改用普通半透明叠加） */
     #gw-pane{-webkit-mask-image:none;mask-image:none}
+    /* 空白处触摸不被浏览器接管为滚动手势，保证滑动持续触发水波（播放器等内容区不受影响，正常滚动） */
+    #gw-slot{touch-action:none}
     .gw-img{filter:none}
     .gw-grade-c{mix-blend-mode:normal}
     .gw-grade-s{mix-blend-mode:normal}
+
+    /* 平板等宽屏触摸设备：与手机一样走 bg 模式，背景空白处滑动不被浏览器接管，保证持续触发水波 */
+    @media (pointer:coarse){#gw-slot{touch-action:none}}
 
     /* === FX OFF（动态效果关闭模式：停用动画与背景水滴/水波特效） ===
        注意：不改动任何窗口/控件的玻璃样式（backdrop-filter、阴影等全部保留） */
@@ -498,6 +503,7 @@
     function R(a,b){return a+Math.random()*(b-a)}
     var REDUCED=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     var mqSmall=window.matchMedia?window.matchMedia('(max-width:900px)'):{matches:false};
+    var mqCoarse=window.matchMedia?window.matchMedia('(pointer:coarse)').matches:false;
     var W=0,H=0,img=null;var REFRACT_OK=true;
     var SW=0,SH=0,h1=null,h2=null,bgData=null,outImg=null;
     var rippleScale=1;
@@ -542,7 +548,7 @@
     function rebuildBg(){if(!img)return false;var iw=img.naturalWidth,ih=img.naturalHeight;if(!iw||!ih)return false;var scale=Math.max(W/iw,H/ih);var sw=W/scale,sh=H/scale;var sx=(iw-sw)/2,sy=(ih-sh)/2;var tmp=document.createElement('canvas');tmp.width=SW;tmp.height=SH;var tc=tmp.getContext('2d');tc.drawImage(img,sx,sy,sw,sh,0,0,SW,SH);try{bgData=tc.getImageData(0,0,SW,SH);REFRACT_OK=true;slot.classList.remove('gw-gloss')}catch(_){bgData=null;REFRACT_OK=false;slot.classList.add('gw-gloss')}outImg=simCtx.createImageData(SW,SH);return true}
     function retarget(m){if(m==='pane'){var r=pane.getBoundingClientRect();if(r.width<2||r.height<2)return false;W=r.width;H=r.height;rcv.width=Math.round(W*dpr);rcv.height=Math.round(H*dpr);if(fogCv){fogCv.width=Math.round(W*dpr);fogCv.height=Math.round(H*dpr);fog.setTransform(dpr,0,0,dpr,0,0);redrawFog()}gridFit();return rebuildBg()}W=window.innerWidth;H=window.innerHeight;if(W<2||H<2)return false;bscale=Math.min(dpr,1.5);bgcv.width=Math.round(W*bscale);bgcv.height=Math.round(H*bscale);gridFit();outImg=simCtx.createImageData(SW,SH);for(var k=0;k<3;k++)poke(R(2,SW-2),R(2,SH-2),R(0.5,1.1),2);return true}
     var mode=null,tgtOk=false,shownP=false,shownB=false;
-    function computeMode(){return mqSmall.matches?'bg':'pane'}
+    function computeMode(){return mqSmall.matches||mqCoarse?'bg':'pane'}
     function idleNow(){if(document.hidden)return true;return false}
     var last=0,stepAcc=0;
     function loop(ts){requestAnimationFrame(loop);var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}if(!tgtOk||idleNow()){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}
