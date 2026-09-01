@@ -91,13 +91,12 @@ function validateProxyAuth(authHash, serverPasswordHash, timestamp) {
         return false;
     }
     
-    // 验证时间戳（10分钟有效期）
+    // 验证时间戳（10分钟有效期）：只告警不拒绝，避免设备时钟偏差导致误判过期
     const now = Date.now();
     const maxAge = 10 * 60 * 1000; // 10分钟
     
     if (timestamp && (now - parseInt(timestamp)) > maxAge) {
-        console.warn('代理请求时间戳过期');
-        return false;
+        console.warn('代理请求时间戳过期（可能为设备时钟偏差），继续放行');
     }
     
     return true;
