@@ -503,7 +503,7 @@
     function R(a,b){return a+Math.random()*(b-a)}
     var REDUCED=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     var mqSmall=window.matchMedia?window.matchMedia('(max-width:900px)'):{matches:false};
-    var mqCoarse=window.matchMedia?window.matchMedia('(pointer:coarse)').matches:false;
+    var mqCoarse=!!(window.matchMedia&&window.matchMedia('(pointer:coarse)').matches)||('ontouchstart' in window);
     var W=0,H=0,img=null;var REFRACT_OK=true;
     var SW=0,SH=0,h1=null,h2=null,bgData=null,outImg=null;
     var rippleScale=1;
