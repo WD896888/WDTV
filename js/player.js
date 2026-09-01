@@ -1006,7 +1006,7 @@ function renderEpisodes() {
         html += `
             <button id="episode-${realIndex}"
                     onclick="playEpisode(${realIndex})"
-                    class="episode-btn-glass px-4 py-2 ${isActive ? 'episode-active' : ''} text-center">
+                    class="episode-btn-glass py-1.5 ${isActive ? 'episode-active' : ''} text-center">
                 ${realIndex + 1}
             </button>
         `;

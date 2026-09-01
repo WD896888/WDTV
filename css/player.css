@@ -152,7 +152,9 @@ body, html {
     border: 1px solid rgba(255,255,255,0.2) !important;
     color: #2a3a5c !important;
     border-radius: 8px !important;
-    padding: 0.5rem 0.75rem !important;
+    padding: 0.35rem 0.25rem !important;
+    font-size: 0.9rem !important;
+    min-width: 0 !important;
     transition: all 0.2s cubic-bezier(0.4,0,0.2,1) !important;
     box-shadow: none !important;
     text-shadow: none !important;
