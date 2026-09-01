@@ -246,7 +246,7 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-footer-right a:hover{color:var(--accent-light)}
 
 /* WDTV Modal - Liquid Glass (match history/settings panels) */
-.wdtv-modal-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:10000;background:rgba(200,220,245,0.25);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5)}
+.wdtv-modal-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:10000;background:rgba(200,220,245,0.25)}
 .wdtv-modal-overlay:not(.hidden){display:flex}
 .wdtv-modal{background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border:1px solid rgba(200,220,245,0.42);box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1);color:rgba(236,244,255,0.96);border-radius:20px;padding:22px 28px;width:min(1100px,94vw);max-height:90vh;display:flex;flex-direction:column}
 #modal>.wdtv-modal{background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border:1px solid rgba(200,220,245,0.42);box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1)}
@@ -256,10 +256,8 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-modal-source-name{font-size:0.85rem;font-weight:400;color:rgba(180,200,230,0.7);margin-left:8px;font-family:'Noto Sans SC',sans-serif;letter-spacing:0.02em}
 .wdtv-modal-close{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:transparent;border:none;color:rgba(222,234,250,0.92);cursor:pointer;transition:all 0.2s;flex-shrink:0;font-size:1.4rem;line-height:1}
 .wdtv-modal-close:hover{color:#fff}
-.wdtv-modal-body{overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(180,200,230,0.35) transparent}
-.wdtv-modal-body::-webkit-scrollbar{width:6px}
-.wdtv-modal-body::-webkit-scrollbar-track{background:transparent}
-.wdtv-modal-body::-webkit-scrollbar-thumb{background:rgba(180,200,230,0.35);border-radius:4px}
+.wdtv-modal-body{overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain;scrollbar-width:none}
+.wdtv-modal-body::-webkit-scrollbar{display:none}
 /* WDTV Modal detail hero: 左封面 + 右信息，无内部滚动 */
 #modal .wdtv-detail-hero{display:flex;gap:18px;align-items:flex-start;margin-bottom:14px}
 #modal .wdtv-detail-cover{width:150px;aspect-ratio:2/3;flex-shrink:0;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.35);box-shadow:0 10px 28px rgba(0,0,0,0.22);background:rgba(255,255,255,0.25)}
@@ -280,11 +278,14 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-modal-mini-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
 .wdtv-modal-primary-btn{padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-size:0.82rem;font-weight:500;cursor:pointer;font-family:'Noto Serif SC',serif;letter-spacing:0.04em;transition:all 0.2s;text-shadow:none}
 .wdtv-modal-primary-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
-.wdtv-episode-btn{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;border-radius:8px;padding:7px 4px;font-family:'Noto Serif SC',serif;font-size:0.85rem;transition:all 0.2s;cursor:pointer;text-shadow:none;text-align:center}
+.wdtv-episode-btn{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;border-radius:8px;padding:7px 4px;font-family:'Noto Serif SC',serif;font-size:0.85rem;transition:background-color 0.2s,border-color 0.2s;cursor:pointer;text-shadow:none;text-align:center}
 .wdtv-episode-btn:hover{background:rgba(255,255,255,0.45);border-color:rgba(255,255,255,0.4)}
 #episodesGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px}
 #episodesGrid .wdtv-episode-btn{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;box-shadow:none;min-width:0}
-#episodesGrid .wdtv-episode-btn:hover{background:rgba(255,255,255,0.45);border-color:rgba(255,255,255,0.4);color:#2a3a5c;transform:translateY(-1px);box-shadow:none}
+#episodesGrid .wdtv-episode-btn:hover{background:rgba(255,255,255,0.45);border-color:rgba(255,255,255,0.4);color:#2a3a5c;box-shadow:none}
+/* 弹窗打开时冻结背景动效：背景静止后 backdrop-filter 结果可被缓存，弹窗内滚动才流畅 */
+body:has(#modal:not(.hidden)) .splash-glow{animation-play-state:paused}
+body:has(#modal:not(.hidden)) #splash{backdrop-filter:none;-webkit-backdrop-filter:none;transition:none}
 @media(max-width:640px){
 .wdtv-modal{padding:14px 16px;border-radius:16px}
 .wdtv-modal-header h2{font-size:1.15rem}
@@ -403,8 +404,7 @@ html.fx-off{scroll-behavior:auto}
 html.fx-off *{animation:none!important;transition:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;text-shadow:none!important;box-shadow:none!important;filter:none!important}
 html.fx-off #preloader,html.fx-off #rain-container,html.fx-off #gw-slot,html.fx-off #gw-ripple-bg{display:none!important}
 
-/* FX OFF 豁免：选集弹窗与两侧侧边栏窗口保持原有玻璃样式（打开时才渲染，不影响首页持续性能） */
-html.fx-off .wdtv-modal-overlay{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important}
+/* FX OFF 豁免：选集弹窗与两侧侧边栏窗口保持原有玻璃样式（打开时才渲染，不影响首页持续性能；遮罩层不再加 blur） */
 html.fx-off .wdtv-disclaimer-modal{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.25)!important}
 html.fx-off .wdtv-disclaimer-box{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.13)!important;border:1px solid rgba(200,220,245,0.42)!important;box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1)!important}
 html.fx-off .wdtv-modal,html.fx-off #modal>.wdtv-modal{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.13)!important;border:1px solid rgba(200,220,245,0.42)!important;box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1)!important}
@@ -765,13 +765,14 @@ window.addEventListener('pageshow', function(event) {
     drops.length=0;
     for(var i=0;i<45;i++){var d={};reset(d);drops.push(d)}
   }
-  var last=0,rafId=null;
+  var last=0,rafId=null,rainHeld=false;
   function fxOff(){return document.documentElement.classList.contains('fx-off')}
   function loop(ts){
     if(fxOff()){rafId=null;return}
     rafId=requestAnimationFrame(loop);
     var mo=document.getElementById('modal');
-    if(mo&&!mo.classList.contains('hidden')){ctx.clearRect(0,0,W,H);last=ts;return}
+    if(mo&&!mo.classList.contains('hidden')){if(!rainHeld){ctx.clearRect(0,0,W,H);rainHeld=true}last=ts;return}
+    rainHeld=false;
     var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);ctx.lineCap='round';
     for(var i=0;i<drops.length;i++){
