@@ -8,6 +8,24 @@ WDTV 全局样式 - Apple iOS 26 液态玻璃风格
 - modals.css: 模态框和提示框样式
 */
 
+/* 全局禁用文本选中：仅输入框（input/textarea/可编辑元素）允许选择文字 */
+* {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+[contenteditable=""] {
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+    user-select: text !important;
+}
+
 :root {
     /* 液态玻璃主题配色方案 - 浅色版 */
     --primary-color: #007aff;            /* iOS 系统蓝 */

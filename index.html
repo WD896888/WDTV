@@ -379,7 +379,9 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 #gw-fogwipe{z-index:5}
 @media (max-width:900px){
 /* 小屏性能优化：背景图显示后每帧都要叠加水波画布，裁掉昂贵的合成特效（全屏面板的边缘渐隐在移动端不可见，着色层改用普通半透明叠加） */
-#gw-pane{-webkit-mask-image:none;mask-image:none}
+#gw-pane{-webkit-mask-image:none;mask-image:none;border-radius:0}
+/* 空白处触摸不被浏览器接管为滚动手势，保证滑动持续触发水波（封面等内容区不受影响，正常滚动） */
+#gw-slot{touch-action:none}
 .gw-img{filter:none}
 .gw-grade-c{mix-blend-mode:normal}
 .gw-grade-s{mix-blend-mode:normal}}
@@ -855,7 +857,8 @@ function toSim(e){if(mode==='pane'){var r=pane.getBoundingClientRect();if(r.widt
 function stir(e){if(!(e.buttons&1))return;if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;var lp=stirPts[e.pointerId];if(!lp){stirPts[e.pointerId]={x:p.x,y:p.y};return}var dx=p.x-lp.x,dy=p.y-lp.y;var d=Math.sqrt(dx*dx+dy*dy);if(d<1.15)return;var steps=Math.min(6,Math.ceil(d/1.5));var s=Math.min(0.55,0.12+d*0.05);for(var i=1;i<=steps;i++)poke(lp.x+dx*i/steps,lp.y+dy*i/steps,s*MOUSE_STR_MAG,1.7*MOUSE_MAG);lp.x=p.x;lp.y=p.y}
 function tap(e){if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;stirPts[e.pointerId]={x:p.x,y:p.y};poke(p.x,p.y,2.0*MOUSE_STR_MAG,2.8*MOUSE_MAG)}
 function lift(e){delete stirPts[e.pointerId]}
-if(sp&&!REDUCED){sp.addEventListener('pointerdown',function(e){if(mode==='bg')tap(e)},{passive:true});sp.addEventListener('pointermove',function(e){if(mode==='bg')stir(e)},{passive:true});sp.addEventListener('pointerup',lift,{passive:true});sp.addEventListener('pointercancel',lift,{passive:true});sp.addEventListener('pointerleave',lift,{passive:true})}
+function bgBlank(e){var t=e.target;if(!t||t===sp||t===slot||t===pane)return true;if(t.closest&&(t.closest('#searchArea')||t.closest('#doubanArea')||t.closest('#resultsArea')||t.closest('.wdtv-modal-overlay')||t.closest('.wdtv-history-panel')||t.closest('.wdtv-settings-panel')||t.closest('#chat-mini')))return false;return true}
+if(sp&&!REDUCED){var gwTouch={};sp.addEventListener('pointerdown',function(e){if(mode!=='bg')return;var ok=bgBlank(e);gwTouch[e.pointerId]=ok;if(ok)tap(e)},{passive:true});sp.addEventListener('pointermove',function(e){if(mode==='bg'&&gwTouch[e.pointerId]!==false)stir(e)},{passive:true});sp.addEventListener('pointerup',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointercancel',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointerleave',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true})}
 var fogCv=document.getElementById('gw-fogwipe');var fog=fogCv?fogCv.getContext('2d'):null;var wipeStrokes=[];
 function blotch(x,y,r,a){if(!fog)return;var g=fog.createRadialGradient(W*x,H*y,0,W*x,H*y,Math.max(W,H)*r);g.addColorStop(0,'rgba(222,234,250,'+a+')');g.addColorStop(1,'rgba(222,234,250,0)');fog.fillStyle=g;fog.fillRect(0,0,W,H)}
 function paintHaze(){if(!fog)return;fog.globalCompositeOperation='source-over';fog.shadowBlur=0;fog.fillStyle='rgba(208,224,244,0.10)';fog.fillRect(0,0,W,H);var g=fog.createRadialGradient(W*0.5,H*0.46,Math.min(W,H)*0.22,W*0.5,H*0.5,Math.max(W,H)*0.72);g.addColorStop(0,'rgba(214,228,246,0)');g.addColorStop(1,'rgba(214,228,246,0.12)');fog.fillStyle=g;fog.fillRect(0,0,W,H);blotch(0.18,0.20,0.50,0.06);blotch(0.82,0.74,0.55,0.05);blotch(0.60,0.12,0.40,0.04)}
