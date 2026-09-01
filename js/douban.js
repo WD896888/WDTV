@@ -337,9 +337,15 @@ function renderDoubanTags(tags) {
                 renderDoubanTags();
             }
         };
-        
+
         tagContainer.appendChild(btn);
     });
+
+    // 标签行为单行横向滚动，确保选中标签在可视范围内
+    const activeBtn = tagContainer.querySelector('.douban-tag.active');
+    if (activeBtn && activeBtn.scrollIntoView) {
+        activeBtn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    }
 }
 
 // 设置换一批按钮事件

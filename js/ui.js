@@ -233,16 +233,13 @@ function renderSearchHistory() {
         return;
     }
 
-    // 创建一个包含标题和清除按钮的行
-    historyContainer.innerHTML = `
-        <div class="flex justify-between items-center w-full mb-2">
-            <div style="color: var(--text-muted); font-size: 0.875rem;">最近搜索:</div>
-            <button id="clearHistoryBtn" class="search-tag"
-                    onclick="clearSearchHistory()" aria-label="清除搜索历史">
-                清除搜索历史
-            </button>
-        </div>
-    `;
+    // 单行紧凑布局：行首前缀 + 可横向滚动的历史标签 + 行尾清空按钮
+    historyContainer.innerHTML = '';
+
+    const prefix = document.createElement('span');
+    prefix.className = 'wdtv-recent-prefix';
+    prefix.textContent = '最近';
+    historyContainer.appendChild(prefix);
 
     history.forEach(item => {
         const tag = document.createElement('button');
@@ -278,6 +275,18 @@ function renderSearchHistory() {
         };
         historyContainer.appendChild(tag);
     });
+
+    // 行尾清空按钮（图标化，不占整行）
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'wdtv-recent-clear';
+    clearBtn.setAttribute('aria-label', '清空搜索历史');
+    clearBtn.title = '清空搜索历史';
+    clearBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+    clearBtn.onclick = function(e) {
+        e.stopPropagation();
+        clearSearchHistory();
+    };
+    historyContainer.appendChild(clearBtn);
 }
 
 // 删除单条搜索历史记录
