@@ -880,6 +880,25 @@ window.addEventListener('resize',function(){if(mode)tgtOk=retarget(mode)});
 (function probeBg(names){if(!names.length)return;var name=names.shift();var im=new Image();im.onload=function(){var el=document.getElementById('gw-img');if(el)el.style.backgroundImage='url("'+name+'")';if(im.naturalWidth>0&&im.naturalHeight>0){document.documentElement.style.setProperty('--gw-ar',(im.naturalWidth/im.naturalHeight).toFixed(6))}slot.classList.add('gw-has-img');if(names.length)probeBg(names)};im.onerror=function(){probeBg(names)};im.src=name})(['bg-canvas.jpg','bg-canvas.png']);
 if(sp&&!REDUCED){sp.addEventListener('pointerdown',function(e){if(mode==='pane')tap(e)});sp.addEventListener('pointermove',function(e){if(mode==='pane')stir(e)});sp.addEventListener('pointerup',lift);sp.addEventListener('pointercancel',lift);sp.addEventListener('pointerleave',lift)}
 if(!REDUCED)gwStart();
+/* 软键盘修复：弹出输入法时移动端浏览器会把整个页面（含 fixed 背景层）向上推，
+   背景图随之上移露出顶部底色。用 visualViewport 偏移量反向平移，把背景层拉回屏幕原位。 */
+if(window.visualViewport){
+  var vv=window.visualViewport;
+  var vvUpdate=function(){
+    var ae=document.activeElement;
+    var typing=!!(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'));
+    if(typing){
+      var off=Math.round(vv.offsetTop>0?vv.offsetTop:0);
+      slot.style.transform=off?('translate3d(0,'+off+'px,0)'):'';
+    }else{
+      slot.style.transform='';
+    }
+  };
+  vv.addEventListener('resize',vvUpdate);
+  vv.addEventListener('scroll',vvUpdate);
+  document.addEventListener('focusin',vvUpdate);
+  document.addEventListener('focusout',function(){setTimeout(vvUpdate,0)});
+}
 window.__fxGlass=gwStart;
 })();
 </script>
