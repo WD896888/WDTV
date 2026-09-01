@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,interactive-widget=overlays-content">
 <title>WDTV - 免费在线视频搜索与观看平台</title>
 <meta name="description" content="WDTV是一个免费的在线视频搜索平台，无广告、安全，提供来自多个视频源的内容搜索与观看服务，无需注册即可使用。">
 <meta name="keywords" content="在线视频,免费视频,视频搜索,电影,电视剧,WDTV">
@@ -889,16 +889,25 @@ function gwIsTyping(){var ae=document.activeElement;return !!(ae&&(ae.tagName===
 function gwUnlock(){gwTyping=false;slot.style.height='';slot.style.transform=''}
 function gwVvFix(){
   var off=0;
+  /* 高度锁定解决"背景变矮"，此处再叠加偏移修正解决"fixed 层被视觉滚动/推挤上移"（顶部露横条）；
+     两种行为在部分安卓内核上会同时出现，修正量取 offsetTop，收起键盘后自动归零。 */
   if(gwTyping&&window.visualViewport)off=Math.round(window.visualViewport.offsetTop>0?window.visualViewport.offsetTop:0);
   slot.style.transform=off?('translate3d(0,'+off+'px,0)'):'';
 }
+/* 兜底轮询：部分内核键盘弹出时 visualViewport 的 resize/scroll 事件迟发或不发 */
+var gwPollT=null;
+function gwPollStop(){if(gwPollT){clearInterval(gwPollT);gwPollT=null}}
 document.addEventListener('focusin',function(e){
   var t=e.target;
   if(!t||(t.tagName!=='INPUT'&&t.tagName!=='TEXTAREA'))return;
   if(!gwTyping){gwTyping=true;slot.style.height=gwBaseH+'px'}
   gwVvFix();
+  gwPollStop();
+  var n=0;
+  gwPollT=setInterval(function(){gwVvFix();if(++n>10||!gwTyping)gwPollStop()},120);
 });
 document.addEventListener('focusout',function(){
+  gwPollStop();
   setTimeout(function(){if(!gwIsTyping())gwTyping=false},60);
   setTimeout(function(){if(!gwIsTyping()&&!window.visualViewport)gwUnlock()},400);
 });
