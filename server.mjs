@@ -221,7 +221,14 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
       res.status(error.response.status || 500);
       error.response.data.pipe(res);
     } else {
-      res.status(500).send(`请求失败: ${error.message}`);
+      // 网络层错误（DNS/TCP/超时等）：附上底层原因，便于连接测试诊断
+      const bits = [];
+      if (error.code) bits.push(`code=${error.code}`);
+      if (error.errno) bits.push(`errno=${error.errno}`);
+      if (error.syscall) bits.push(`syscall=${error.syscall}`);
+      if (error.hostname) bits.push(`host=${error.hostname}`);
+      if (error.address) bits.push(`addr=${error.address}`);
+      res.status(500).send(`请求失败: ${error.message}${bits.length ? ' | ' + bits.join(' | ') : ''}`);
     }
   }
 });

@@ -215,6 +215,16 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-api-checkbox input[type=checkbox]{accent-color:rgba(42,90,160,0.6);width:16px;height:16px}
 .wdtv-api-info{display:flex;justify-content:space-between;align-items:center;font-size:0.72rem;color:rgba(42,58,92,0.5);margin-top:8px}
 .wdtv-api-info span .wdtv-count{color:rgba(30,45,75,0.9);font-weight:600}
+/* Connection test log */
+.wdtv-conn-log{max-height:220px;overflow-y:auto;padding:8px;border-radius:8px;background:rgba(20,32,55,0.85);border:1px solid rgba(200,220,245,0.2);font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:0.68rem;line-height:1.55;color:rgba(230,238,250,0.92);margin-bottom:8px;white-space:pre-wrap;word-break:break-all}
+.wdtv-conn-log::-webkit-scrollbar{width:4px}
+.wdtv-conn-log::-webkit-scrollbar-thumb{background:rgba(200,220,245,0.3);border-radius:2px}
+.wdtv-conn-log .conn-title{color:#ffd166;font-weight:700;margin:4px 0 2px}
+.wdtv-conn-log .conn-step{color:rgba(230,238,250,0.7)}
+.wdtv-conn-log .conn-ok{color:#5fda7b}
+.wdtv-conn-log .conn-fail{color:#ff7b72}
+.wdtv-conn-log .conn-warn{color:#ffd166}
+.wdtv-conn-log .conn-meta{color:rgba(200,220,245,0.55)}
 /* Custom API */
 .wdtv-custom-api-add{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .wdtv-custom-api-add .wdtv-add-btn{padding:4px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-size:1rem;cursor:pointer;line-height:1;transition:all 0.2s}
@@ -559,6 +569,17 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <span id="siteStatus"></span>
     </div>
   </div>
+  <!-- 视频源连接测试 -->
+  <div class="wdtv-settings-block">
+    <label class="block-label">视频源连接测试</label>
+    <button onclick="runConnectionTest()" class="wdtv-settings-func-btn">测试全部视频源连接</button>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button onclick="copyConnectionLog()" class="wdtv-mini-btn">复制日志</button>
+      <button onclick="clearConnectionLog()" class="wdtv-mini-btn">清空日志</button>
+    </div>
+    <div id="connectionLog" class="wdtv-conn-log"></div>
+    <div class="wdtv-api-info"><span>测试会逐一校验每个视频源 API 的连通性，日志含完整原因</span></div>
+  </div>
   <!-- 功能开关 -->
   <div class="wdtv-settings-block">
     <label class="block-label">功能开关</label>
@@ -670,6 +691,7 @@ window.__ENV__.PASSWORD = "{{PASSWORD}}";
 </script>
 <script src="js/config.js"></script>
 <script src="js/proxy-auth.js"></script>
+<script src="js/connection-test.js"></script>
 <script src="js/customer_site.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/api.js"></script>

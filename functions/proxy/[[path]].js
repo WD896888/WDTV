@@ -134,6 +134,29 @@ export async function onRequest(context) {
         }
     }
 
+    // 展开错误及其 cause 链，返回可读的详细原因列表（用于连接测试诊断）
+    function errorDetails(err) {
+        const parts = [];
+        let current = err;
+        let depth = 0;
+        while (current && depth < 6) {
+            const bits = [];
+            if (current.name) bits.push(current.name);
+            if (current.syscall) bits.push('syscall=' + current.syscall);
+            if (current.code) bits.push('code=' + current.code);
+            if (current.errno !== undefined && current.errno !== null) bits.push('errno=' + current.errno);
+            if (current.hostname) bits.push('host=' + current.hostname);
+            if (current.address) bits.push('addr=' + current.address);
+            if (current.port) bits.push('port=' + current.port);
+            const msg = current.message || String(current);
+            if (bits.indexOf(msg) === -1) bits.push(msg);
+            parts.push(bits.join('  '));
+            current = current.cause;
+            depth++;
+        }
+        return parts.length ? parts : [String(err)];
+    }
+
     // 从请求路径中提取目标 URL
     function getTargetUrlFromPath(pathname) {
         // 路径格式: /proxy/经过编码的URL
@@ -276,8 +299,8 @@ export async function onRequest(context) {
 
         } catch (error) {
              logDebug(`请求彻底失败: ${targetUrl}: ${error.message}`);
-            // 抛出更详细的错误
-            throw new Error(`请求目标URL失败 ${targetUrl}: ${error.message}`);
+            // 抛出更详细的错误（附带原始 cause 链，便于连接测试时输出完整原因）
+            throw new Error(`请求目标URL失败 ${targetUrl}: ${error.message}`, { cause: error });
         }
     }
 
@@ -573,7 +596,20 @@ export async function onRequest(context) {
 
     } catch (error) {
         logDebug(`处理代理请求时发生严重错误: ${error.message} \n ${error.stack}`);
-        return createResponse(`代理处理错误: ${error.message}`, 500);
+        return new Response(JSON.stringify({
+            success: false,
+            error: `代理处理错误: ${error.message}`,
+            targetUrl: targetUrl,
+            details: errorDetails(error)
+        }), {
+            status: 500,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
+                'Access-Control-Allow-Headers': '*',
+                'Content-Type': 'application/json'
+            }
+        });
     }
 }
 

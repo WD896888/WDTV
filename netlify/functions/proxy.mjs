@@ -40,6 +40,28 @@ function logDebug(message) {
     }
 }
 
+function errorDetails(err) {
+    const parts = [];
+    let current = err;
+    let depth = 0;
+    while (current && depth < 6) {
+        const bits = [];
+        if (current.name) bits.push(current.name);
+        if (current.syscall) bits.push('syscall=' + current.syscall);
+        if (current.code) bits.push('code=' + current.code);
+        if (current.errno !== undefined && current.errno !== null) bits.push('errno=' + current.errno);
+        if (current.hostname) bits.push('host=' + current.hostname);
+        if (current.address) bits.push('addr=' + current.address);
+        if (current.port) bits.push('port=' + current.port);
+        const msg = current.message || String(current);
+        if (bits.indexOf(msg) === -1) bits.push(msg);
+        parts.push(bits.join('  '));
+        current = current.cause;
+        depth++;
+    }
+    return parts.length ? parts : [String(err)];
+}
+
 function getTargetUrlFromPath(encodedPath) {
     if (!encodedPath) { logDebug("getTargetUrlFromPath received empty path."); return null; }
     try {
@@ -327,7 +349,8 @@ export const handler = async (event, context) => {
             body: JSON.stringify({
                 success: false,
                 error: `Proxy processing error: ${error.message}`,
-                targetUrl: targetUrl
+                targetUrl: targetUrl,
+                details: errorDetails(error)
             }),
         };
     }
