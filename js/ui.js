@@ -545,27 +545,13 @@ async function playFromHistory(url, title, episodeIndex, playbackPosition = 0) {
 
             // console.log(`[playFromHistory in ui.js] Attempting to fetch details for vod_id: ${historyItem.vod_id}, sourceName: ${historyItem.sourceName}`); // Log 4
             try {
-                // Construct the API URL for detail fetching
-                // historyItem.sourceName is used as the sourceCode here
-                // Add a cache buster timestamp
-                const timestamp = new Date().getTime();
-                const apiUrl = `/api/detail?id=${encodeURIComponent(historyItem.vod_id)}&source=${encodeURIComponent(historyItem.sourceName)}&_t=${timestamp}`;
-
-                // Add timeout to the fetch request
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
-                const response = await fetch(apiUrl, {
-                    signal: controller.signal
+                // 获取详情（sourceCode 优先于 sourceName）
+                const videoDetails = await fetchVideoDetailData({
+                    id: historyItem.vod_id,
+                    source: historyItem.sourceCode || historyItem.sourceName
                 });
-                clearTimeout(timeoutId);
 
-                if (!response.ok) {
-                    throw new Error(`API request failed with status ${response.status}`);
-                }
-                const videoDetails = await response.json();
-
-                if (videoDetails && videoDetails.episodes && videoDetails.episodes.length > 0) {
+                if (videoDetails && videoDetails.code === 200 && videoDetails.episodes && videoDetails.episodes.length > 0) {
                     const oldEpisodeCount = episodesList.length;
                     episodesList = videoDetails.episodes;
                     syncSuccessful = true;

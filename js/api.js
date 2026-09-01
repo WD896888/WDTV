@@ -209,6 +209,131 @@ async function handleApiRequest(url) {
     }
 }
 
+// 详情请求：直连优先，失败后回退本地代理（与搜索策略一致）
+const DETAIL_DIRECT_TIMEOUT = 6000;
+const DETAIL_TOTAL_BUDGET = 15000;
+
+async function fetchDetailData(url) {
+    const deadline = Date.now() + DETAIL_TOTAL_BUDGET;
+
+    // 1) 直连尝试
+    try {
+        const directController = new AbortController();
+        const directTimer = setTimeout(() => directController.abort(), DETAIL_DIRECT_TIMEOUT);
+        try {
+            const direct = await fetch(url, {
+                headers: API_CONFIG.detail.headers,
+                signal: directController.signal
+            });
+            if (direct.ok) return direct;
+        } finally {
+            clearTimeout(directTimer);
+        }
+    } catch (e) {
+        // 直连失败（CORS/网络错误/超时），回退本地代理
+    }
+
+    // 2) 回退本地代理（使用剩余总预算）
+    const proxiedUrl = window.ProxyAuth?.addAuthToProxyUrl ?
+        await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(url)) :
+        PROXY_URL + encodeURIComponent(url);
+
+    const remaining = Math.max(deadline - Date.now(), 3000);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), remaining);
+    try {
+        return await fetch(proxiedUrl, {
+            headers: API_CONFIG.detail.headers,
+            signal: controller.signal
+        });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// 获取视频详情与集数列表（不依赖 Service Worker 的 /api/detail，任何环境均可直接调用）
+// opts: { id, source, customApi, customDetail }；返回 { code, episodes, videoInfo, ... }
+async function fetchVideoDetailData(opts) {
+    try {
+        const { id, source = 'heimuer', customApi = '', customDetail = '' } = opts || {};
+
+        if (!id) throw new Error('缺少视频ID参数');
+        if (!/^[\w-]+$/.test(id)) throw new Error('无效的视频ID格式');
+
+        // 特殊详情源（HTML 页面解析）
+        if (source !== 'custom' && API_SITES[source] && API_SITES[source].detail) {
+            return JSON.parse(await handleSpecialSourceDetail(id, source));
+        }
+        // 自定义源的特殊详情页
+        if (source === 'custom' && customDetail) {
+            return JSON.parse(await handleCustomApiSpecialDetail(id, customDetail));
+        }
+
+        if (source === 'custom' && !customApi) {
+            throw new Error('使用自定义API时必须提供API地址');
+        }
+        if (!API_SITES[source] && source !== 'custom') {
+            throw new Error('无效的API来源');
+        }
+
+        const apiBase = source === 'custom' ? customApi : API_SITES[source].api;
+        const detailUrl = `${apiBase}${API_CONFIG.detail.path}${id}`;
+
+        const response = await fetchDetailData(detailUrl);
+        if (!response.ok) {
+            throw new Error(`详情请求失败: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (!data || !data.list || !Array.isArray(data.list) || data.list.length === 0) {
+            throw new Error('获取到的详情内容无效');
+        }
+
+        // 获取第一个匹配的视频详情
+        const videoDetail = data.list[0];
+
+        // 提取播放地址（第一组播放源）
+        let episodes = [];
+        if (videoDetail.vod_play_url) {
+            const playSources = videoDetail.vod_play_url.split('$$$');
+            if (playSources.length > 0) {
+                episodes = playSources[0].split('#').map(ep => {
+                    const parts = ep.split('$');
+                    return parts.length > 1 ? parts[1] : '';
+                }).filter(url => url && (url.startsWith('http://') || url.startsWith('https://')));
+            }
+        }
+
+        // 如果没有找到播放地址，尝试从简介中提取 m3u8 链接
+        if (episodes.length === 0 && videoDetail.vod_content) {
+            const matches = videoDetail.vod_content.match(M3U8_PATTERN) || [];
+            episodes = matches.map(link => link.replace(/^\$/, ''));
+        }
+
+        return {
+            code: 200,
+            episodes: episodes,
+            detailUrl: detailUrl,
+            videoInfo: {
+                title: videoDetail.vod_name,
+                cover: videoDetail.vod_pic,
+                desc: videoDetail.vod_content,
+                type: videoDetail.type_name,
+                year: videoDetail.vod_year,
+                area: videoDetail.vod_area,
+                director: videoDetail.vod_director,
+                actor: videoDetail.vod_actor,
+                remarks: videoDetail.vod_remarks,
+                source_name: source === 'custom' ? '自定义源' : API_SITES[source].name,
+                source_code: source
+            }
+        };
+    } catch (error) {
+        console.error('获取视频详情失败:', error);
+        return { code: 400, msg: error.message || '请求处理失败', episodes: [] };
+    }
+}
+
 // 处理自定义API的特殊详情页
 async function handleCustomApiSpecialDetail(id, customApi) {
     try {

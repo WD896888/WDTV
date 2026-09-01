@@ -1105,8 +1105,8 @@ async function showDetails(id, vod_name, sourceCode) {
 
     showLoading();
     try {
-        // 构建API参数
-        let apiParams = '';
+        // 构建详情请求参数
+        let detailOpts = { id };
 
         // 处理自定义API源
         if (sourceCode.startsWith('custom_')) {
@@ -1117,23 +1117,15 @@ async function showDetails(id, vod_name, sourceCode) {
                 hideLoading();
                 return;
             }
-            // 传递 detail 字段
-            if (customApi.detail) {
-                apiParams = '&customApi=' + encodeURIComponent(customApi.url) + '&customDetail=' + encodeURIComponent(customApi.detail) + '&source=custom';
-            } else {
-                apiParams = '&customApi=' + encodeURIComponent(customApi.url) + '&source=custom';
-            }
+            detailOpts.source = 'custom';
+            detailOpts.customApi = customApi.url;
+            if (customApi.detail) detailOpts.customDetail = customApi.detail;
         } else {
             // 内置API
-            apiParams = '&source=' + sourceCode;
+            detailOpts.source = sourceCode;
         }
 
-        // Add a timestamp to prevent caching
-        const timestamp = new Date().getTime();
-        const cacheBuster = `&_t=${timestamp}`;
-        const response = await fetch(`/api/detail?id=${encodeURIComponent(id)}${apiParams}${cacheBuster}`);
-
-        const data = await response.json();
+        const data = await fetchVideoDetailData(detailOpts);
 
         const modal = document.getElementById('modal');
         const modalTitle = document.getElementById('modalTitle');

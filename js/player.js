@@ -1534,41 +1534,25 @@ function renderResourceInfoBar() {
 async function testVideoSourceSpeed(sourceKey, vodId) {
     try {
         const startTime = performance.now();
-        
-        // 构建API参数
-        let apiParams = '';
+
+        // 构建详情请求参数
+        let detailOpts;
         if (sourceKey.startsWith('custom_')) {
             const customIndex = sourceKey.replace('custom_', '');
             const customApi = getCustomApiInfo(customIndex);
             if (!customApi) {
                 return { speed: -1, error: 'API配置无效' };
             }
-            if (customApi.detail) {
-                apiParams = '&customApi=' + encodeURIComponent(customApi.url) + '&customDetail=' + encodeURIComponent(customApi.detail) + '&source=custom';
-            } else {
-                apiParams = '&customApi=' + encodeURIComponent(customApi.url) + '&source=custom';
-            }
+            detailOpts = { id: vodId, source: 'custom', customApi: customApi.url };
+            if (customApi.detail) detailOpts.customDetail = customApi.detail;
         } else {
-            apiParams = '&source=' + sourceKey;
+            detailOpts = { id: vodId, source: sourceKey };
         }
-        
-        // 添加时间戳防止缓存
-        const timestamp = new Date().getTime();
-        const cacheBuster = `&_t=${timestamp}`;
-        
+
         // 获取视频详情
-        const response = await fetch(`/api/detail?id=${encodeURIComponent(vodId)}${apiParams}${cacheBuster}`, {
-            method: 'GET',
-            cache: 'no-cache'
-        });
-        
-        if (!response.ok) {
-            return { speed: -1, error: '获取失败' };
-        }
-        
-        const data = await response.json();
-        
-        if (!data.episodes || data.episodes.length === 0) {
+        const data = await fetchVideoDetailData(detailOpts);
+
+        if (data.code !== 200 || !data.episodes || data.episodes.length === 0) {
             return { speed: -1, error: '无播放源' };
         }
         
@@ -1763,9 +1747,9 @@ async function switchToResource(sourceKey, vodId) {
     
     showLoading();
     try {
-        // 构建API参数
-        let apiParams = '';
-        
+        // 构建详情请求参数
+        let detailOpts;
+
         // 处理自定义API源
         if (sourceKey.startsWith('custom_')) {
             const customIndex = sourceKey.replace('custom_', '');
@@ -1775,24 +1759,15 @@ async function switchToResource(sourceKey, vodId) {
                 hideLoading();
                 return;
             }
-            // 传递 detail 字段
-            if (customApi.detail) {
-                apiParams = '&customApi=' + encodeURIComponent(customApi.url) + '&customDetail=' + encodeURIComponent(customApi.detail) + '&source=custom';
-            } else {
-                apiParams = '&customApi=' + encodeURIComponent(customApi.url) + '&source=custom';
-            }
+            detailOpts = { id: vodId, source: 'custom', customApi: customApi.url };
+            if (customApi.detail) detailOpts.customDetail = customApi.detail;
         } else {
             // 内置API
-            apiParams = '&source=' + sourceKey;
+            detailOpts = { id: vodId, source: sourceKey };
         }
-        
-        // Add a timestamp to prevent caching
-        const timestamp = new Date().getTime();
-        const cacheBuster = `&_t=${timestamp}`;
-        const response = await fetch(`/api/detail?id=${encodeURIComponent(vodId)}${apiParams}${cacheBuster}`);
-        
-        const data = await response.json();
-        
+
+        const data = await fetchVideoDetailData(detailOpts);
+
         if (!data.episodes || data.episodes.length === 0) {
             showToast('未找到播放资源', 'error');
             hideLoading();
