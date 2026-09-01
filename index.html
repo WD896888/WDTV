@@ -26,7 +26,7 @@
 
 <!-- WDTV External CSS -->
 <link rel="stylesheet" href="css/styles.css?v=6">
-<link rel="stylesheet" href="css/index.css?v=8">
+<link rel="stylesheet" href="css/index.css?v=6">
 <link rel="stylesheet" href="css/modals.css?v=6">
 
 <style>
@@ -90,58 +90,50 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-home-wrap{width:100%;max-width:1200px;margin:0 auto;padding:0 16px}
 
 /* WDTV header */
-.wdtv-header{text-align:center;margin-bottom:36px}
+.wdtv-header{text-align:center;margin-bottom:32px}
 .wdtv-header .wdtv-logo{display:flex;justify-content:center;align-items:center;margin-bottom:12px}
 .wdtv-header .wdtv-logo svg{width:36px;height:36px;margin-right:8px;color:#2c4a7c;filter:drop-shadow(0 2px 8px rgba(44,74,124,0.25))}
-.wdtv-header .wdtv-title{font-family:'Cormorant Garamond',serif;font-size:3.1rem;font-weight:300;letter-spacing:0.22em;padding-left:0.22em;background:linear-gradient(160deg,#16305c 0%,#2c5aa0 38%,#4a7cc9 68%,#7fa8e0 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.wdtv-header .wdtv-slogan{display:flex;align-items:center;justify-content:center;gap:14px;font-family:'Raleway','Noto Sans SC',sans-serif;font-weight:300;font-size:0.8rem;letter-spacing:0.28em;padding-left:0.28em;text-transform:uppercase;color:#48699a;margin-top:10px}
-.wdtv-header .wdtv-slogan::before,.wdtv-header .wdtv-slogan::after{content:"";width:44px;height:1px;flex-shrink:0;background:linear-gradient(to right,transparent,rgba(72,105,154,0.55));opacity:0.8}
-.wdtv-header .wdtv-slogan::after{background:linear-gradient(to left,transparent,rgba(72,105,154,0.55))}
+.wdtv-header .wdtv-title{font-family:'Cormorant Garamond',serif;font-size:2.4rem;font-weight:300;letter-spacing:0.24em;background:linear-gradient(135deg,#1a3a6b 0%,#2c5aa0 40%,#4a7cc9 70%,#6a9ae0 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 2px 12px rgba(44,90,160,0.2))}
+.wdtv-header .wdtv-slogan{font-family:'Raleway','Noto Sans SC',sans-serif;font-weight:300;font-size:0.78rem;letter-spacing:0.16em;text-transform:uppercase;color:#5a7faa;margin-top:8px}
 
 /* WDTV search area */
-.wdtv-search-wrap{width:100%;max-width:540px;margin:0 auto 14px}
-.wdtv-search-glass{display:flex;align-items:center;margin-bottom:12px;height:52px;border-radius:15px;border:1px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.22);color:#2a3a5c;position:relative;z-index:10;backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);transition:border-color 0.3s,background 0.3s}
-.wdtv-search-glass:focus-within{border-color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.32)}
-.wdtv-search-glass input{flex:1;min-width:0;background:transparent;border:none;color:#2a3a5c;padding:0 18px;font-size:15px;font-family:'Noto Serif SC','Source Han Serif SC',serif;font-weight:500;letter-spacing:0.08em;outline:none}
-.wdtv-search-glass input::placeholder{color:rgba(42,58,92,0.45);font-weight:400}
-.wdtv-search-glass .wdtv-clear-btn{display:none;align-items:center;justify-content:center;width:44px;background:none;border:none;color:rgba(42,58,92,0.45);cursor:pointer;transition:color 0.2s}
+.wdtv-search-wrap{width:100%;max-width:420px;margin:0 auto 16px}
+.wdtv-search-glass{display:flex;align-items:center;margin-bottom:12px;height:44px;border-radius:14px;border:1px solid rgba(200,220,245,0.42);background:rgba(200,220,245,0.55);color:#2a3a5c;position:relative;z-index:10;transition:border-color 0.3s,box-shadow 0.3s;text-shadow:0 1px 4px rgba(255,255,255,0.5)}
+.wdtv-search-glass:focus-within{border-color:rgba(200,220,245,0.7);box-shadow:0 0 20px rgba(200,220,245,0.1)}
+.wdtv-search-glass input{flex:1;min-width:0;background:transparent;border:none;color:#2a3a5c;padding:0 16px;font-size:13.5px;font-family:'Noto Serif SC','Source Han Serif SC',serif;font-weight:500;letter-spacing:0.1em;outline:none}
+.wdtv-search-glass input::placeholder{color:rgba(42,58,92,0.5);font-weight:400}
+.wdtv-search-glass .wdtv-clear-btn{display:none;align-items:center;justify-content:center;width:40px;background:none;border:none;color:rgba(42,58,92,0.45);cursor:pointer;transition:color 0.2s}
 .wdtv-search-glass .wdtv-clear-btn:hover{color:rgba(42,58,92,0.8)}
 .wdtv-search-glass .wdtv-clear-btn:not(.hidden){display:flex}
-.wdtv-search-glass .wdtv-search-btn{display:flex;align-items:center;justify-content:center;width:56px;height:100%;background:none;border:none;border-left:1px solid rgba(215,232,252,0.45);color:rgba(42,58,92,0.62);cursor:pointer;transition:color 0.2s,background 0.2s;-webkit-appearance:none;appearance:none;border-radius:0 15px 15px 0}
-.wdtv-search-glass .wdtv-search-btn:hover{background:rgba(255,255,255,0.18);color:rgba(30,58,110,0.9)}
-.wdtv-search-glass .wdtv-search-btn svg,.wdtv-search-glass .wdtv-clear-btn svg{width:19px;height:19px}
+.wdtv-search-glass .wdtv-search-btn{display:flex;align-items:center;justify-content:center;width:48px;background:none;border:none;border-left:1px solid rgba(200,220,245,0.35);color:rgba(42,58,92,0.6);cursor:pointer;transition:color 0.2s;-webkit-appearance:none;appearance:none}
+.wdtv-search-glass .wdtv-search-btn:hover{background:none;color:rgba(42,58,92,0.85)}
 
 /* WDTV recent searches */
-.wdtv-recent{display:flex;flex-wrap:nowrap;align-items:center;gap:8px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px}
+.wdtv-recent{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .wdtv-recent::-webkit-scrollbar{display:none}
-.wdtv-recent .search-tag{flex:none;display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:10em;padding:5px 13px;border-radius:9999px;font-size:0.78rem;white-space:nowrap;background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.3);color:#2a3a5c;transition:all 0.2s;cursor:pointer}
-.wdtv-recent .search-tag:hover{background:rgba(255,255,255,0.4);border-color:rgba(255,255,255,0.5)}
+.wdtv-recent .search-tag{flex:none;min-width:0;max-width:9em;padding:3px 10px;font-size:0.72rem;white-space:nowrap}
 .wdtv-recent .search-tag span:first-child{overflow:hidden;text-overflow:ellipsis}
-.wdtv-recent .search-tag svg{width:11px;height:11px;flex-shrink:0;opacity:0.55}
-.wdtv-recent-clear{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:9999px;border:1px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.22);color:#48699a;cursor:pointer;padding:0;transition:all 0.2s}
-.wdtv-recent-clear:hover{background:rgba(255,255,255,0.45);color:#1e3a6e}
+.wdtv-recent .search-tag svg{width:10px;height:10px}
+.wdtv-recent-clear{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:9999px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;padding:0}
+.wdtv-recent-clear:hover{background:rgba(80,128,176,0.15);color:var(--white)}
 .wdtv-recent-tag{padding:5px 14px;border-radius:20px;font-size:0.78rem;cursor:pointer;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);transition:all 0.3s;font-family:'Noto Sans SC',sans-serif}
 .wdtv-recent-tag:hover{background:rgba(80,128,176,0.15);color:var(--white);border-color:var(--accent)}
 
 /* WDTV douban area */
-.wdtv-douban{width:100%;max-width:1200px;margin:38px auto 32px}
-.wdtv-douban-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
-.wdtv-douban-header h2{font-family:'Cormorant Garamond','Noto Serif SC',serif;font-size:1.42rem;font-weight:500;letter-spacing:0.14em;color:rgba(228,238,252,0.95)}
-.wdtv-douban-toggle{display:flex;align-items:center;gap:2px;padding:3px;border-radius:9999px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.14);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-.wdtv-douban-toggle button{padding:5px 18px;font-size:0.8rem;border:none;border-radius:9999px;background:none;color:rgba(222,234,250,0.78);cursor:pointer;font-family:'Noto Sans SC',sans-serif;letter-spacing:0.04em;transition:all 0.2s}
-.wdtv-douban-toggle button:hover{color:#fff}
-.wdtv-douban-toggle button.active{background:rgba(255,255,255,0.38);color:#1e3a6e;font-weight:500}
-.wdtv-douban-refresh{display:flex;align-items:center;gap:6px;padding:6px 15px;border-radius:9999px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.16);color:rgba(228,238,252,0.92);cursor:pointer;font-size:0.8rem;font-family:'Noto Sans SC',sans-serif;letter-spacing:0.04em;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:all 0.2s}
-.wdtv-douban-refresh:hover{background:rgba(255,255,255,0.32);color:#fff;border-color:rgba(255,255,255,0.45)}
-.wdtv-douban-refresh svg{transition:transform 0.5s cubic-bezier(0.4,0,0.2,1)}
-.wdtv-douban-refresh:hover svg{transform:rotate(180deg)}
-.wdtv-douban-tags{display:flex;flex-wrap:nowrap;gap:8px;margin-bottom:14px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px}
+.wdtv-douban{width:100%;max-width:1200px;margin:32px auto}
+.wdtv-douban-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.wdtv-douban-header h2{font-size:1.2rem;font-weight:bold;color:var(--pale)}
+.wdtv-douban-toggle{display:flex;align-items:center;border-radius:10px;overflow:hidden;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06)}
+.wdtv-douban-toggle button{padding:6px 16px;font-size:0.82rem;border:none;background:none;color:var(--text-secondary);cursor:pointer;font-family:'Noto Sans SC',sans-serif;transition:all 0.2s}
+.wdtv-douban-toggle button.active{background:rgba(80,128,176,0.2);color:var(--white)}
+.wdtv-douban-refresh{display:flex;align-items:center;gap:4px;padding:5px 12px;border-radius:10px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);cursor:pointer;font-size:0.82rem;font-family:'Noto Sans SC',sans-serif;transition:all 0.2s}
+.wdtv-douban-refresh:hover{background:rgba(80,128,176,0.15);color:var(--white);border-color:var(--accent)}
+.wdtv-douban-tags{display:flex;flex-wrap:nowrap;gap:6px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .wdtv-douban-tags::-webkit-scrollbar{display:none}
-.wdtv-douban-tags .douban-tag{flex:none;padding:5px 14px;font-size:0.76rem;white-space:nowrap}
-.wdtv-douban-tag{padding:5px 14px;border-radius:9999px;font-size:0.76rem;cursor:pointer;border:1px solid rgba(255,255,255,0.28);background:rgba(255,255,255,0.16);color:rgba(222,234,250,0.85);letter-spacing:0.03em;transition:all 0.2s;white-space:nowrap}
-.wdtv-douban-tag:hover{background:rgba(255,255,255,0.32);color:#fff;border-color:rgba(255,255,255,0.45)}
-.wdtv-douban-tag.active{background:rgba(255,255,255,0.4);color:#1e3a6e;font-weight:500;border-color:rgba(255,255,255,0.5)}
-.wdtv-douban-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px}
+.wdtv-douban-tags .douban-tag{flex:none;padding:4px 12px;font-size:0.75rem;white-space:nowrap}
+.wdtv-douban-tag{padding:4px 12px;border-radius:16px;font-size:0.75rem;cursor:pointer;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);transition:all 0.3s}
+.wdtv-douban-tag:hover,.wdtv-douban-tag.active{background:rgba(80,128,176,0.2);color:var(--white);border-color:var(--accent)}
+.wdtv-douban-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
 
 /* WDTV result cards */
 .wdtv-result-card{background:rgba(155,180,218,0.06);border:1px solid var(--glass-border);border-radius:14px;overflow:hidden;cursor:pointer;transition:all 0.3s var(--transition);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
@@ -343,10 +335,10 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-loading-text{color:rgba(236,244,255,0.96);font-size:0.88rem}
 
 /* Nav icon buttons for WDTV */
-/* Nav buttons - minimal glass, no glow */
-.wdtv-nav-btn{position:fixed;z-index:10;height:46px;width:46px;border-radius:14px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.16);backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);color:rgba(228,238,252,0.92);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:all 0.3s}
-.wdtv-nav-btn:hover{color:#fff;background:rgba(255,255,255,0.32);border-color:rgba(255,255,255,0.45)}
-.wdtv-nav-btn svg{width:19px;height:19px;color:currentColor}
+/* Nav buttons - match splash-action-btn */
+.wdtv-nav-btn{position:fixed;z-index:10;height:44px;width:44px;border-radius:12px;border:none;background:transparent;color:rgba(236,244,255,0.72);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:all 0.3s}
+.wdtv-nav-btn:hover{color:rgba(236,244,255,0.96);background:rgba(200,220,245,0.12)}
+.wdtv-nav-btn svg{width:16px;height:16px;color:rgba(200,220,245,0.8)}
 #history-btn{top:24px;left:24px}
 #settings-btn{top:24px;right:24px}
 
@@ -364,13 +356,6 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
   #history-btn{top:16px;left:16px}
   #settings-btn{top:16px;right:16px}
   #chat-mini{right:16px;bottom:16px}
-  .wdtv-header{margin-bottom:26px}
-  .wdtv-header .wdtv-title{font-size:2.2rem}
-  .wdtv-header .wdtv-slogan{font-size:0.72rem;letter-spacing:0.2em;gap:10px}
-  .wdtv-header .wdtv-slogan::before,.wdtv-header .wdtv-slogan::after{width:26px}
-  .wdtv-search-glass{height:48px}
-  .wdtv-search-glass input{font-size:14px;padding:0 14px}
-  .wdtv-douban-header h2{font-size:1.25rem}
 }
 @media(max-width:480px){
   .wdtv-history-panel,.wdtv-settings-panel{width:100%;max-width:100%}

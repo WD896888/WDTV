@@ -1,5 +1,5 @@
 // 全局变量
-let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '["tyyszy","bfzy","ruyi","heimuer"]'); // 默认选中资源
+let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || 'null') || Object.keys(API_SITES); // 默认选中所有资源
 
 // 添加当前播放的集数索引
 let currentEpisodeIndex = 0;
@@ -22,19 +22,19 @@ document.addEventListener('DOMContentLoaded', function () {
     renderSearchHistory();
 
     // 设置默认API选择（如果是第一次加载）
-    if (!localStorage.getItem('hasInitializedDefaults')) {
-        // 默认选中资源
-        selectedAPIs = ["tyyszy", "bfzy", "ruyi", "heimuer"];
+    if (!localStorage.getItem('hasInitializedDefaults_v2')) {
+        // 默认选中所有资源
+        selectedAPIs = Object.keys(API_SITES);
         localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
 
         // 默认选中过滤开关
         localStorage.setItem(PLAYER_CONFIG.adFilteringStorage, 'true');
 
-        // 默认启用豆瓣功能
-        localStorage.setItem('doubanEnabled', 'true');
+        // 默认关闭豆瓣功能
+        localStorage.setItem('doubanEnabled', 'false');
 
         // 标记已初始化默认值
-        localStorage.setItem('hasInitializedDefaults', 'true');
+        localStorage.setItem('hasInitializedDefaults_v2', 'true');
     }
 
     // 设置广告过滤开关初始状态
