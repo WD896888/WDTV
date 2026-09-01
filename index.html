@@ -875,29 +875,46 @@ var last=0,stepAcc=0,gwRaf=false;
 function gwStart(){if(gwRaf)return;if(document.documentElement.classList.contains('fx-off'))return;gwRaf=true;requestAnimationFrame(loop)}
 function loop(ts){if((sp&&sp.classList.contains('hidden'))||document.documentElement.classList.contains('fx-off')){gwRaf=false;return}requestAnimationFrame(loop);var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}if(!tgtOk||idleNow()){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}
 if(window.ResizeObserver)new ResizeObserver(function(){if(mode==='pane')tgtOk=retarget('pane')}).observe(pane);
-window.addEventListener('resize',function(){if(mode)tgtOk=retarget(mode)});
+window.addEventListener('resize',function(){if(!gwIsTyping()&&mode)tgtOk=retarget(mode)});
 (function probe(names){if(!names.length)return;var name=names.shift();var im=new Image();im.onload=function(){img=im;if(REDUCED){mode='pane';if(retarget('pane')){renderWater();slot.classList.add('gw-rippling')}return}if(mode==='pane')tgtOk=retarget('pane')};im.onerror=function(){probe(names)};im.src=name})(['bg-canvas.jpg','bg-canvas.png']);
 (function probeBg(names){if(!names.length)return;var name=names.shift();var im=new Image();im.onload=function(){var el=document.getElementById('gw-img');if(el)el.style.backgroundImage='url("'+name+'")';if(im.naturalWidth>0&&im.naturalHeight>0){document.documentElement.style.setProperty('--gw-ar',(im.naturalWidth/im.naturalHeight).toFixed(6))}slot.classList.add('gw-has-img');if(names.length)probeBg(names)};im.onerror=function(){probeBg(names)};im.src=name})(['bg-canvas.jpg','bg-canvas.png']);
 if(sp&&!REDUCED){sp.addEventListener('pointerdown',function(e){if(mode==='pane')tap(e)});sp.addEventListener('pointermove',function(e){if(mode==='pane')stir(e)});sp.addEventListener('pointerup',lift);sp.addEventListener('pointercancel',lift);sp.addEventListener('pointerleave',lift)}
 if(!REDUCED)gwStart();
-/* 软键盘修复：弹出输入法时移动端浏览器会把整个页面（含 fixed 背景层）向上推，
-   背景图随之上移露出顶部底色。用 visualViewport 偏移量反向平移，把背景层拉回屏幕原位。 */
+/* 软键盘修复（Android/iOS 通用）：
+   - Android resize 型键盘：视口缩小导致 100vh 变矮、背景图跟着变/上移 → 键盘弹出期间锁定背景层为弹出前的像素高度；
+   - 推挤型浏览器（iOS/部分安卓内核）：整页上移 → 用 visualViewport.offsetTop 反向平移拉回；
+   - 键盘弹出期间不重建水波画布（retarget 跳过），收起后自动恢复。 */
+var gwTyping=false,gwBaseH=window.innerHeight;
+function gwIsTyping(){var ae=document.activeElement;return !!(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'))}
+function gwUnlock(){gwTyping=false;slot.style.height='';slot.style.transform=''}
+function gwVvFix(){
+  var off=0;
+  if(gwTyping&&window.visualViewport)off=Math.round(window.visualViewport.offsetTop>0?window.visualViewport.offsetTop:0);
+  slot.style.transform=off?('translate3d(0,'+off+'px,0)'):'';
+}
+document.addEventListener('focusin',function(e){
+  var t=e.target;
+  if(!t||(t.tagName!=='INPUT'&&t.tagName!=='TEXTAREA'))return;
+  if(!gwTyping){gwTyping=true;slot.style.height=gwBaseH+'px'}
+  gwVvFix();
+});
+document.addEventListener('focusout',function(){
+  setTimeout(function(){if(!gwIsTyping())gwTyping=false},60);
+  setTimeout(function(){if(!gwIsTyping()&&!window.visualViewport)gwUnlock()},400);
+});
+window.addEventListener('resize',function(){
+  if(!gwIsTyping()){
+    gwBaseH=window.innerHeight;
+    if(slot.style.height)gwUnlock();
+  }
+  gwVvFix();
+});
 if(window.visualViewport){
-  var vv=window.visualViewport;
-  var vvUpdate=function(){
-    var ae=document.activeElement;
-    var typing=!!(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'));
-    if(typing){
-      var off=Math.round(vv.offsetTop>0?vv.offsetTop:0);
-      slot.style.transform=off?('translate3d(0,'+off+'px,0)'):'';
-    }else{
-      slot.style.transform='';
-    }
-  };
-  vv.addEventListener('resize',vvUpdate);
-  vv.addEventListener('scroll',vvUpdate);
-  document.addEventListener('focusin',vvUpdate);
-  document.addEventListener('focusout',function(){setTimeout(vvUpdate,0)});
+  window.visualViewport.addEventListener('resize',function(){
+    if(!gwTyping&&slot.style.height)gwUnlock();
+    gwVvFix();
+  });
+  window.visualViewport.addEventListener('scroll',gwVvFix);
 }
 window.__fxGlass=gwStart;
 })();
