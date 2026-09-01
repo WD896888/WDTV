@@ -156,11 +156,11 @@ body, html {
     font-size: 1.05rem;
 }
 
-/* 集数按钮 - 与首页详情弹窗 .wdtv-episode-btn 同款视觉，尺寸略放大 */
+/* 集数按钮 - 与首页详情弹窗 .wdtv-episode-btn 同款视觉，尺寸略放大
+   注意：不使用 backdrop-filter——按钮本身已坐在 .player-container 磨砂面板上，
+   自带 blur 会在背景动画时产生每帧 N 个模糊采样，是播放页卡顿元凶 */
 .episode-btn-glass {
     background: rgba(255,255,255,0.3) !important;
-    backdrop-filter: blur(20px) saturate(1.5) !important;
-    -webkit-backdrop-filter: blur(20px) saturate(1.5) !important;
     border: 1px solid rgba(255,255,255,0.2) !important;
     color: #2a3a5c !important;
     border-radius: 8px !important;

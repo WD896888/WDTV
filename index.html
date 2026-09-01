@@ -770,6 +770,8 @@ window.addEventListener('pageshow', function(event) {
   function loop(ts){
     if(fxOff()){rafId=null;return}
     rafId=requestAnimationFrame(loop);
+    var mo=document.getElementById('modal');
+    if(mo&&!mo.classList.contains('hidden')){ctx.clearRect(0,0,W,H);last=ts;return}
     var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);ctx.lineCap='round';
     for(var i=0;i<drops.length;i++){
@@ -860,7 +862,7 @@ function rebuildBg(){if(!img)return false;var iw=img.naturalWidth,ih=img.natural
 function retarget(m){if(m==='pane'){var r=pane.getBoundingClientRect();if(r.width<2||r.height<2)return false;W=r.width;H=r.height;rcv.width=Math.round(W*dpr);rcv.height=Math.round(H*dpr);if(fogCv){fogCv.width=Math.round(W*dpr);fogCv.height=Math.round(H*dpr);fog.setTransform(dpr,0,0,dpr,0,0);redrawFog()}gridFit();return rebuildBg()}W=window.innerWidth;H=window.innerHeight;if(W<2||H<2)return false;bscale=Math.min(dpr,1.5);bgcv.width=Math.round(W*bscale);bgcv.height=Math.round(H*bscale);gridFit();outImg=simCtx.createImageData(SW,SH);for(var k=0;k<3;k++)poke(R(2,SW-2),R(2,SH-2),R(0.5,1.1),2);return true}
 var mode=null,tgtOk=false,shownP=false,shownB=false;
 function computeMode(){return mqSmall.matches?'bg':'pane'}
-function idleNow(){if(document.hidden)return true;if(slot.classList.contains('gw-exit'))return true;return false}
+function idleNow(){if(document.hidden)return true;if(slot.classList.contains('gw-exit'))return true;var m=document.getElementById('modal');if(m&&!m.classList.contains('hidden'))return true;return false}
 var last=0,stepAcc=0,gwRaf=false;
 function gwStart(){if(gwRaf)return;if(document.documentElement.classList.contains('fx-off'))return;gwRaf=true;requestAnimationFrame(loop)}
 function loop(ts){if((sp&&sp.classList.contains('hidden'))||document.documentElement.classList.contains('fx-off')){gwRaf=false;return}requestAnimationFrame(loop);var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}if(!tgtOk||idleNow()){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}

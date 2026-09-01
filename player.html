@@ -24,7 +24,7 @@
 
     <script src="libs/tailwindcss.min.js"></script>
     <link rel="stylesheet" href="css/styles.css">
-    <link rel="stylesheet" href="css/player.css?v=6">
+    <link rel="stylesheet" href="css/player.css?v=7">
 
     <meta http-equiv="Cache-Control" content="no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -455,6 +455,8 @@
       var last=0;
       function loop(ts){
         requestAnimationFrame(loop);
+        var mo=document.getElementById('modal');
+        if(mo&&!mo.classList.contains('hidden')){ctx.clearRect(0,0,W,H);last=ts;return}
         var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
         ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);ctx.lineCap='round';
         for(var i=0;i<drops.length;i++){
