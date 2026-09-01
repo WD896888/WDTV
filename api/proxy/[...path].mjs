@@ -469,9 +469,11 @@ export default async function handler(req, res) {
             res.status(200)
                 .setHeader('Content-Type', 'application/vnd.apple.mpegurl;charset=utf-8')
                 .setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`)
-                // 移除可能导致问题的原始响应头
+                // 显式声明内容长度：避免分块流式发送。某些设备网络栈对
+                // 分块(chunked)响应的“结束块”识别有异常，会一直等不到结尾而挂起超时，
+                // 带 Content-Length 的完整响应可让这类设备按长度判断取完。
                 .removeHeader('content-encoding') // 很重要！node-fetch 已解压
-                .removeHeader('content-length')   // 长度已改变
+                .setHeader('Content-Length', String(Buffer.byteLength(processedM3u8)))
                 .send(processedM3u8); // 发送 M3U8 文本
 
         } else {
@@ -492,6 +494,8 @@ export default async function handler(req, res) {
             res.setHeader('Content-Type', contentType || 'application/octet-stream');
             // 设置我们自己的缓存策略
             res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
+            // 显式声明内容长度（见上方注释）：避免分块流式，兼容收不到分块结束信号的设备
+            res.setHeader('Content-Length', String(buffer.length));
 
             // 以二进制发送原始内容（切勿转成字符串，否则视频数据损坏）
             res.status(200).send(buffer);
