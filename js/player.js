@@ -439,6 +439,41 @@ function updateResolutionBadgeFromVideo() {
     }
 }
 
+// 让播放器容器尺寸贴合视频实际宽高比，消除多余黑边（全屏时交还 CSS 接管）
+// 视频元数据未知时按最常见的 16:9 给出紧凑占位，避免加载前出现全宽大黑块
+function applyVideoFitSize() {
+    const player = document.getElementById('player');
+    if (!player) return;
+    if (art && (art.fullscreen || art.fullscreenWeb)) {
+        player.style.removeProperty('width');
+        player.style.removeProperty('height');
+        player.style.removeProperty('margin');
+        return;
+    }
+    let ratio = 16 / 9;
+    if (art && art.video) {
+        const vw = art.video.videoWidth;
+        const vh = art.video.videoHeight;
+        if (vw && vh) ratio = vw / vh;
+    }
+    // 基准高度与 CSS 的 60vh 保持一致；宽度按视频比例收缩，超出可用宽度时反向压缩高度，保证无黑边
+    // 占位阶段同样应用该尺寸（16:9 假设），安卓竖屏上宽度触顶后高度同步压缩，避免出现全宽大黑块
+    const baseH = Math.round(window.innerHeight * 0.6);
+    const maxW = player.parentElement ? player.parentElement.clientWidth : window.innerWidth;
+    let h = baseH;
+    let w = h * ratio;
+    if (w > maxW) {
+        w = maxW;
+        h = w / ratio;
+    }
+    player.style.setProperty('width', Math.round(w) + 'px', 'important');
+    player.style.setProperty('height', Math.round(h) + 'px', 'important');
+    player.style.setProperty('margin', '0 auto', 'important');
+}
+window.addEventListener('resize', applyVideoFitSize);
+// 页面加载时立即应用紧凑占位（视频元数据到达后再精确贴合）
+applyVideoFitSize();
+
 // 多档清晰度时，向 ArtPlayer 设置面板添加清晰度切换菜单
 // 注意：多档判断只看 levels.length（BANDWIDTH 是 master playlist 必填项）。
 // 很多采集站的 m3u8 不写 RESOLUTION 声明（levels[].height 为空），
@@ -509,6 +544,8 @@ async function initPlayer(videoUrl) {
         art.destroy();
         art = null;
     }
+    // 换源/初始化时先回到 16:9 紧凑占位，元数据到达后再贴合真实比例
+    applyVideoFitSize();
     resolutionBadgeEl = null;
     qualityMenuAdded = false;
     // 隐藏上一视频残留的分辨率文本，待新视频加载后重新显示
@@ -556,7 +593,7 @@ async function initPlayer(videoUrl) {
         autoplay: true,
         pip: true,
         autoSize: false,
-        autoMini: true,
+        autoMini: false,
         screenshot: true,
         setting: true,
         loop: false,
@@ -742,6 +779,18 @@ async function initPlayer(videoUrl) {
             clearTimeout(hideTimer);
         }
 
+        // 进入全屏直接清除贴合尺寸交还 CSS，退出全屏按视频比例恢复
+        const fitPlayer = document.getElementById('player');
+        if (fitPlayer) {
+            if (isFullScreen) {
+                fitPlayer.style.removeProperty('width');
+                fitPlayer.style.removeProperty('height');
+                fitPlayer.style.removeProperty('margin');
+            } else {
+                applyVideoFitSize();
+            }
+        }
+
         if (!isWeb) {
             if (window.screen.orientation && window.screen.orientation.lock) {
                 window.screen.orientation.lock('landscape')
@@ -770,6 +819,9 @@ async function initPlayer(videoUrl) {
 
     art.on('video:loadedmetadata', function() {
         videoHasEnded = false; // 视频加载时重置结束标志
+
+        // 容器尺寸贴合视频真实宽高比，消除多余黑边
+        applyVideoFitSize();
 
         // 用视频元数据中的真实分辨率刷新徽章（单层m3u8时这是唯一可靠来源）
         ensureResolutionBadge();
@@ -1496,7 +1548,7 @@ function renderResourceInfoBar() {
       </div>
       <button class="resource-switch-btn flex" id="switchResourceBtn" onclick="showSwitchResourceModal()">
         <span class="resource-switch-icon">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v16m0 0l-6-6m6 6l6-6" stroke="#2a3a5c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v16m0 0l-6-6m6 6l6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
         切换资源
       </button>
@@ -1523,7 +1575,7 @@ function renderResourceInfoBar() {
       </div>
       <button class="resource-switch-btn flex" id="switchResourceBtn" onclick="showSwitchResourceModal()">
         <span class="resource-switch-icon">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v16m0 0l-6-6m6 6l6-6" stroke="#2a3a5c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v16m0 0l-6-6m6 6l6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
         切换资源
       </button>

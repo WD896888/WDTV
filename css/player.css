@@ -379,63 +379,100 @@ input:checked + .slider:before {
     box-shadow: none !important;
 }
 
-.resource-info-bar-left {
+/* ===== 资源信息栏：玻璃卡片 + 朴素文本排版 ===== */
+#resourceInfoBarContainer {
     align-items: center;
-    font-size: 1.1rem;
-    font-weight: bold;
-    color: #2a3a5c;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 10px 14px !important;
+    background: rgba(200,220,245,0.08);
+    border: 1px solid rgba(200,220,245,0.18);
+    border-radius: 12px;
+}
+
+.resource-info-bar-left {
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 10px;
     flex: 1;
+    min-width: 0;
 }
 
-.resource-info-bar-videos {
-    font-size: 1rem;
-    font-weight: normal;
-    margin-left: 10px;
-    color: rgba(42,58,92,0.5);
+/* 源名 - 主文字 */
+.resource-info-bar-left > span:first-child {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: rgba(236,244,255,0.96);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 12em;
 }
 
-/* 源信息栏中的分辨率文本 */
+/* 视频数量 / 分辨率 - 次级文字 */
+.resource-info-bar-videos,
 .resource-info-bar-resolution {
-    font-size: 1rem;
-    font-weight: normal;
-    margin-left: 10px;
-    color: rgba(42,58,92,0.5);
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: rgba(180,200,230,0.75);
+    white-space: nowrap;
 }
 
-/* 切换资源按钮 - 内部控制层 */
+/* 切换资源按钮 */
 .resource-switch-btn {
     align-items: center;
-    background: rgba(255,255,255,0.3);
-    border: 1px solid rgba(255,255,255,0.2);
-    color: #2a3a5c;
-    font-weight: 600;
-    font-size: 1rem;
+    background: rgba(200,220,245,0.12);
+    border: 1px solid rgba(200,220,245,0.28);
+    color: rgba(236,244,255,0.96);
+    font-weight: 500;
+    font-size: 0.9rem;
     cursor: pointer;
     gap: 6px;
     padding: 6px 14px;
     border-radius: 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
     transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
     box-shadow: none;
     text-shadow: none;
 }
 
 .resource-switch-btn:hover {
-    background: rgba(255,255,255,0.45);
-    border-color: rgba(255,255,255,0.4);
-    color: #2a3a5c;
+    background: rgba(200,220,245,0.22);
+    border-color: rgba(200,220,245,0.45);
+    color: #ffffff;
 }
 
 .resource-switch-btn:active {
-    background: rgba(255,255,255,0.5);
+    background: rgba(200,220,245,0.3);
 }
 
 .resource-switch-icon {
-    width: 20px;
-    height: 20px;
+    width: 14px;
+    height: 14px;
     margin-right: 0;
-    color: #2a3a5c;
+    color: currentColor;
     vertical-align: middle;
     transition: transform 0.3s;
+}
+
+/* 资源信息栏移动端：收紧内边距与字号 */
+@media (max-width: 640px) {
+    #resourceInfoBarContainer {
+        padding: 8px 10px !important;
+        gap: 6px 10px;
+    }
+    .resource-info-bar-left > span:first-child {
+        font-size: 0.9rem;
+    }
+    .resource-info-bar-videos,
+    .resource-info-bar-resolution {
+        font-size: 0.8rem;
+    }
+    .resource-switch-btn {
+        font-size: 0.85rem;
+        padding: 5px 10px;
+    }
 }
 
 /* 新增：移动端响应式样式 */

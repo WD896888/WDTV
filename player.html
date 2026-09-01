@@ -33,6 +33,11 @@
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Raleway:wght@200;300&display=swap');
 
+    /* 全局紧凑化：根字号缩小 12.5%~19%，页面所有 rem 尺寸（Tailwind 字号/间距/组件）等比缩小，
+       桌面/平板 14px，手机 13px（触控目标仍保持可用） */
+    html{font-size:14px}
+    @media (max-width:640px){html{font-size:13px}}
+
     :root{
       --bg-deep:#181e32;--bg-mid:#263050;
       --mist:#8895b4;--silver:#b2c0d8;--light:#cdd6ea;--pale:#e2e9f5;--white:#eff2fa;
@@ -134,8 +139,7 @@
     .shortcut-hint{pointer-events:none}
 
     /* 面板风格覆盖：容器层浅色文字 + 内部控制层深色文字 */
-    #videoTitle{color:rgba(222,234,250,0.92) !important;text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22)}
-    .logo-icon{color:#6a9ae0 !important;filter:drop-shadow(0 2px 8px rgba(42,90,160,0.25))}
+    #videoTitle{color:rgba(222,234,250,0.92) !important}
     .gradient-text{background:linear-gradient(135deg,#6a9ae0 0%,#4a7cc9 50%,#2c5aa0 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     /* 深色背景上的裸文字 — 浅色保证可读 */
     .text-gray-600{color:rgba(180,200,230,0.85) !important}
@@ -204,22 +208,20 @@
     </div>
 
     <header class="player-header-fixed p-4 flex items-center gap-2">
-        <div class="flex items-center min-w-0">
+        <div class="flex-1 flex items-center min-w-0">
             <button id="homeButton" type="button" class="flex items-center min-w-0 cursor-pointer home-button">
-                <svg class="w-8 h-8 mr-2 logo-icon" style="color: #6a9ae0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                </svg>
                 <h1 class="text-xl font-bold gradient-text logo-text">WDTV</h1>
             </button>
+            <a href="#" id="goBack" onclick="goBack(event)" class="player-glass-button flex items-center min-w-0 home-btn ml-2">
+                <svg class="w-5 h-5 mr-1" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M5.25 11h15a1.5 1.5 0 1 1 0 3H5.25a1.5 1.5 0 0 1 0-3z"/>
+                    <path d="M5.55 12 11.3 17.3a1.5 1.5 0 1 1-2.12 2.12L3 12l6.18-6.18a1.5 1.5 0 1 1 2.12 2.12L5.55 12z"/>
+                </svg>
+                <span class="home-btn-text">上一页</span>
+            </a>
         </div>
-        <h2 id="videoTitle" class="text-xl font-semibold flex-1 text-center overflow-x-auto whitespace-nowrap truncate custom-title-scroll" style="color: rgba(222,234,250,0.92);"></h2>
-        <a href="#" id="goBack" onclick="goBack(event)" class="player-glass-button flex items-center min-w-0 home-btn">
-            <svg class="w-5 h-5 mr-1" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                <path d="M5.25 11h15a1.5 1.5 0 1 1 0 3H5.25a1.5 1.5 0 0 1 0-3z"/>
-                <path d="M5.55 12 11.3 17.3a1.5 1.5 0 1 1-2.12 2.12L3 12l6.18-6.18a1.5 1.5 0 1 1 2.12 2.12L5.55 12z"/>
-            </svg>
-            <span class="home-btn-text">上一页</span>
-        </a>
+        <h2 id="videoTitle" class="text-xl font-semibold text-center overflow-x-auto whitespace-nowrap truncate custom-title-scroll min-w-0 max-w-full" style="color: rgba(222,234,250,0.92);"></h2>
+        <div class="flex-1"></div>
     </header>
 
     <!-- 密码验证弹窗 - 容器层玻璃 -->
@@ -254,7 +256,7 @@
         </div>
 
         <!-- 源信息 -->
-        <div class="player-container flex justify-between py-2 px-4 mb-2" id="resourceInfoBarContainer">
+        <div id="resourceInfoBarContainer" class="player-container flex justify-between items-center mb-2">
             <!-- 资源信息卡片、切换按钮、视频数将由JS动态渲染 -->
         </div>
 
