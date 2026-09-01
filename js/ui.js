@@ -233,13 +233,8 @@ function renderSearchHistory() {
         return;
     }
 
-    // 单行紧凑布局：行首前缀 + 可横向滚动的历史标签 + 行尾清空按钮
+    // 单行紧凑布局：可横向滚动的历史标签 + 行尾清空按钮
     historyContainer.innerHTML = '';
-
-    const prefix = document.createElement('span');
-    prefix.className = 'wdtv-recent-prefix';
-    prefix.textContent = '最近';
-    historyContainer.appendChild(prefix);
 
     history.forEach(item => {
         const tag = document.createElement('button');

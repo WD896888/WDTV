@@ -111,7 +111,6 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 /* WDTV recent searches */
 .wdtv-recent{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .wdtv-recent::-webkit-scrollbar{display:none}
-.wdtv-recent-prefix{flex:none;font-size:0.72rem;color:var(--text-muted);white-space:nowrap}
 .wdtv-recent .search-tag{flex:none;min-width:0;max-width:9em;padding:3px 10px;font-size:0.72rem;white-space:nowrap}
 .wdtv-recent .search-tag span:first-child{overflow:hidden;text-overflow:ellipsis}
 .wdtv-recent .search-tag svg{width:10px;height:10px}
@@ -150,7 +149,6 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-result-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
 .wdtv-result-toolbar .wdtv-result-count{margin-bottom:0}
 .wdtv-name-filter{display:flex;align-items:center;gap:8px;min-width:0}
-.wdtv-name-filter-label{font-size:0.85rem;color:var(--text-muted);white-space:nowrap}
 .wdtv-name-dropdown{position:relative;min-width:0}
 .wdtv-name-dropdown-toggle{display:flex;align-items:center;gap:8px;max-width:280px;padding:6px 12px;border-radius:10px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--pale);font-size:0.85rem;outline:none;cursor:pointer;transition:border-color 0.2s,background 0.2s;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .wdtv-name-dropdown-toggle:hover{border-color:rgba(155,185,232,0.38);background:rgba(155,180,218,0.14)}
@@ -483,7 +481,6 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
         <div id="resultsArea" class="hidden">
           <div class="wdtv-result-toolbar">
             <div id="nameFilterBar" class="wdtv-name-filter hidden">
-              <span class="wdtv-name-filter-label">同名筛选</span>
               <div id="nameDropdown" class="wdtv-name-dropdown">
                 <button type="button" id="nameDropdownToggle" class="wdtv-name-dropdown-toggle" onclick="toggleNameDropdown(event)">
                   <span id="nameDropdownLabel">全部</span>
