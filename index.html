@@ -26,7 +26,7 @@
 
 <!-- WDTV External CSS -->
 <link rel="stylesheet" href="css/styles.css?v=6">
-<link rel="stylesheet" href="css/index.css?v=6">
+<link rel="stylesheet" href="css/index.css?v=8">
 <link rel="stylesheet" href="css/modals.css?v=6">
 
 <style>
@@ -90,50 +90,58 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-home-wrap{width:100%;max-width:1200px;margin:0 auto;padding:0 16px}
 
 /* WDTV header */
-.wdtv-header{text-align:center;margin-bottom:32px}
+.wdtv-header{text-align:center;margin-bottom:36px}
 .wdtv-header .wdtv-logo{display:flex;justify-content:center;align-items:center;margin-bottom:12px}
 .wdtv-header .wdtv-logo svg{width:36px;height:36px;margin-right:8px;color:#2c4a7c;filter:drop-shadow(0 2px 8px rgba(44,74,124,0.25))}
-.wdtv-header .wdtv-title{font-family:'Cormorant Garamond',serif;font-size:2.4rem;font-weight:300;letter-spacing:0.24em;background:linear-gradient(135deg,#1a3a6b 0%,#2c5aa0 40%,#4a7cc9 70%,#6a9ae0 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 2px 12px rgba(44,90,160,0.2))}
-.wdtv-header .wdtv-slogan{font-family:'Raleway','Noto Sans SC',sans-serif;font-weight:300;font-size:0.78rem;letter-spacing:0.16em;text-transform:uppercase;color:#5a7faa;margin-top:8px}
+.wdtv-header .wdtv-title{font-family:'Cormorant Garamond',serif;font-size:3.1rem;font-weight:300;letter-spacing:0.22em;padding-left:0.22em;background:linear-gradient(160deg,#16305c 0%,#2c5aa0 38%,#4a7cc9 68%,#7fa8e0 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.wdtv-header .wdtv-slogan{display:flex;align-items:center;justify-content:center;gap:14px;font-family:'Raleway','Noto Sans SC',sans-serif;font-weight:300;font-size:0.8rem;letter-spacing:0.28em;padding-left:0.28em;text-transform:uppercase;color:#48699a;margin-top:10px}
+.wdtv-header .wdtv-slogan::before,.wdtv-header .wdtv-slogan::after{content:"";width:44px;height:1px;flex-shrink:0;background:linear-gradient(to right,transparent,rgba(72,105,154,0.55));opacity:0.8}
+.wdtv-header .wdtv-slogan::after{background:linear-gradient(to left,transparent,rgba(72,105,154,0.55))}
 
 /* WDTV search area */
-.wdtv-search-wrap{width:100%;max-width:420px;margin:0 auto 16px}
-.wdtv-search-glass{display:flex;align-items:center;margin-bottom:12px;height:44px;border-radius:11px;border:1px solid rgba(200,220,245,0.42);background:rgba(200,220,245,0.55);color:#2a3a5c;position:relative;z-index:10;transition:border-color 0.3s,box-shadow 0.3s;text-shadow:0 1px 4px rgba(255,255,255,0.5)}
-.wdtv-search-glass:focus-within{border-color:rgba(200,220,245,0.7);box-shadow:0 0 20px rgba(200,220,245,0.1)}
-.wdtv-search-glass input{flex:1;min-width:0;background:transparent;border:none;color:#2a3a5c;padding:0 16px;font-size:13.5px;font-family:'Noto Serif SC','Source Han Serif SC',serif;font-weight:500;letter-spacing:0.1em;outline:none}
-.wdtv-search-glass input::placeholder{color:rgba(42,58,92,0.5);font-weight:400}
-.wdtv-search-glass .wdtv-clear-btn{display:none;align-items:center;justify-content:center;width:40px;background:none;border:none;color:rgba(42,58,92,0.45);cursor:pointer;transition:color 0.2s}
+.wdtv-search-wrap{width:100%;max-width:540px;margin:0 auto 14px}
+.wdtv-search-glass{display:flex;align-items:center;margin-bottom:12px;height:52px;border-radius:15px;border:1px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.22);color:#2a3a5c;position:relative;z-index:10;backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);transition:border-color 0.3s,background 0.3s}
+.wdtv-search-glass:focus-within{border-color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.32)}
+.wdtv-search-glass input{flex:1;min-width:0;background:transparent;border:none;color:#2a3a5c;padding:0 18px;font-size:15px;font-family:'Noto Serif SC','Source Han Serif SC',serif;font-weight:500;letter-spacing:0.08em;outline:none}
+.wdtv-search-glass input::placeholder{color:rgba(42,58,92,0.45);font-weight:400}
+.wdtv-search-glass .wdtv-clear-btn{display:none;align-items:center;justify-content:center;width:44px;background:none;border:none;color:rgba(42,58,92,0.45);cursor:pointer;transition:color 0.2s}
 .wdtv-search-glass .wdtv-clear-btn:hover{color:rgba(42,58,92,0.8)}
 .wdtv-search-glass .wdtv-clear-btn:not(.hidden){display:flex}
-.wdtv-search-glass .wdtv-search-btn{display:flex;align-items:center;justify-content:center;width:48px;background:none;border:none;border-left:1px solid rgba(200,220,245,0.35);color:rgba(42,58,92,0.6);cursor:pointer;transition:color 0.2s;-webkit-appearance:none;appearance:none}
-.wdtv-search-glass .wdtv-search-btn:hover{background:none;color:rgba(42,58,92,0.85)}
+.wdtv-search-glass .wdtv-search-btn{display:flex;align-items:center;justify-content:center;width:56px;height:100%;background:none;border:none;border-left:1px solid rgba(215,232,252,0.45);color:rgba(42,58,92,0.62);cursor:pointer;transition:color 0.2s,background 0.2s;-webkit-appearance:none;appearance:none;border-radius:0 15px 15px 0}
+.wdtv-search-glass .wdtv-search-btn:hover{background:rgba(255,255,255,0.18);color:rgba(30,58,110,0.9)}
+.wdtv-search-glass .wdtv-search-btn svg,.wdtv-search-glass .wdtv-clear-btn svg{width:19px;height:19px}
 
 /* WDTV recent searches */
-.wdtv-recent{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.wdtv-recent{display:flex;flex-wrap:nowrap;align-items:center;gap:8px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px}
 .wdtv-recent::-webkit-scrollbar{display:none}
-.wdtv-recent .search-tag{flex:none;min-width:0;max-width:9em;padding:3px 10px;font-size:0.72rem;white-space:nowrap}
+.wdtv-recent .search-tag{flex:none;display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:10em;padding:5px 13px;border-radius:9999px;font-size:0.78rem;white-space:nowrap;background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.3);color:#2a3a5c;transition:all 0.2s;cursor:pointer}
+.wdtv-recent .search-tag:hover{background:rgba(255,255,255,0.4);border-color:rgba(255,255,255,0.5)}
 .wdtv-recent .search-tag span:first-child{overflow:hidden;text-overflow:ellipsis}
-.wdtv-recent .search-tag svg{width:10px;height:10px}
-.wdtv-recent-clear{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:9999px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;padding:0}
-.wdtv-recent-clear:hover{background:rgba(80,128,176,0.15);color:var(--white)}
+.wdtv-recent .search-tag svg{width:11px;height:11px;flex-shrink:0;opacity:0.55}
+.wdtv-recent-clear{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:9999px;border:1px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.22);color:#48699a;cursor:pointer;padding:0;transition:all 0.2s}
+.wdtv-recent-clear:hover{background:rgba(255,255,255,0.45);color:#1e3a6e}
 .wdtv-recent-tag{padding:5px 14px;border-radius:20px;font-size:0.78rem;cursor:pointer;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);transition:all 0.3s;font-family:'Noto Sans SC',sans-serif}
 .wdtv-recent-tag:hover{background:rgba(80,128,176,0.15);color:var(--white);border-color:var(--accent)}
 
 /* WDTV douban area */
-.wdtv-douban{width:100%;max-width:1200px;margin:32px auto}
-.wdtv-douban-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px}
-.wdtv-douban-header h2{font-size:1.2rem;font-weight:bold;color:var(--pale)}
-.wdtv-douban-toggle{display:flex;align-items:center;border-radius:10px;overflow:hidden;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06)}
-.wdtv-douban-toggle button{padding:6px 16px;font-size:0.82rem;border:none;background:none;color:var(--text-secondary);cursor:pointer;font-family:'Noto Sans SC',sans-serif;transition:all 0.2s}
-.wdtv-douban-toggle button.active{background:rgba(80,128,176,0.2);color:var(--white)}
-.wdtv-douban-refresh{display:flex;align-items:center;gap:4px;padding:5px 12px;border-radius:10px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);cursor:pointer;font-size:0.82rem;font-family:'Noto Sans SC',sans-serif;transition:all 0.2s}
-.wdtv-douban-refresh:hover{background:rgba(80,128,176,0.15);color:var(--white);border-color:var(--accent)}
-.wdtv-douban-tags{display:flex;flex-wrap:nowrap;gap:6px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.wdtv-douban{width:100%;max-width:1200px;margin:38px auto 32px}
+.wdtv-douban-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+.wdtv-douban-header h2{font-family:'Cormorant Garamond','Noto Serif SC',serif;font-size:1.42rem;font-weight:500;letter-spacing:0.14em;color:rgba(228,238,252,0.95)}
+.wdtv-douban-toggle{display:flex;align-items:center;gap:2px;padding:3px;border-radius:9999px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.14);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.wdtv-douban-toggle button{padding:5px 18px;font-size:0.8rem;border:none;border-radius:9999px;background:none;color:rgba(222,234,250,0.78);cursor:pointer;font-family:'Noto Sans SC',sans-serif;letter-spacing:0.04em;transition:all 0.2s}
+.wdtv-douban-toggle button:hover{color:#fff}
+.wdtv-douban-toggle button.active{background:rgba(255,255,255,0.38);color:#1e3a6e;font-weight:500}
+.wdtv-douban-refresh{display:flex;align-items:center;gap:6px;padding:6px 15px;border-radius:9999px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.16);color:rgba(228,238,252,0.92);cursor:pointer;font-size:0.8rem;font-family:'Noto Sans SC',sans-serif;letter-spacing:0.04em;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:all 0.2s}
+.wdtv-douban-refresh:hover{background:rgba(255,255,255,0.32);color:#fff;border-color:rgba(255,255,255,0.45)}
+.wdtv-douban-refresh svg{transition:transform 0.5s cubic-bezier(0.4,0,0.2,1)}
+.wdtv-douban-refresh:hover svg{transform:rotate(180deg)}
+.wdtv-douban-tags{display:flex;flex-wrap:nowrap;gap:8px;margin-bottom:14px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px}
 .wdtv-douban-tags::-webkit-scrollbar{display:none}
-.wdtv-douban-tags .douban-tag{flex:none;padding:4px 12px;font-size:0.75rem;white-space:nowrap}
-.wdtv-douban-tag{padding:4px 12px;border-radius:16px;font-size:0.75rem;cursor:pointer;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);transition:all 0.3s}
-.wdtv-douban-tag:hover,.wdtv-douban-tag.active{background:rgba(80,128,176,0.2);color:var(--white);border-color:var(--accent)}
-.wdtv-douban-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+.wdtv-douban-tags .douban-tag{flex:none;padding:5px 14px;font-size:0.76rem;white-space:nowrap}
+.wdtv-douban-tag{padding:5px 14px;border-radius:9999px;font-size:0.76rem;cursor:pointer;border:1px solid rgba(255,255,255,0.28);background:rgba(255,255,255,0.16);color:rgba(222,234,250,0.85);letter-spacing:0.03em;transition:all 0.2s;white-space:nowrap}
+.wdtv-douban-tag:hover{background:rgba(255,255,255,0.32);color:#fff;border-color:rgba(255,255,255,0.45)}
+.wdtv-douban-tag.active{background:rgba(255,255,255,0.4);color:#1e3a6e;font-weight:500;border-color:rgba(255,255,255,0.5)}
+.wdtv-douban-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px}
 
 /* WDTV result cards */
 .wdtv-result-card{background:rgba(155,180,218,0.06);border:1px solid var(--glass-border);border-radius:14px;overflow:hidden;cursor:pointer;transition:all 0.3s var(--transition);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
@@ -248,39 +256,53 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 /* WDTV Modal - Liquid Glass (match history/settings panels) */
 .wdtv-modal-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:10000;background:rgba(200,220,245,0.25);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5)}
 .wdtv-modal-overlay:not(.hidden){display:flex}
-.wdtv-modal{background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border:1px solid rgba(200,220,245,0.42);box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1);color:rgba(236,244,255,0.96);border-radius:24px;padding:32px;width:92%;max-width:800px;max-height:90vh;display:flex;flex-direction:column}
+.wdtv-modal{background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border:1px solid rgba(200,220,245,0.42);box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1);color:rgba(236,244,255,0.96);border-radius:20px;padding:22px 28px;width:min(1100px,94vw);max-height:90vh;display:flex;flex-direction:column}
 #modal>.wdtv-modal{background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border:1px solid rgba(200,220,245,0.42);box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1)}
-.wdtv-modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-shrink:0}
-.wdtv-modal-header h2{font-family:'Cormorant Garamond',serif;font-size:1.5rem;font-weight:300;letter-spacing:0.1em;color:rgba(222,234,250,0.92);text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22);max-width:80%;word-break:break-word;padding-right:16px}
+.wdtv-modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-shrink:0}
+.wdtv-modal-header h2{font-family:'Cormorant Garamond',serif;font-size:1.35rem;font-weight:300;letter-spacing:0.1em;color:rgba(222,234,250,0.92);text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22);word-break:break-word;padding-right:16px;line-height:1.3}
 .wdtv-modal-header h2 span{-webkit-text-fill-color:rgba(222,234,250,0.92)}
 .wdtv-modal-source-name{font-size:0.85rem;font-weight:400;color:rgba(180,200,230,0.7);margin-left:8px;font-family:'Noto Sans SC',sans-serif;letter-spacing:0.02em}
 .wdtv-modal-close{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:transparent;border:none;color:rgba(222,234,250,0.92);cursor:pointer;transition:all 0.2s;flex-shrink:0;font-size:1.4rem;line-height:1}
 .wdtv-modal-close:hover{color:#fff}
-.wdtv-modal-body{overflow:auto;flex:1;min-height:0}
-/* WDTV Modal detail area */
-#modal .modal-detail-info{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:1rem;margin-bottom:1.5rem;color:#2a3a5c}
-#modal .detail-label{color:rgba(42,58,92,0.6);font-weight:500;min-width:3rem;flex-shrink:0}
-#modal .detail-value{color:rgba(30,45,75,0.9);flex:1;word-break:break-word}
-#modal .detail-desc{margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(200,220,245,0.2)}
-#modal .detail-desc-content{color:rgba(42,58,92,0.7);font-size:0.875rem;line-height:1.6;max-height:8rem;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(42,58,92,0.25) transparent}
-#modal .detail-desc-content::-webkit-scrollbar{width:6px}
-#modal .detail-desc-content::-webkit-scrollbar-track{background:transparent;border-radius:4px}
-#modal .detail-desc-content::-webkit-scrollbar-thumb{background:rgba(42,58,92,0.25);border-radius:4px}
-#modal .episode-stats{color:rgba(42,58,92,0.6);font-size:0.875rem}
+.wdtv-modal-body{overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(180,200,230,0.35) transparent}
+.wdtv-modal-body::-webkit-scrollbar{width:6px}
+.wdtv-modal-body::-webkit-scrollbar-track{background:transparent}
+.wdtv-modal-body::-webkit-scrollbar-thumb{background:rgba(180,200,230,0.35);border-radius:4px}
+/* WDTV Modal detail hero: 左封面 + 右信息，无内部滚动 */
+#modal .wdtv-detail-hero{display:flex;gap:18px;align-items:flex-start;margin-bottom:14px}
+#modal .wdtv-detail-cover{width:150px;aspect-ratio:2/3;flex-shrink:0;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.35);box-shadow:0 10px 28px rgba(0,0,0,0.22);background:rgba(255,255,255,0.25)}
+#modal .wdtv-detail-cover img{width:100%;height:100%;object-fit:cover;display:block}
+#modal .wdtv-detail-main{flex:1;min-width:0;color:#2a3a5c}
+#modal .wdtv-detail-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+#modal .wdtv-detail-chip{font-size:0.74rem;padding:3px 10px;border-radius:9999px;background:rgba(255,255,255,0.35);border:1px solid rgba(255,255,255,0.3);color:#2a3a5c;letter-spacing:0.03em;line-height:1.4}
+#modal .wdtv-detail-people{display:flex;flex-direction:column;gap:2px;font-size:0.82rem;line-height:1.6;margin-bottom:8px}
+#modal .wdtv-detail-people span:last-child{color:rgba(30,45,75,0.9);word-break:break-word}
+#modal .detail-label{color:rgba(42,58,92,0.55);font-weight:500;flex-shrink:0;margin-right:6px}
+#modal .wdtv-detail-desc{margin:0;padding-top:8px;border-top:1px solid rgba(200,220,245,0.2);color:rgba(42,58,92,0.72);font-size:0.84rem;line-height:1.7;word-break:break-word}
+/* 集数操作栏 */
+#modal .episode-stats{color:rgba(42,58,92,0.6);font-size:0.85rem}
+.wdtv-episodes-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.wdtv-episodes-bar-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 /* WDTV Modal buttons */
 .wdtv-modal-mini-btn{padding:5px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-size:0.78rem;cursor:pointer;font-family:'Noto Serif SC',serif;letter-spacing:0.04em;transition:all 0.2s;text-shadow:none;display:inline-flex;align-items:center;gap:6px}
 .wdtv-modal-mini-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
 .wdtv-modal-primary-btn{padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-size:0.82rem;font-weight:500;cursor:pointer;font-family:'Noto Serif SC',serif;letter-spacing:0.04em;transition:all 0.2s;text-shadow:none}
 .wdtv-modal-primary-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
-.wdtv-episode-btn{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;border-radius:8px;padding:8px 12px;font-family:'Noto Serif SC',serif;font-size:0.85rem;transition:all 0.2s;cursor:pointer;text-shadow:none}
+.wdtv-episode-btn{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;border-radius:8px;padding:7px 4px;font-family:'Noto Serif SC',serif;font-size:0.85rem;transition:all 0.2s;cursor:pointer;text-shadow:none;text-align:center}
 .wdtv-episode-btn:hover{background:rgba(255,255,255,0.45);border-color:rgba(255,255,255,0.4)}
-#episodesGrid .wdtv-episode-btn{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;box-shadow:none}
+#episodesGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px}
+#episodesGrid .wdtv-episode-btn{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;box-shadow:none;min-width:0}
 #episodesGrid .wdtv-episode-btn:hover{background:rgba(255,255,255,0.45);border-color:rgba(255,255,255,0.4);color:#2a3a5c;transform:translateY(-1px);box-shadow:none}
 @media(max-width:640px){
-#modal .detail-grid{gap:0.5rem;font-size:0.8rem}
-#modal .detail-label{min-width:2.5rem}
-#modal .detail-desc-content{max-height:6rem;font-size:0.8rem}
-.wdtv-episode-btn{font-size:0.8rem;padding:7px 8px}
+.wdtv-modal{padding:14px 16px;border-radius:16px}
+.wdtv-modal-header h2{font-size:1.15rem}
+#modal .wdtv-detail-hero{gap:12px}
+#modal .wdtv-detail-cover{width:96px}
+#modal .wdtv-detail-chip{font-size:0.68rem;padding:2px 8px}
+#modal .wdtv-detail-people{font-size:0.76rem}
+#modal .wdtv-detail-desc{font-size:0.78rem}
+#episodesGrid{grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:6px}
+.wdtv-episode-btn{font-size:0.8rem;padding:7px 4px}
 }
 
 /* WDTV Password Modal */
@@ -298,15 +320,15 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-pwd-error{color:#e57373;margin-top:8px;font-size:0.88rem;display:none}
 
 /* WDTV Disclaimer Modal */
-.wdtv-disclaimer-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:10000;background:rgba(235,244,255,0.5);backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%)}
+.wdtv-disclaimer-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:10000;background:rgba(200,220,245,0.25);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5)}
 .wdtv-disclaimer-modal.show{display:flex}
-.wdtv-disclaimer-box{background:rgba(255,255,255,0.85);backdrop-filter:blur(50px) saturate(200%);-webkit-backdrop-filter:blur(50px) saturate(200%);border:1px solid rgba(255,255,255,0.9);box-shadow:0 24px 80px rgba(0,0,0,0.12),inset 0 1px 0 rgba(255,255,255,0.95);color:#1d1d1f;border-radius:24px;padding:32px;width:92%;max-width:560px;max-height:90vh;overflow-y:auto}
-.wdtv-disclaimer-box h2{font-size:1.5rem;font-weight:bold;background:linear-gradient(135deg,#007aff,#5856d6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:24px;text-align:center}
-.wdtv-disclaimer-box .wdtv-disc-text{color:#3a5a8c;line-height:2}
+.wdtv-disclaimer-box{background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border:1px solid rgba(200,220,245,0.42);box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1);color:rgba(236,244,255,0.96);border-radius:24px;padding:32px;width:92%;max-width:560px;max-height:90vh;overflow-y:auto}
+.wdtv-disclaimer-box h2{font-size:1.4rem;font-weight:500;letter-spacing:0.14em;color:rgba(222,234,250,0.92);text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22);margin-bottom:24px;text-align:center}
+.wdtv-disclaimer-box .wdtv-disc-text{color:rgba(224,234,248,0.85);line-height:2}
 .wdtv-disclaimer-box .wdtv-disc-text p{margin-bottom:12px}
-.wdtv-disclaimer-box .wdtv-disc-text strong{color:#1a5090}
-.wdtv-disclaimer-box .wdtv-disc-accept{display:block;margin:24px auto 0;padding:12px 28px;border-radius:14px;border:1px solid rgba(80,145,205,0.4);background:rgba(80,128,176,0.2);color:#1a5090;font-size:1rem;font-weight:600;cursor:pointer;font-family:'Noto Sans SC',sans-serif;transition:all 0.2s}
-.wdtv-disclaimer-box .wdtv-disc-accept:hover{background:rgba(80,128,176,0.3)}
+.wdtv-disclaimer-box .wdtv-disc-text strong{color:#9cc4f5;font-weight:600}
+.wdtv-disclaimer-box .wdtv-disc-accept{display:block;margin:24px auto 0;padding:12px 32px;border-radius:14px;border:1px solid rgba(200,220,245,0.42);background:rgba(80,128,176,0.2);color:rgba(236,244,255,0.96);font-size:1rem;font-weight:500;cursor:pointer;font-family:'Noto Sans SC',sans-serif;letter-spacing:0.08em;transition:all 0.2s}
+.wdtv-disclaimer-box .wdtv-disc-accept:hover{background:rgba(80,128,176,0.35);border-color:rgba(200,220,245,0.6)}
 
 /* WDTV Toast */
 .wdtv-toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-100px);z-index:10001;padding:12px 28px;border-radius:9999px;background:rgba(255,255,255,0.85);backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);border:1px solid rgba(255,255,255,0.9);color:#1d1d1f;box-shadow:0 12px 40px rgba(0,0,0,0.1),inset 0 1px 0 rgba(255,255,255,0.95);font-weight:500;font-size:0.92rem;transition:transform 0.3s,opacity 0.3s;opacity:0;font-family:'Noto Sans SC',sans-serif}
@@ -321,10 +343,10 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-loading-text{color:rgba(236,244,255,0.96);font-size:0.88rem}
 
 /* Nav icon buttons for WDTV */
-/* Nav buttons - match splash-action-btn */
-.wdtv-nav-btn{position:fixed;z-index:10;height:44px;width:44px;border-radius:12px;border:none;background:transparent;color:rgba(236,244,255,0.72);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:all 0.3s}
-.wdtv-nav-btn:hover{color:rgba(236,244,255,0.96);background:rgba(200,220,245,0.12)}
-.wdtv-nav-btn svg{width:16px;height:16px;color:rgba(200,220,245,0.8)}
+/* Nav buttons - minimal glass, no glow */
+.wdtv-nav-btn{position:fixed;z-index:10;height:46px;width:46px;border-radius:14px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.16);backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);color:rgba(228,238,252,0.92);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:all 0.3s}
+.wdtv-nav-btn:hover{color:#fff;background:rgba(255,255,255,0.32);border-color:rgba(255,255,255,0.45)}
+.wdtv-nav-btn svg{width:19px;height:19px;color:currentColor}
 #history-btn{top:24px;left:24px}
 #settings-btn{top:24px;right:24px}
 
@@ -342,6 +364,13 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
   #history-btn{top:16px;left:16px}
   #settings-btn{top:16px;right:16px}
   #chat-mini{right:16px;bottom:16px}
+  .wdtv-header{margin-bottom:26px}
+  .wdtv-header .wdtv-title{font-size:2.2rem}
+  .wdtv-header .wdtv-slogan{font-size:0.72rem;letter-spacing:0.2em;gap:10px}
+  .wdtv-header .wdtv-slogan::before,.wdtv-header .wdtv-slogan::after{width:26px}
+  .wdtv-search-glass{height:48px}
+  .wdtv-search-glass input{font-size:14px;padding:0 14px}
+  .wdtv-douban-header h2{font-size:1.25rem}
 }
 @media(max-width:480px){
   .wdtv-history-panel,.wdtv-settings-panel{width:100%;max-width:100%}
@@ -391,6 +420,8 @@ html.fx-off #preloader,html.fx-off #rain-container,html.fx-off #gw-slot,html.fx-
 
 /* FX OFF 豁免：选集弹窗与两侧侧边栏窗口保持原有玻璃样式（打开时才渲染，不影响首页持续性能） */
 html.fx-off .wdtv-modal-overlay{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important}
+html.fx-off .wdtv-disclaimer-modal{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.25)!important}
+html.fx-off .wdtv-disclaimer-box{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.13)!important;border:1px solid rgba(200,220,245,0.42)!important;box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1)!important}
 html.fx-off .wdtv-modal,html.fx-off #modal>.wdtv-modal{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.13)!important;border:1px solid rgba(200,220,245,0.42)!important;box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1)!important}
 html.fx-off .wdtv-modal-header h2{text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22)!important}
 html.fx-off .wdtv-history-panel,html.fx-off .wdtv-settings-panel{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.13)!important}
@@ -536,33 +567,11 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <button onclick="selectAllAPIs(true)" class="wdtv-mini-btn">全选</button>
       <button onclick="selectAllAPIs(false)" class="wdtv-mini-btn">全不选</button>
-      <button onclick="selectAllAPIs(true, true)" class="wdtv-mini-btn">全选普通资源</button>
     </div>
     <div id="apiCheckboxes" class="wdtv-api-scroll"></div>
     <div class="wdtv-api-info">
       <span>已选API数量：<span id="selectedApiCount" class="wdtv-count">0</span></span>
       <span id="siteStatus"></span>
-    </div>
-  </div>
-  <!-- 自定义API -->
-  <div class="wdtv-settings-block">
-    <div class="wdtv-custom-api-add">
-      <label class="block-label" style="margin-bottom:0;border-bottom:none;padding-bottom:0">自定义API</label>
-      <button onclick="showAddCustomApiForm()" class="wdtv-add-btn">+</button>
-    </div>
-    <div id="customApisList" style="max-height:128px;overflow-y:auto;margin-bottom:8px"></div>
-    <div id="addCustomApiForm" class="wdtv-custom-api-form hidden">
-      <input type="text" id="customApiName" placeholder="API名称" autocomplete="off">
-      <input type="text" id="customApiUrl" placeholder="https://abc.com" autocomplete="off">
-      <input type="text" id="customApiDetail" placeholder="detail地址（可选）" autocomplete="off">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <input type="checkbox" id="customApiIsAdult" style="width:16px;height:16px;accent-color:var(--accent)">
-        <label for="customApiIsAdult" style="font-size:0.78rem;color:#e57373">黄色资源站</label>
-      </div>
-      <div class="wdtv-form-btns">
-        <button onclick="addCustomApi()" class="wdtv-primary-btn">添加</button>
-        <button onclick="cancelAddCustomApi()" class="wdtv-secondary-btn">取消</button>
-      </div>
     </div>
   </div>
   <!-- 功能开关 -->
@@ -571,10 +580,6 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
     <div class="wdtv-settings-row">
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">动态效果</div><div class="wdtv-sr-desc">关闭后停用全部动画与视觉特效，提升性能</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="dynamicEffectsToggle" checked><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
-    </div>
-    <div class="wdtv-settings-row">
-      <div class="wdtv-sr-text"><div class="wdtv-sr-label">黄色内容过滤</div><p class="wdtv-sr-desc filter-description">过滤"伦理片"等黄色内容</p></div>
-      <label class="wdtv-toggle"><input type="checkbox" id="yellowFilterToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
     <div class="wdtv-settings-row">
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">分片广告过滤</div><div class="wdtv-sr-desc">关闭可减少旧版浏览器卡顿</div></div>
@@ -686,7 +691,7 @@ window.__ENV__.PASSWORD = "{{PASSWORD}}";
 <script src="js/douban.js"></script>
 <script src="js/password.js"></script>
 <script src="js/search.js"></script>
-<script src="js/app.js?v=5"></script>
+<script src="js/app.js?v=6"></script>
 <script src="js/pwa-register.js"></script>
 <script src="js/index-page.js"></script>
 
@@ -854,7 +859,7 @@ function toSim(e){if(mode==='pane'){var r=pane.getBoundingClientRect();if(r.widt
 function stir(e){if(!(e.buttons&1))return;if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;var lp=stirPts[e.pointerId];if(!lp){stirPts[e.pointerId]={x:p.x,y:p.y};return}var dx=p.x-lp.x,dy=p.y-lp.y;var d=Math.sqrt(dx*dx+dy*dy);if(d<1.15)return;var steps=Math.min(6,Math.ceil(d/1.5));var s=Math.min(0.55,0.12+d*0.05);for(var i=1;i<=steps;i++)poke(lp.x+dx*i/steps,lp.y+dy*i/steps,s*MOUSE_STR_MAG,1.7*MOUSE_MAG);lp.x=p.x;lp.y=p.y}
 function tap(e){if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;stirPts[e.pointerId]={x:p.x,y:p.y};poke(p.x,p.y,2.0*MOUSE_STR_MAG,2.8*MOUSE_MAG)}
 function lift(e){delete stirPts[e.pointerId]}
-function bgBlank(e){var t=e.target;if(!t||t===sp||t===slot||t===pane)return true;if(t.closest&&(t.closest('#searchArea')||t.closest('#doubanArea')||t.closest('#resultsArea')||t.closest('.wdtv-modal-overlay')||t.closest('.wdtv-history-panel')||t.closest('.wdtv-settings-panel')||t.closest('#chat-mini')))return false;return true}
+function bgBlank(e){var t=e.target;if(!t||t===sp||t===slot||t===pane)return true;if(t.closest&&(t.closest('#searchArea')||t.closest('#doubanArea')||t.closest('#resultsArea')||t.closest('.wdtv-modal-overlay')||t.closest('.wdtv-disclaimer-modal')||t.closest('.wdtv-history-panel')||t.closest('.wdtv-settings-panel')||t.closest('#chat-mini')))return false;return true}
 if(sp&&!REDUCED){var gwTouch={};sp.addEventListener('pointerdown',function(e){if(mode!=='bg')return;var ok=bgBlank(e);gwTouch[e.pointerId]=ok;if(ok)tap(e)},{passive:true});sp.addEventListener('pointermove',function(e){if(mode==='bg'&&gwTouch[e.pointerId]!==false)stir(e)},{passive:true});sp.addEventListener('pointerup',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointercancel',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointerleave',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true})}
 var fogCv=document.getElementById('gw-fogwipe');var fog=fogCv?fogCv.getContext('2d'):null;var wipeStrokes=[];
 function blotch(x,y,r,a){if(!fog)return;var g=fog.createRadialGradient(W*x,H*y,0,W*x,H*y,Math.max(W,H)*r);g.addColorStop(0,'rgba(222,234,250,'+a+')');g.addColorStop(1,'rgba(222,234,250,0)');fog.fillStyle=g;fog.fillRect(0,0,W,H)}

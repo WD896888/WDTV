@@ -36,11 +36,6 @@ const API_SITES = {
         api: 'https://tyyszy.com',
         name: '天涯资源',
     },
-    ckzy: {
-        api: 'https://www.ckzy1.com',
-        name: 'CK资源',
-        adult: true
-    },
     zy360: {
         api: 'https://360zy.com',
         name: '360资源',
@@ -82,45 +77,9 @@ const API_SITES = {
         api: 'https://cj.rycjapi.com',
         name: '如意资源',
     },
-    jkun: {
-        api: 'https://jkunzyapi.com',
-        name: 'jkun资源',
-        adult: true
-    },
-    bwzy: {
-        api: 'https://api.bwzym3u8.com',
-        name: '百万资源',
-        adult: true
-    },
-    souav: {
-        api: 'https://api.souavzy.vip',
-        name: 'souav资源',
-        adult: true
-    },
-    r155: {
-        api: 'https://155api.com',
-        name: '155资源',
-        adult: true
-    },
-    lsb: {
-        api: 'https://apilsbzy1.com',
-        name: 'lsb资源',
-        adult: true
-    },
-    huangcang: {
-        api: 'https://hsckzy.vip',
-        name: '黄色仓库',
-        adult: true,
-        detail: 'https://hsckzy.vip'
-    },
     zuid: {
         api: 'https://api.zuidapi.com',
         name: '最大资源'
-    },
-    yutu: {
-        api: 'https://yutuzy10.com',
-        name: '玉兔资源',
-        adult: true
     }
     // 您可以按需添加更多源
 };
@@ -201,18 +160,3 @@ const SECURITY_CONFIG = {
     maxQueryLength: 100,        // 最大搜索长度
     // allowedApiDomains 不再需要，因为所有请求都通过内部代理
 };
-
-// 添加多个自定义API源的配置
-const CUSTOM_API_CONFIG = {
-    separator: ',',           // 分隔符
-    maxSources: 5,            // 最大允许的自定义源数量
-    testTimeout: 5000,        // 测试超时时间(毫秒)
-    namePrefix: 'Custom-',    // 自定义源名称前缀
-    validateUrl: true,        // 验证URL格式
-    cacheResults: true,       // 缓存测试结果
-    cacheExpiry: 5184000000,  // 缓存过期时间(2个月)
-    adultPropName: 'isAdult' // 用于标记成人内容的属性名
-};
-
-// 新增隐藏内置黄色采集站API的变量，默认为true
-const HIDE_BUILTIN_ADULT_APIS = true;

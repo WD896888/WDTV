@@ -44,24 +44,11 @@ async function fetchSearchData(url) {
 
 async function searchByAPIAndKeyWord(apiId, query) {
     try {
-        let apiUrl, apiName, apiBaseUrl;
+        if (!API_SITES[apiId]) return [];
 
-        // 处理自定义API
-        if (apiId.startsWith('custom_')) {
-            const customIndex = apiId.replace('custom_', '');
-            const customApi = getCustomApiInfo(customIndex);
-            if (!customApi) return [];
-
-            apiBaseUrl = customApi.url;
-            apiUrl = apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(query);
-            apiName = customApi.name;
-        } else {
-            // 内置API
-            if (!API_SITES[apiId]) return [];
-            apiBaseUrl = API_SITES[apiId].api;
-            apiUrl = apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(query);
-            apiName = API_SITES[apiId].name;
-        }
+        const apiBaseUrl = API_SITES[apiId].api;
+        const apiUrl = apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(query);
+        const apiName = API_SITES[apiId].name;
 
         // 请求第一页结果（直连优先，失败回退代理）
         const response = await fetchSearchData(apiUrl);
@@ -80,8 +67,7 @@ async function searchByAPIAndKeyWord(apiId, query) {
         const results = data.list.map(item => ({
             ...item,
             source_name: apiName,
-            source_code: apiId,
-            api_url: apiId.startsWith('custom_') ? getCustomApiInfo(apiId.replace('custom_', ''))?.url : undefined
+            source_code: apiId
         }));
 
         // 获取总页数
@@ -114,8 +100,7 @@ async function searchByAPIAndKeyWord(apiId, query) {
                         return pageData.list.map(item => ({
                             ...item,
                             source_name: apiName,
-                            source_code: apiId,
-                            api_url: apiId.startsWith('custom_') ? getCustomApiInfo(apiId.replace('custom_', ''))?.url : undefined
+                            source_code: apiId
                         }));
                     } catch (error) {
                         console.warn(`API ${apiId} 第${page}页搜索失败:`, error);

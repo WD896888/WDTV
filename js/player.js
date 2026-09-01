@@ -1,5 +1,4 @@
 const selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '[]');
-const customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]'); // 存储自定义API列表
 
 // 改进返回功能
 function goBack(event) {
@@ -1006,7 +1005,7 @@ function renderEpisodes() {
         html += `
             <button id="episode-${realIndex}"
                     onclick="playEpisode(${realIndex})"
-                    class="episode-btn-glass py-1.5 ${isActive ? 'episode-active' : ''} text-center">
+                    class="episode-btn-glass ${isActive ? 'episode-active' : ''}">
                 ${realIndex + 1}
             </button>
         `;
@@ -1554,17 +1553,10 @@ function renderResourceInfoBar() {
       </button>
     `;
 
-    // 查找当前源名称，从 API_SITES 和 custom_api 中查找即可
+    // 查找当前源名称
     let resourceName = currentSource
     if (currentSource && API_SITES[currentSource]) {
         resourceName = API_SITES[currentSource].name;
-    }
-    if (resourceName === currentSource) {
-        const customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]');
-        const customIndex = parseInt(currentSource.replace('custom_', ''), 10);
-        if (customAPIs[customIndex]) {
-            resourceName = customAPIs[customIndex].name || '自定义资源';
-        }
     }
 
     container.innerHTML = `
@@ -1587,22 +1579,8 @@ async function testVideoSourceSpeed(sourceKey, vodId) {
     try {
         const startTime = performance.now();
 
-        // 构建详情请求参数
-        let detailOpts;
-        if (sourceKey.startsWith('custom_')) {
-            const customIndex = sourceKey.replace('custom_', '');
-            const customApi = getCustomApiInfo(customIndex);
-            if (!customApi) {
-                return { speed: -1, error: 'API配置无效' };
-            }
-            detailOpts = { id: vodId, source: 'custom', customApi: customApi.url };
-            if (customApi.detail) detailOpts.customDetail = customApi.detail;
-        } else {
-            detailOpts = { id: vodId, source: sourceKey };
-        }
-
         // 获取视频详情
-        const data = await fetchVideoDetailData(detailOpts);
+        const data = await fetchVideoDetailData({ id: vodId, source: sourceKey });
 
         if (data.code !== 200 || !data.episodes || data.episodes.length === 0) {
             return { speed: -1, error: '无播放源' };
@@ -1691,10 +1669,6 @@ async function showSwitchResourceModal() {
     const resourceOptions = selectedAPIs.map((curr) => {
         if (API_SITES[curr]) {
             return { key: curr, name: API_SITES[curr].name };
-        }
-        const customIndex = parseInt(curr.replace('custom_', ''), 10);
-        if (customAPIs[customIndex]) {
-            return { key: curr, name: customAPIs[customIndex].name || '自定义资源' };
         }
         return { key: curr, name: '未知资源' };
     });
@@ -1799,26 +1773,8 @@ async function switchToResource(sourceKey, vodId) {
     
     showLoading();
     try {
-        // 构建详情请求参数
-        let detailOpts;
-
-        // 处理自定义API源
-        if (sourceKey.startsWith('custom_')) {
-            const customIndex = sourceKey.replace('custom_', '');
-            const customApi = getCustomApiInfo(customIndex);
-            if (!customApi) {
-                showToast('自定义API配置无效', 'error');
-                hideLoading();
-                return;
-            }
-            detailOpts = { id: vodId, source: 'custom', customApi: customApi.url };
-            if (customApi.detail) detailOpts.customDetail = customApi.detail;
-        } else {
-            // 内置API
-            detailOpts = { id: vodId, source: sourceKey };
-        }
-
-        const data = await fetchVideoDetailData(detailOpts);
+        // 获取视频详情
+        const data = await fetchVideoDetailData({ id: vodId, source: sourceKey });
 
         if (!data.episodes || data.episodes.length === 0) {
             showToast('未找到播放资源', 'error');

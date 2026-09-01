@@ -487,19 +487,6 @@ body {
 }
 
 /* iOS 风格开关 */
-#yellowFilterToggle:checked + .toggle-bg {
-    background-color: #30d158;
-}
-
-#yellowFilterToggle:checked ~ .toggle-dot {
-    transform: translateX(1.5rem);
-}
-
-#yellowFilterToggle:focus + .toggle-bg,
-#yellowFilterToggle:hover + .toggle-bg {
-    box-shadow: 0 0 0 4px rgba(48, 209, 88, 0.2);
-}
-
 #adFilterToggle:checked + .toggle-bg {
     background-color: #30d158;
 }
@@ -524,12 +511,6 @@ body {
 .toggle-bg {
     transition: background-color 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     background-color: rgba(120, 120, 128, 0.32);
-}
-
-#yellowFilterToggle:checked ~ .toggle-dot {
-    box-shadow:
-        0 2px 6px rgba(48, 209, 88, 0.4),
-        inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 #adFilterToggle:checked ~ .toggle-dot {
@@ -608,25 +589,6 @@ body {
     border-radius: 4px;
 }
 
-/* 自定义 API 列表 */
-#customApisList {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
-}
-
-#customApisList::-webkit-scrollbar {
-    width: 6px;
-}
-
-#customApisList::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-#customApisList::-webkit-scrollbar-thumb {
-    background-color: rgba(0, 0, 0, 0.15);
-    border-radius: 4px;
-}
-
 /* 设置面板滚动 */
 .settings-panel {
     scrollbar-width: thin;
@@ -644,170 +606,6 @@ body {
 .settings-panel::-webkit-scrollbar-thumb {
     background-color: rgba(0, 0, 0, 0.15);
     border-radius: 4px;
-}
-
-/* 添加自定义 API 表单动画 */
-#addCustomApiForm {
-    transition: all 0.3s ease;
-    max-height: 0;
-    opacity: 0;
-    overflow: hidden;
-}
-
-#addCustomApiForm.hidden {
-    max-height: 0;
-    padding: 0;
-    opacity: 0;
-}
-
-#addCustomApiForm:not(.hidden) {
-    max-height: 230px;
-    opacity: 1;
-}
-
-/* 成人内容 API 标记 */
-.api-adult + label {
-    color: #ff6b8b !important;
-}
-
-.adult-warning {
-    display: inline-flex;
-    align-items: center;
-    margin-left: 0.25rem;
-    color: #ff6b8b;
-}
-
-.adult-warning svg {
-    width: 12px;
-    height: 12px;
-    margin-right: 4px;
-}
-
-/* 过滤器禁用样式 */
-.filter-disabled {
-    opacity: 0.5;
-    pointer-events: none;
-    cursor: not-allowed;
-}
-
-/* API 组标题 */
-.api-group-title {
-    grid-column: span 2;
-    padding: 0.25rem 0;
-    margin-top: 0.5rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.api-group-title.adult {
-    color: #ff6b8b;
-}
-
-/* 过滤器禁用 - 改进版 */
-.filter-disabled {
-    position: relative;
-}
-
-.filter-disabled::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.04);
-    border-radius: 0.5rem;
-    z-index: 5;
-}
-
-.filter-disabled > * {
-    opacity: 1;
-    z-index: 6;
-}
-
-.filter-disabled .filter-description {
-    color: #ff453a !important;
-    font-style: italic;
-    font-weight: 500;
-    text-shadow: none;
-}
-
-.filter-disabled .toggle-bg {
-    background-color: rgba(120, 120, 128, 0.32) !important;
-    opacity: 0.8;
-}
-
-.filter-disabled .toggle-dot {
-    transform: translateX(0);
-    background-color: #777;
-    opacity: 0.9;
-}
-
-/* 警告提示样式 */
-.filter-tooltip {
-    background-color: rgba(255, 61, 87, 0.15);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 61, 87, 0.3);
-    border-radius: 0.5rem;
-    padding: 0.5rem;
-    margin-top: 0.5rem;
-    display: flex;
-    align-items: center;
-    font-size: 0.75rem;
-    line-height: 1.25;
-    position: relative;
-    z-index: 10;
-}
-
-.filter-tooltip svg {
-    flex-shrink: 0;
-    width: 14px;
-    height: 14px;
-    margin-right: 0.35rem;
-}
-
-/* 编辑按钮 */
-.custom-api-edit {
-    color: #0a84ff;
-    transition: color 0.2s ease;
-}
-
-.custom-api-edit:hover {
-    color: #409cff;
-}
-
-/* 自定义 API 条目 */
-#customApisList .api-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.4rem 0.6rem;
-    margin-bottom: 0.3rem;
-    background-color: rgba(255, 255, 255, 0.6);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.8);
-    border-radius: 0.5rem;
-    transition: all 0.2s ease;
-}
-
-#customApisList .api-item:hover {
-    background-color: rgba(255, 255, 255, 0.8);
-    border-color: rgba(255, 255, 255, 0.9);
-}
-
-/* 成人内容标签 */
-.adult-tag {
-    display: inline-flex;
-    align-items: center;
-    color: #ff6b8b;
-    font-size: 0.7rem;
-    font-weight: 500;
-    margin-right: 0.35rem;
 }
 
 /* 历史记录面板 - 液态玻璃 */
