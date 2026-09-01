@@ -182,31 +182,13 @@ async function handleApiRequest(url) {
     }
 }
 
-// 详情请求：直连优先，失败后回退本地代理（与搜索策略一致）
-const DETAIL_DIRECT_TIMEOUT = 6000;
+// 详情请求：统一走本地代理 /proxy/，与搜索策略一致，不做单个源的特殊直连处理
 const DETAIL_TOTAL_BUDGET = 15000;
 
 async function fetchDetailData(url) {
     const deadline = Date.now() + DETAIL_TOTAL_BUDGET;
 
-    // 1) 直连尝试
-    try {
-        const directController = new AbortController();
-        const directTimer = setTimeout(() => directController.abort(), DETAIL_DIRECT_TIMEOUT);
-        try {
-            const direct = await fetch(url, {
-                headers: API_CONFIG.detail.headers,
-                signal: directController.signal
-            });
-            if (direct.ok) return direct;
-        } finally {
-            clearTimeout(directTimer);
-        }
-    } catch (e) {
-        // 直连失败（CORS/网络错误/超时），回退本地代理
-    }
-
-    // 2) 回退本地代理（使用剩余总预算）
+    // 统一走本地代理（使用剩余总预算）
     const proxiedUrl = window.ProxyAuth?.addAuthToProxyUrl ?
         await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(url)) :
         PROXY_URL + encodeURIComponent(url);

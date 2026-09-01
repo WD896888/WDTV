@@ -84,11 +84,6 @@ const API_SITES = {
     // 您可以按需添加更多源
 };
 
-// 声明"接口对浏览器开放了 CORS、可直接跨域请求"的资源站主机名。
-// 只有这些源会尝试浏览器直连；其余源一律走 /proxy/ 代理，
-// 避免对未开放 CORS 的源做必然失败的直连，白白消耗超时预算。
-const DIRECT_API_HOSTS = ['bfzyapi.com'];
-
 // 定义合并方法
 function extendAPISites(newSites) {
     Object.assign(API_SITES, newSites);
@@ -97,7 +92,6 @@ function extendAPISites(newSites) {
 // 暴露到全局
 window.API_SITES = API_SITES;
 window.extendAPISites = extendAPISites;
-window.DIRECT_API_HOSTS = DIRECT_API_HOSTS;
 
 
 // 添加聚合搜索的配置选项
