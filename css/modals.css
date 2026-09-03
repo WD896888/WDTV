@@ -1,0 +1,452 @@
+/* 模态框通用样式 - Apple iOS 26 液态玻璃风格 */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 40;
+    transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.modal-content {
+    background-color: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(50px) saturate(200%);
+    -webkit-backdrop-filter: blur(50px) saturate(200%);
+    padding: 2rem;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    width: 91.666667%;
+    max-width: 56rem;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow:
+        0 24px 80px rgba(0, 0, 0, 0.12),
+        0 0 0 1px rgba(0, 0, 0, 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    position: relative;
+    color: #1d1d1f;
+}
+
+/* 模态框边缘高光 */
+.modal-content::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.95) 0%,
+        rgba(255, 255, 255, 0.5) 40%,
+        transparent 60%,
+        rgba(255, 255, 255, 0.7) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    flex: none;
+}
+
+.modal-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #0a84ff 0%, #007aff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    word-break: break-word;
+    padding-right: 1rem;
+    max-width: 80%;
+    letter-spacing: -0.02em;
+}
+
+.modal-close {
+    color: #6e6e73;
+    font-size: 1.5rem;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.modal-close:hover {
+    color: #ff453a;
+    background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(255, 69, 58, 0.4);
+    transform: scale(1.05);
+}
+
+.modal-body {
+    overflow: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+/* 密码验证模态框 */
+.password-modal {
+    z-index: 65;
+}
+
+.password-form {
+    margin-bottom: 1.5rem;
+}
+
+.password-input {
+    width: 100%;
+    background-color: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    color: #1d1d1f;
+    padding: 1rem 1.2rem;
+    border-radius: 14px;
+    margin-bottom: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.password-input:focus {
+    outline: none;
+    border-color: rgba(0, 122, 255, 0.6);
+    background-color: rgba(255, 255, 255, 0.85);
+    box-shadow:
+        0 0 0 4px rgba(0, 122, 255, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.password-input::placeholder {
+    color: rgba(0, 0, 0, 0.4);
+}
+
+.password-submit {
+    width: 100%;
+    background: linear-gradient(135deg, #0a84ff, #007aff);
+    color: #ffffff;
+    padding: 0.75rem 1rem;
+    border-radius: 9999px;
+    font-weight: 600;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+        0 8px 20px rgba(10, 132, 255, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    border: none;
+}
+
+.password-submit:hover {
+    transform: translateY(-1px);
+    box-shadow:
+        0 12px 28px rgba(10, 132, 255, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.password-error {
+    color: #ff453a;
+    margin-top: 0.5rem;
+    display: none;
+}
+
+/* 声明模态框 */
+.disclaimer-modal {
+    z-index: 60;
+}
+
+.disclaimer-content {
+    color: #1d1d1f;
+    line-height: 1.6;
+}
+
+.disclaimer-content p {
+    margin-bottom: 1rem;
+}
+
+.disclaimer-content strong {
+    color: #007aff;
+}
+
+.disclaimer-button {
+    margin-top: 1.5rem;
+    padding: 0.85rem 2rem;
+    background: linear-gradient(135deg, #0a84ff, #007aff);
+    color: #ffffff;
+    font-weight: 600;
+    border-radius: 9999px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+        0 8px 24px rgba(10, 132, 255, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    border: none;
+}
+
+.disclaimer-button:hover {
+    transform: translateY(-2px);
+    box-shadow:
+        0 16px 36px rgba(10, 132, 255, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* Toast - 玻璃药丸 */
+.toast {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100%);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    color: #1d1d1f;
+    padding: 0.75rem 1.5rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow:
+        0 12px 40px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0;
+    z-index: 50;
+    font-weight: 500;
+}
+
+.toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+}
+
+/* Loading - 玻璃风格 */
+.loading-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+}
+
+.loading-content {
+    background-color: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    padding: 2rem 3rem;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow:
+        0 24px 64px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.loading-spinner {
+    width: 2rem;
+    height: 2rem;
+    border: 3px solid rgba(0, 122, 255, 0.2);
+    border-top-color: #007aff;
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+    box-shadow: 0 0 16px rgba(0, 122, 255, 0.2);
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-text {
+    color: #1d1d1f;
+    font-size: 1.125rem;
+    font-weight: 500;
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fadeOut {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.96); }
+}
+
+.modal-overlay.show {
+    animation: fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    display: flex;
+}
+
+.modal-overlay.hide {
+    animation: fadeOut 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* 资源速率测试相关样式 */
+.speed-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1;
+}
+
+.speed-indicator.good {
+    color: #30d158;
+}
+
+.speed-indicator.medium {
+    color: #ff9f0a;
+}
+
+.speed-indicator.poor {
+    color: #ff453a;
+}
+
+.speed-indicator.error {
+    color: #ff453a;
+}
+
+/* 资源卡片悬停效果 */
+.resource-card {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 14px;
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.resource-card:hover {
+    transform: translateY(-2px);
+    background: rgba(255, 255, 255, 0.85);
+    border-color: rgba(0, 122, 255, 0.4);
+    box-shadow:
+        0 8px 20px rgba(0, 122, 255, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.resource-card.current {
+    border: 1px solid rgba(0, 122, 255, 0.6);
+    box-shadow:
+        0 0 0 1px rgba(0, 122, 255, 0.3),
+        0 8px 20px rgba(0, 122, 255, 0.15);
+}
+
+/* 速率徽章 */
+.speed-badge {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    font-size: 9px;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.6);
+    border-radius: 6px;
+    padding: 3px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+}
+
+/* 标签管理模态框 - 玻璃风格 */
+#tagManageModal,
+#importUrlModal,
+#messageBoxModal,
+#showImportBoxModal {
+    background-color: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+
+#tagManageModal > div,
+#importUrlModal > div,
+#messageBoxModal > div,
+#showImportBoxModal > div {
+    background: rgba(255, 255, 255, 0.85) !important;
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.9) !important;
+    border-radius: 20px !important;
+    box-shadow:
+        0 24px 64px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    color: #1d1d1f;
+}
+
+/* 模态框内输入框 - 玻璃风格 */
+#tagManageModal input[type="text"],
+#importUrlModal input[type="text"],
+#messageBoxModal input[type="text"] {
+    background: rgba(255, 255, 255, 0.6) !important;
+    border: 1px solid rgba(255, 255, 255, 0.8) !important;
+    color: #1d1d1f !important;
+    border-radius: 12px !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    transition: all 0.3s ease;
+}
+
+#tagManageModal input[type="text"]:focus,
+#importUrlModal input[type="text"]:focus {
+    border-color: rgba(0, 122, 255, 0.6) !important;
+    box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
+    outline: none !important;
+}
+
+/* 模态框内按钮 - 玻璃风格 */
+#tagManageModal button,
+#importUrlModal button,
+#messageBoxModal button {
+    border-radius: 9999px !important;
+    font-weight: 500;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* 标签项 - 玻璃药丸 */
+#tagsGrid > div {
+    background: rgba(255, 255, 255, 0.6) !important;
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.8) !important;
+    border-radius: 9999px !important;
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* 拖拽区域 - 玻璃风格 */
+#dropZone {
+    background: rgba(255, 255, 255, 0.5) !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 2px dashed rgba(0, 122, 255, 0.35) !important;
+    border-radius: 20px !important;
+    transition: all 0.3s ease;
+}
+
+#dropZone.border-blue-500 {
+    border-color: rgba(0, 122, 255, 0.6) !important;
+    background: rgba(0, 122, 255, 0.08) !important;
+}

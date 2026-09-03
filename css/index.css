@@ -1,0 +1,695 @@
+/* 主页特定样式 - Apple iOS 26 液态玻璃风格 */
+
+/* 顶部角落按钮 - 浅色玻璃圆形按钮 */
+.top-corner-button {
+    position: fixed;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 9999px;
+    padding: 0.5rem 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    color: #1d1d1f;
+}
+
+.top-corner-button:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(0, 122, 255, 0.4);
+    transform: scale(1.05);
+    box-shadow:
+        0 12px 32px rgba(0, 0, 0, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    color: #007aff;
+}
+
+.top-corner-button:active {
+    transform: scale(0.95);
+}
+
+/* 搜索区域 - 浅色液态玻璃容器 */
+.search-box {
+    height: 4rem;
+    box-shadow:
+        0 16px 48px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.03);
+    border-radius: 9999px;
+    overflow: hidden;
+    display: flex;
+    align-items: stretch;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(40px) saturate(200%);
+    -webkit-backdrop-filter: blur(40px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+/* 搜索按钮 - iOS 风格蓝色按钮 */
+.search-button {
+    width: 5.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0a84ff, #007aff);
+    color: #ffffff;
+    font-weight: 600;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 9999px;
+    margin: 4px;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 4px 12px rgba(0, 122, 255, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.search-button:hover {
+    background: linear-gradient(135deg, #007aff, #0066d6);
+    transform: scale(1.02);
+    box-shadow:
+        0 8px 20px rgba(0, 122, 255, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.search-button:active {
+    transform: scale(0.98);
+}
+
+/* 搜索输入框 */
+.search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #1d1d1f;
+    padding: 0 1.5rem;
+    font-size: 1rem;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.search-input::placeholder {
+    color: rgba(0, 0, 0, 0.4);
+}
+
+.search-input:focus {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* 最近搜索记录 - 浅色玻璃药丸 */
+.recent-search-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.4rem 0.9rem;
+    margin: 0.25rem;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 9999px;
+    color: #1d1d1f;
+    font-size: 0.875rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.recent-search-tag:hover {
+    background: rgba(0, 122, 255, 0.15);
+    border-color: rgba(0, 122, 255, 0.4);
+    transform: translateY(-1px);
+    box-shadow:
+        0 6px 16px rgba(0, 122, 255, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    color: #007aff;
+}
+
+/* 豆瓣区域 */
+.douban-container {
+    margin: 2rem auto;
+    max-width: 1280px;
+    padding: 0 0.5rem;
+}
+
+.douban-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+/* 电影/电视剧切换 - iOS 分段控制 */
+.douban-toggle {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 9999px;
+    padding: 0.25rem;
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.douban-toggle-button {
+    padding: 0.4rem 1rem;
+    font-size: 0.875rem;
+    border-radius: 9999px;
+    font-weight: 500;
+    color: #6e6e73;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.douban-toggle-button.active {
+    background: linear-gradient(135deg, #FFD60A, #FFCC02);
+    color: #1d1d1f;
+    box-shadow:
+        0 4px 12px rgba(255, 214, 10, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.douban-toggle-button:not(.active):hover {
+    color: #FFB800;
+    background: rgba(255, 214, 10, 0.1);
+}
+
+/* 换一批按钮 */
+.douban-refresh-button {
+    font-size: 0.875rem;
+    padding: 0.4rem 1rem;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    color: #1d1d1f;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 500;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.douban-refresh-button:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(0, 122, 255, 0.4);
+    color: #007aff;
+    transform: translateY(-1px);
+    box-shadow:
+        0 6px 16px rgba(0, 122, 255, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.douban-tags-container {
+    overflow-x: auto;
+    padding: 0.75rem 0.5rem;
+    scrollbar-width: none;
+}
+
+.douban-tags-container::-webkit-scrollbar {
+    display: none;
+}
+
+.douban-tags {
+    display: flex;
+    gap: 0.5rem;
+    min-width: max-content;
+    padding: 0.5rem 0;
+}
+
+/* 豆瓣标签 - 与电影/电视剧切换按钮统一风格 */
+.douban-tag {
+    padding: 6px 16px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    border: 1px solid var(--glass-border);
+    background: rgba(155, 180, 218, 0.06);
+    color: var(--text-secondary);
+    font-family: 'Noto Sans SC', sans-serif;
+    transition: all 0.2s;
+    font-weight: 500;
+    position: relative;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+}
+
+.douban-tag:hover,
+.douban-tag.active {
+    background: rgba(80, 128, 176, 0.2);
+    color: var(--white);
+    border-color: var(--accent);
+}
+
+/* 搜索结果容器 */
+.search-results-container {
+    width: 100%;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 0.5rem;
+}
+
+.search-result-stats {
+    text-align: right;
+    font-size: 0.875rem;
+    color: #6e6e73;
+    margin-bottom: 1rem;
+}
+
+/* 响应式网格布局 */
+.search-results-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+@media (max-width: 640px) {
+    .search-results-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (min-width: 641px) and (max-width: 768px) {
+    .search-results-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+    .search-results-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (min-width: 1025px) {
+    .search-results-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* 豆瓣卡片 - 与豆瓣标签分类组件统一风格 */
+.douban-card {
+    background: rgba(155, 180, 218, 0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: all 0.3s var(--transition);
+    position: relative;
+}
+
+.douban-card:hover {
+    transform: translateY(-2px);
+    background: rgba(80, 128, 176, 0.2);
+    border-color: var(--accent);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+/* 顶部按钮 - 玻璃圆形 */
+.glass-icon-button {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 9999px;
+    padding: 0.5rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    color: #1d1d1f;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.glass-icon-button:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(0, 122, 255, 0.4);
+    transform: scale(1.05);
+    color: #007aff;
+    box-shadow:
+        0 12px 32px rgba(0, 122, 255, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.glass-icon-button:active {
+    transform: scale(0.95);
+}
+
+/* 标题区域 - 玻璃质感 */
+.hero-title {
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+/* 搜索框容器 - 增强玻璃效果 */
+.search-container-glass {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(40px) saturate(200%);
+    -webkit-backdrop-filter: blur(40px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 9999px;
+    box-shadow:
+        0 24px 64px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.03);
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.search-container-glass:focus-within {
+    background: rgba(255, 255, 255, 0.7);
+    border-color: rgba(0, 122, 255, 0.4);
+    box-shadow:
+        0 32px 80px rgba(0, 122, 255, 0.12),
+        0 0 0 4px rgba(0, 122, 255, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* 首页按钮（搜索框内） */
+.home-button-in-search {
+    background: rgba(255, 255, 255, 0.6);
+    color: #1d1d1f;
+    font-weight: 500;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 9999px;
+    margin: 4px;
+    position: relative;
+    overflow: hidden;
+}
+
+.home-button-in-search:hover {
+    background: rgba(0, 122, 255, 0.12);
+    color: #007aff;
+}
+
+/* 搜索放大镜按钮 */
+.search-icon-button {
+    background: transparent;
+    color: #6e6e73;
+    transition: all 0.3s ease;
+    padding: 0 1.25rem;
+    position: relative;
+    overflow: hidden;
+    border-radius: 9999px;
+}
+
+.search-icon-button:hover {
+    color: #007aff;
+    background: rgba(0, 122, 255, 0.08);
+}
+
+.search-icon-button:active {
+    transform: scale(0.95);
+}
+
+/* 清空按钮 */
+.clear-button-in-search {
+    background: transparent;
+    color: #6e6e73;
+    transition: all 0.3s ease;
+    padding: 0 1rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.clear-button-in-search:hover {
+    color: #ff453a;
+    background: rgba(255, 69, 58, 0.1);
+    border-radius: 9999px;
+}
+
+/* 豆瓣卡片图片容器 */
+.douban-card-image {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 2/3;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.douban-card-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.douban-card:hover .douban-card-image img {
+    transform: scale(1.08);
+}
+
+/* 豆瓣卡片评分徽章 */
+.douban-rate-badge {
+    background: rgba(155, 180, 218, 0.12);
+    border: 1px solid var(--glass-border);
+    color: #ff9f0a;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 9999px;
+    font-weight: 600;
+}
+
+/* 豆瓣卡片标题区 */
+.douban-card-title-area {
+    padding: 0.6rem;
+    text-align: center;
+    background: rgba(155, 180, 218, 0.06);
+    border-top: 1px solid var(--glass-border);
+}
+
+.douban-card-title-area button {
+    color: var(--pale) !important;
+}
+
+/* 搜索结果卡片备注/清晰度徽章（来自源方 vod_remarks） */
+.wdtv-remarks-badge {
+    display: inline-block;
+    margin-top: 0.3rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    color: #6a9ae0;
+    background: rgba(155, 180, 218, 0.12);
+    border: 1px solid var(--glass-border);
+}
+
+/* 搜索结果卡片画质标签（从备注/标题提取，如 4K、1080P、蓝光、HD） */
+.wdtv-quality-badge {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 2;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1.2;
+    padding: 0.15rem 0.5rem;
+    border-radius: 0.375rem;
+    color: #ffd60a;
+    background: rgba(0, 0, 0, 0.65);
+    border: 1px solid rgba(255, 214, 10, 0.35);
+    pointer-events: none;
+}
+
+/* 设置面板内的玻璃区块 */
+.settings-glass-block {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    border-radius: 16px;
+    padding: 1rem;
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* 设置面板内的小按钮 */
+.settings-mini-button {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    color: #1d1d1f;
+    padding: 0.3rem 0.7rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.settings-mini-button:hover {
+    background: rgba(0, 122, 255, 0.1);
+    border-color: rgba(0, 122, 255, 0.4);
+    color: #007aff;
+}
+
+/* iOS 风格主操作按钮 */
+.ios-primary-button {
+    background: linear-gradient(135deg, #0a84ff, #007aff);
+    color: #ffffff;
+    font-weight: 600;
+    padding: 0.6rem 1.2rem;
+    border-radius: 9999px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 8px 20px rgba(10, 132, 255, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    border: none;
+}
+
+.ios-primary-button:hover {
+    transform: translateY(-1px);
+    box-shadow:
+        0 12px 28px rgba(10, 132, 255, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.ios-primary-button:active {
+    transform: translateY(0) scale(0.98);
+}
+
+/* iOS 风格次要按钮 */
+.ios-secondary-button {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    color: #1d1d1f;
+    font-weight: 500;
+    padding: 0.6rem 1.2rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.ios-secondary-button:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(0, 122, 255, 0.4);
+    color: #007aff;
+    transform: translateY(-1px);
+    box-shadow:
+        0 6px 16px rgba(0, 122, 255, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* 搜索结果来源标签 - 玻璃风格 */
+.source-tag-glass {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    color: #1d1d1f;
+    font-size: 0.7rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    box-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* 类型标签 - 玻璃风格 */
+.type-tag-glass {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    font-size: 0.7rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-weight: 600;
+    box-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.type-tag-blue {
+    background: rgba(0, 122, 255, 0.15);
+    color: #007aff;
+}
+
+.type-tag-purple {
+    background: rgba(191, 90, 242, 0.15);
+    color: #af52de;
+}
+
+/* 空状态 - 玻璃风格 */
+.empty-state-glass {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    border-radius: 24px;
+    padding: 3rem;
+    text-align: center;
+    box-shadow:
+        0 12px 40px rgba(0, 0, 0, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* 加载动画 - 玻璃风格 */
+.loading-glass {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 24px;
+    padding: 2rem 3rem;
+    color: #1d1d1f;
+    box-shadow:
+        0 24px 64px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* 响应式调整 - 小屏幕优化 */
+@media (max-width: 640px) {
+    .search-box {
+        height: 3.5rem;
+    }
+
+    .search-button {
+        width: 4rem;
+        font-size: 0.875rem;
+    }
+
+    .douban-toggle-button {
+        padding: 0.3rem 0.75rem;
+        font-size: 0.8rem;
+    }
+
+    .douban-refresh-button {
+        padding: 0.3rem 0.75rem;
+        font-size: 0.8rem;
+    }
+}

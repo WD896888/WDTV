@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,interactive-widget=overlays-content">
+<title>WDTV - 免费在线视频搜索与观看平台</title>
+<meta name="description" content="WDTV是一个免费的在线视频搜索平台，无广告、安全，提供来自多个视频源的内容搜索与观看服务，无需注册即可使用。">
+<meta name="keywords" content="在线视频,免费视频,视频搜索,电影,电视剧,WDTV">
+<meta name="author" content="WDTV Team">
+
+<!-- Favicon -->
+<link rel="icon" href="image/logo.png">
+<link rel="apple-touch-icon" href="image/logo-black.png">
+<link rel="manifest" href="manifest.json">
+
+<!-- Dynamic effects pre-paint: apply fx-off class before first paint to avoid flash -->
+<script>
+(function(){
+  try{
+    if(localStorage.getItem('dynamicEffectsEnabled')==='false'){
+      document.documentElement.classList.add('fx-off');
+    }
+  }catch(e){}
+})();
+</script>
+
+<!-- WDTV External CSS -->
+<link rel="stylesheet" href="css/styles.css?v=6">
+<link rel="stylesheet" href="css/index.css?v=6">
+<link rel="stylesheet" href="css/modals.css?v=6">
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Great+Vibes&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Pinyon+Script&family=Raleway:wght@200;300&family=Spectral:ital,wght@1,300&display=swap');
+
+:root{
+  --bg-deep:#181e32;--bg-mid:#263050;
+  --mist:#8895b4;--silver:#b2c0d8;--light:#cdd6ea;--pale:#e2e9f5;--white:#eff2fa;
+  --accent:#5080b0;--accent-light:#72a8d8;
+  --glass-bg:rgba(155,180,218,0.1);--glass-border:rgba(165,188,230,0.2);--glass-shadow:rgba(0,0,0,0.18);
+  --text-primary:#e0e6f2;--text-secondary:#adb8d0;--text-muted:#7e90b2;
+  --transition:cubic-bezier(0.4,0,0.2,1);
+  --beyond-color:#4a5882;
+  --beyond-glow:0 0 15px rgba(255,255,255,0.4),0 0 30px rgba(255,255,255,0.25),0 0 50px rgba(255,255,255,0.12),0 0 80px rgba(255,255,255,0.06);
+  --internal-color:#fff;
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{font-size:16px;scroll-behavior:smooth;overflow-y:scroll}
+body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-deep);color:var(--text-primary);overflow-x:hidden;min-height:100vh;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
+
+/* PRELOADER */
+#preloader{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;flex-direction:column;
+  background:radial-gradient(ellipse 90% 70% at 50% 45%,rgba(30,44,72,0.98),rgba(18,28,50,0.99));
+  transition:opacity 1.2s ease-out,visibility 1.2s ease-out}
+#preloader.fade-out{opacity:0;visibility:hidden;pointer-events:none}
+#preloader .preloader-text{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:20px;color:rgba(225,235,250,0.85);
+  letter-spacing:0.15em;text-shadow:0 0 16px rgba(180,200,240,0.25),0 1px 8px rgba(0,0,0,0.4);animation:loadPulse 1.5s ease-in-out infinite}
+#preloader .preloader-sub{font-family:'Raleway','Noto Sans SC',sans-serif;font-weight:300;font-size:11px;color:rgba(180,200,230,0.4);
+  letter-spacing:0.12em;margin-top:18px}
+
+/* RAIN */
+#rain-container{opacity:0;transition:opacity 2s ease-out}
+#rain-container.rain-visible{opacity:1}
+#rain-container canvas{position:fixed;inset:0;z-index:10001;pointer-events:none;width:100vw;height:100vh}
+
+/* SPLASH */
+#splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;
+  background:rgba(15,41,95,0.52);backdrop-filter:blur(30px) saturate(0.72) brightness(0.92);-webkit-backdrop-filter:blur(30px) saturate(0.72) brightness(0.92);
+  transition:backdrop-filter 3.5s ease-out,background 3.5s ease-out;
+  -webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
+#splash.hidden{opacity:0;visibility:hidden;pointer-events:none}
+@keyframes loadPulse{0%{opacity:0.6}50%{opacity:1}100%{opacity:0.6}}
+.splash-content{display:flex;align-items:flex-start;justify-content:center;position:relative;z-index:2;pointer-events:none;width:100%;height:100%;overflow-y:auto}
+.splash-content input,.splash-content button,.splash-content a,.splash-content .wdtv-search-glass,.splash-content .wdtv-search-glass *,.splash-content .wdtv-recent,.splash-content .wdtv-recent-tag,.splash-content .wdtv-douban-toggle button,.splash-content .wdtv-douban-refresh,.splash-content .wdtv-douban-tag,.splash-content .wdtv-result-card,.splash-content .wdtv-mini-btn,.splash-content #resultsArea,.splash-content #resultsArea *,.splash-content #doubanArea,.splash-content #doubanArea *{pointer-events:auto}
+.splash-left{position:relative;z-index:2;width:100%;max-width:none;margin:0;padding:140px 32px 80px}
+@keyframes splashSlideRight{from{opacity:0;width:0}to{opacity:1;width:36px}}
+@keyframes splashFadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.splash-glow{position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 120% 95% at 74% 16%, rgba(186,212,247,0.22) 0%, rgba(176,204,242,0.10) 34%, transparent 66%),
+    radial-gradient(ellipse 90% 40% at 50% 88%, rgba(130,162,210,0.18) 0%, rgba(130,162,210,0.07) 42%, transparent 72%),
+    linear-gradient(to bottom, transparent 38%, rgba(148,180,228,0.08) 66%, transparent 92%),
+    linear-gradient(to bottom, rgba(150,184,234,0.22) 0%, rgba(126,162,216,0.18) 50%, rgba(106,142,200,0.16) 100%);
+  animation:splashDawn 58s ease-in-out infinite alternate}
+@keyframes splashDawn{0%{opacity:0.88;filter:brightness(1.0) saturate(1.03)}100%{opacity:1;filter:brightness(1.08) saturate(1.06)}}
+
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(175,195,228,0.2);border-radius:2px}
+
+/* ===== WDTV Integration Styles (Liquid Glass) ===== */
+.wdtv-home-wrap{width:100%;max-width:1200px;margin:0 auto;padding:0 16px}
+
+/* WDTV header */
+.wdtv-header{text-align:center;margin-bottom:32px}
+.wdtv-header .wdtv-logo{display:flex;justify-content:center;align-items:center;margin-bottom:12px}
+.wdtv-header .wdtv-logo svg{width:36px;height:36px;margin-right:8px;color:#2c4a7c;filter:drop-shadow(0 2px 8px rgba(44,74,124,0.25))}
+.wdtv-header .wdtv-title{font-family:'Cormorant Garamond',serif;font-size:2.4rem;font-weight:300;letter-spacing:0.24em;background:linear-gradient(135deg,#1a3a6b 0%,#2c5aa0 40%,#4a7cc9 70%,#6a9ae0 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 2px 12px rgba(44,90,160,0.2))}
+.wdtv-header .wdtv-slogan{font-family:'Raleway','Noto Sans SC',sans-serif;font-weight:300;font-size:0.78rem;letter-spacing:0.16em;text-transform:uppercase;color:#5a7faa;margin-top:8px}
+
+/* WDTV search area */
+.wdtv-search-wrap{width:100%;max-width:420px;margin:0 auto 16px}
+.wdtv-search-glass{display:flex;align-items:center;margin-bottom:12px;height:44px;border-radius:14px;border:1px solid rgba(200,220,245,0.42);background:rgba(200,220,245,0.55);color:#2a3a5c;position:relative;z-index:10;transition:border-color 0.3s,box-shadow 0.3s;text-shadow:0 1px 4px rgba(255,255,255,0.5)}
+.wdtv-search-glass:focus-within{border-color:rgba(200,220,245,0.7);box-shadow:0 0 20px rgba(200,220,245,0.1)}
+.wdtv-search-glass input{flex:1;min-width:0;background:transparent;border:none;color:#2a3a5c;padding:0 16px;font-size:13.5px;font-family:'Noto Serif SC','Source Han Serif SC',serif;font-weight:500;letter-spacing:0.1em;outline:none}
+.wdtv-search-glass input::placeholder{color:rgba(42,58,92,0.5);font-weight:400}
+.wdtv-search-glass .wdtv-clear-btn{display:none;align-items:center;justify-content:center;width:40px;background:none;border:none;color:rgba(42,58,92,0.45);cursor:pointer;transition:color 0.2s}
+.wdtv-search-glass .wdtv-clear-btn:hover{color:rgba(42,58,92,0.8)}
+.wdtv-search-glass .wdtv-clear-btn:not(.hidden){display:flex}
+.wdtv-search-glass .wdtv-search-btn{display:flex;align-items:center;justify-content:center;width:48px;background:none;border:none;border-left:1px solid rgba(200,220,245,0.35);color:rgba(42,58,92,0.6);cursor:pointer;transition:color 0.2s;-webkit-appearance:none;appearance:none}
+.wdtv-search-glass .wdtv-search-btn:hover{background:none;color:rgba(42,58,92,0.85)}
+
+/* WDTV recent searches */
+.wdtv-recent{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.wdtv-recent::-webkit-scrollbar{display:none}
+.wdtv-recent .search-tag{flex:none;min-width:0;max-width:9em;padding:3px 10px;font-size:0.72rem;white-space:nowrap}
+.wdtv-recent .search-tag span:first-child{overflow:hidden;text-overflow:ellipsis}
+.wdtv-recent .search-tag svg{width:10px;height:10px}
+.wdtv-recent-clear{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:9999px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;padding:0}
+.wdtv-recent-clear:hover{background:rgba(80,128,176,0.15);color:var(--white)}
+.wdtv-recent-tag{padding:5px 14px;border-radius:20px;font-size:0.78rem;cursor:pointer;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);transition:all 0.3s;font-family:'Noto Sans SC',sans-serif}
+.wdtv-recent-tag:hover{background:rgba(80,128,176,0.15);color:var(--white);border-color:var(--accent)}
+
+/* WDTV douban area */
+.wdtv-douban{width:100%;max-width:1200px;margin:32px auto}
+.wdtv-douban-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.wdtv-douban-header h2{font-size:1.2rem;font-weight:bold;color:var(--pale)}
+.wdtv-douban-toggle{display:flex;align-items:center;border-radius:10px;overflow:hidden;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06)}
+.wdtv-douban-toggle button{padding:6px 16px;font-size:0.82rem;border:none;background:none;color:var(--text-secondary);cursor:pointer;font-family:'Noto Sans SC',sans-serif;transition:all 0.2s}
+.wdtv-douban-toggle button.active{background:rgba(80,128,176,0.2);color:var(--white)}
+.wdtv-douban-refresh{display:flex;align-items:center;gap:4px;padding:5px 12px;border-radius:10px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);cursor:pointer;font-size:0.82rem;font-family:'Noto Sans SC',sans-serif;transition:all 0.2s}
+.wdtv-douban-refresh:hover{background:rgba(80,128,176,0.15);color:var(--white);border-color:var(--accent)}
+.wdtv-douban-tags{display:flex;flex-wrap:nowrap;gap:6px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.wdtv-douban-tags::-webkit-scrollbar{display:none}
+.wdtv-douban-tags .douban-tag{flex:none;padding:4px 12px;font-size:0.75rem;white-space:nowrap}
+.wdtv-douban-tag{padding:4px 12px;border-radius:16px;font-size:0.75rem;cursor:pointer;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);transition:all 0.3s}
+.wdtv-douban-tag:hover,.wdtv-douban-tag.active{background:rgba(80,128,176,0.2);color:var(--white);border-color:var(--accent)}
+.wdtv-douban-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+
+/* WDTV result cards */
+.wdtv-result-card{background:rgba(155,180,218,0.06);border:1px solid var(--glass-border);border-radius:14px;overflow:hidden;cursor:pointer;transition:all 0.3s var(--transition);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.wdtv-result-card:hover{border-color:rgba(155,185,232,0.38);box-shadow:0 8px 32px rgba(0,0,0,0.18);transform:translateY(-2px)}
+.wdtv-result-card img{width:100%;aspect-ratio:2/3;object-fit:cover;display:block;background:rgba(0,0,0,0.1)}
+.wdtv-result-card .wdtv-card-info{padding:10px 12px}
+.wdtv-result-card .wdtv-card-title{font-size:0.88rem;font-weight:500;color:var(--pale);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wdtv-result-card .wdtv-card-type{font-size:0.72rem;color:var(--text-muted)}
+
+.wdtv-search-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px;justify-content:center}
+@media (min-width:1024px){.wdtv-search-grid{grid-template-columns:repeat(6,minmax(0,1fr))}}
+.wdtv-result-count{font-size:0.88rem;color:var(--text-muted);text-align:right;margin-bottom:12px}
+.wdtv-result-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.wdtv-result-toolbar .wdtv-result-count{margin-bottom:0}
+.wdtv-name-filter{display:flex;align-items:center;gap:8px;min-width:0}
+.wdtv-name-dropdown{position:relative;min-width:0}
+.wdtv-name-dropdown-toggle{display:flex;align-items:center;gap:8px;max-width:280px;padding:6px 12px;border-radius:10px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--pale);font-size:0.85rem;outline:none;cursor:pointer;transition:border-color 0.2s,background 0.2s;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.wdtv-name-dropdown-toggle:hover{border-color:rgba(155,185,232,0.38);background:rgba(155,180,218,0.14)}
+.wdtv-name-dropdown-toggle span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wdtv-name-dropdown-toggle svg{flex-shrink:0;transition:transform 0.2s}
+.wdtv-name-dropdown.open .wdtv-name-dropdown-toggle svg{transform:rotate(180deg)}
+.wdtv-name-dropdown-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:100%;max-width:320px;max-height:280px;overflow-y:auto;padding:6px;border-radius:12px;border:1px solid rgba(200,220,245,0.4);background:rgba(200,220,245,0.15);backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);box-shadow:0 12px 40px rgba(0,0,0,0.22)}
+.wdtv-name-dropdown-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border-radius:8px;color:var(--pale);font-size:0.85rem;cursor:pointer;white-space:nowrap;transition:background 0.15s}
+.wdtv-name-dropdown-item:hover{background:rgba(255,255,255,0.18)}
+.wdtv-name-dropdown-item.active{background:rgba(80,128,176,0.3);color:var(--white);font-weight:500}
+.wdtv-name-dropdown-item .wdtv-name-dropdown-count{font-size:0.75rem;color:var(--text-muted);flex-shrink:0}
+.wdtv-result-toolbar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.wdtv-block-btn{padding:4px 12px;border-radius:16px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);font-size:0.78rem;cursor:pointer;font-family:'Noto Sans SC',sans-serif;transition:all 0.2s;white-space:nowrap}
+.wdtv-block-btn:hover{border-color:rgba(155,185,232,0.38)}
+.wdtv-block-btn.active{background:rgba(80,128,176,0.2);border-color:rgba(155,185,232,0.45);color:var(--white)}
+
+/* WDTV history panel - light glass */
+.wdtv-history-panel{position:fixed;left:0;top:0;height:100%;padding:24px;z-index:10000;transform:translateX(-100%);transition:transform 0.4s var(--transition);width:340px;max-width:90vw;background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border-right:1px solid rgba(200,220,245,0.42);box-shadow:4px 0 30px rgba(0,0,0,0.3);overflow-y:auto;color:rgba(236,244,255,0.96)}
+.wdtv-history-panel.show{transform:translateX(0)}
+.wdtv-history-panel .wdtv-panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+.wdtv-history-panel .wdtv-panel-header h3{font-family:'Cormorant Garamond',serif;font-size:1.2rem;font-weight:300;letter-spacing:0.1em;color:rgba(222,234,250,0.92);text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22)}
+.wdtv-history-panel .wdtv-close-btn{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;cursor:pointer;transition:all 0.2s;flex-shrink:0}
+.wdtv-history-panel .wdtv-close-btn:hover{background:rgba(255,255,255,0.45);border-color:rgba(255,255,255,0.4)}
+.wdtv-history-panel .wdtv-close-btn svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none}
+.wdtv-history-item{display:flex;gap:12px;padding:10px;border-radius:8px;margin-bottom:8px;cursor:pointer;transition:all 0.2s;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c}
+.wdtv-history-item:hover{background:rgba(255,255,255,0.45);border-color:rgba(200,220,245,0.45)}
+.wdtv-history-item img{width:50px;height:70px;object-fit:cover;border-radius:6px;flex-shrink:0;border:1px solid rgba(200,220,245,0.2)}
+.wdtv-history-item .wdtv-hi-info{flex:1;min-width:0}
+.wdtv-history-item .wdtv-hi-title{font-family:'Noto Serif SC',serif;font-size:0.88rem;font-weight:500;color:rgba(30,45,75,0.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:none}
+.wdtv-history-item .wdtv-hi-source{font-size:0.72rem;color:rgba(42,58,92,0.5);margin-top:2px}
+.wdtv-history-empty{text-align:center;color:rgba(200,220,245,0.45);padding:40px 0;font-family:'Noto Serif SC',serif;font-size:0.88rem;letter-spacing:0.06em}
+.wdtv-history-clear{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-family:'Noto Serif SC','Source Han Serif SC',serif;font-size:0.88rem;font-weight:500;letter-spacing:0.06em;cursor:pointer;transition:all 0.2s;margin-top:16px;text-shadow:none}
+.wdtv-history-clear:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
+
+/* WDTV settings panel - light glass */
+.wdtv-settings-panel{position:fixed;right:0;top:0;height:100%;padding:24px;z-index:10000;transform:translateX(100%);transition:transform 0.4s var(--transition);width:340px;max-width:90vw;background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border-left:1px solid rgba(200,220,245,0.42);box-shadow:-4px 0 30px rgba(0,0,0,0.3);overflow-y:auto;color:rgba(236,244,255,0.96)}
+.wdtv-settings-panel.show{transform:translateX(0)}
+.wdtv-settings-panel .wdtv-panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+.wdtv-settings-panel .wdtv-panel-header h3{font-family:'Cormorant Garamond',serif;font-size:1.2rem;font-weight:300;letter-spacing:0.1em;color:rgba(222,234,250,0.92);text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22)}
+.wdtv-settings-panel .wdtv-close-btn{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;cursor:pointer;transition:all 0.2s;flex-shrink:0}
+.wdtv-settings-panel .wdtv-close-btn:hover{background:rgba(255,255,255,0.45);border-color:rgba(255,255,255,0.4)}
+.wdtv-settings-panel .wdtv-close-btn svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none}
+.wdtv-settings-block{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:16px;margin-bottom:16px;color:#2a3a5c}
+.wdtv-settings-block label.block-label{display:block;font-family:'Noto Serif SC',serif;font-size:0.82rem;font-weight:500;letter-spacing:0.06em;color:rgba(42,58,92,0.6);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid rgba(200,220,245,0.2)}
+.wdtv-settings-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(200,220,245,0.15)}
+.wdtv-settings-row:last-child{border-bottom:none}
+.wdtv-settings-row .wdtv-sr-text{flex:1}
+.wdtv-settings-row .wdtv-sr-text .wdtv-sr-label{font-family:'Noto Serif SC',serif;font-size:0.88rem;color:rgba(30,45,75,0.9);font-weight:500;text-shadow:none}
+.wdtv-settings-row .wdtv-sr-text .wdtv-sr-desc{font-size:0.72rem;color:rgba(42,58,92,0.5);margin-top:2px}
+/* Toggle switch */
+.wdtv-toggle{position:relative;width:48px;height:24px;flex-shrink:0}
+.wdtv-toggle input{opacity:0;width:0;height:0}
+.wdtv-toggle .wdtv-toggle-bg{position:absolute;inset:0;border-radius:12px;background:rgba(42,58,92,0.2);transition:background 0.3s;cursor:pointer;border:1px solid rgba(200,220,245,0.25)}
+.wdtv-toggle .wdtv-toggle-dot{position:absolute;width:20px;height:20px;border-radius:50%;background:rgba(42,58,92,0.6);top:2px;left:2px;transition:all 0.3s;box-shadow:0 0 8px rgba(42,58,92,0.15);pointer-events:none}
+.wdtv-toggle input:checked + .wdtv-toggle-bg{background:rgba(42,90,160,0.25);border-color:rgba(42,90,160,0.4)}
+.wdtv-toggle input:checked + .wdtv-toggle-bg + .wdtv-toggle-dot{transform:translateX(24px);background:rgba(42,90,160,0.85);box-shadow:0 0 12px rgba(42,90,160,0.3)}
+/* Mini buttons */
+.wdtv-mini-btn{padding:5px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-size:0.78rem;cursor:pointer;font-family:'Noto Serif SC',serif;letter-spacing:0.04em;transition:all 0.2s;text-shadow:none}
+.wdtv-mini-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
+.wdtv-api-scroll{max-height:160px;overflow-y:auto;padding:8px;border-radius:8px;background:rgba(255,255,255,0.2);margin-bottom:12px;border:1px solid rgba(255,255,255,0.12)}
+.wdtv-api-scroll::-webkit-scrollbar{width:4px}
+.wdtv-api-scroll::-webkit-scrollbar-thumb{background:rgba(42,58,92,0.25);border-radius:2px}
+.wdtv-api-checkbox{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.82rem;color:rgba(30,45,75,0.85)}
+.wdtv-api-checkbox input[type=checkbox]{accent-color:rgba(42,90,160,0.6);width:16px;height:16px}
+.wdtv-api-info{display:flex;justify-content:space-between;align-items:center;font-size:0.72rem;color:rgba(42,58,92,0.5);margin-top:8px}
+.wdtv-api-info span .wdtv-count{color:rgba(30,45,75,0.9);font-weight:600}
+/* Connection test log */
+.wdtv-conn-log{max-height:220px;overflow-y:auto;padding:8px;border-radius:8px;background:rgba(20,32,55,0.85);border:1px solid rgba(200,220,245,0.2);font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:0.68rem;line-height:1.55;color:rgba(230,238,250,0.92);margin-bottom:8px;white-space:pre-wrap;word-break:break-all}
+.wdtv-conn-log::-webkit-scrollbar{width:4px}
+.wdtv-conn-log::-webkit-scrollbar-thumb{background:rgba(200,220,245,0.3);border-radius:2px}
+.wdtv-conn-log .conn-title{color:#ffd166;font-weight:700;margin:4px 0 2px}
+.wdtv-conn-log .conn-step{color:rgba(230,238,250,0.7)}
+.wdtv-conn-log .conn-ok{color:#5fda7b}
+.wdtv-conn-log .conn-fail{color:#ff7b72}
+.wdtv-conn-log .conn-warn{color:#ffd166}
+.wdtv-conn-log .conn-meta{color:rgba(200,220,245,0.55)}
+/* Custom API */
+.wdtv-custom-api-add{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.wdtv-custom-api-add .wdtv-add-btn{padding:4px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-size:1rem;cursor:pointer;line-height:1;transition:all 0.2s}
+.wdtv-custom-api-add .wdtv-add-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
+.wdtv-custom-api-form{padding:12px;border-radius:8px;background:rgba(255,255,255,0.2);margin-top:8px;border:1px solid rgba(255,255,255,0.12)}
+.wdtv-custom-api-form.hidden{display:none}
+.wdtv-custom-api-form input[type=text]{width:100%;padding:8px 12px;border-radius:8px;border:1px solid rgba(200,220,245,0.3);background:rgba(255,255,255,0.45);color:#2a3a5c;font-size:0.82rem;margin-bottom:8px;font-family:'Noto Serif SC',serif;outline:none;transition:border-color 0.3s}
+.wdtv-custom-api-form input[type=text]:focus{border-color:rgba(42,90,160,0.5)}
+.wdtv-custom-api-form input[type=text]::placeholder{color:rgba(42,58,92,0.4)}
+.wdtv-form-btns{display:flex;gap:8px}
+.wdtv-form-btns button{flex:1;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);font-size:0.78rem;cursor:pointer;font-family:'Noto Serif SC',serif;transition:all 0.2s;letter-spacing:0.04em}
+.wdtv-form-btns .wdtv-primary-btn{background:rgba(255,255,255,0.3);color:#2a3a5c;text-shadow:none}
+.wdtv-form-btns .wdtv-primary-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
+.wdtv-form-btns .wdtv-secondary-btn{background:rgba(255,255,255,0.15);color:rgba(42,58,92,0.6)}
+.wdtv-form-btns .wdtv-secondary-btn:hover{border-color:rgba(255,255,255,0.3);color:rgba(30,45,75,0.9)}
+.wdtv-settings-func-btn{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-family:'Noto Serif SC','Source Han Serif SC',serif;font-size:0.88rem;font-weight:500;letter-spacing:0.06em;cursor:pointer;transition:all 0.2s;margin-bottom:8px;text-shadow:none}
+.wdtv-settings-func-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
+.wdtv-settings-func-btn.wdtv-secondary{background:rgba(255,255,255,0.15);color:rgba(42,58,92,0.6)}
+.wdtv-settings-func-btn.wdtv-secondary:hover{border-color:rgba(255,255,255,0.3);color:rgba(30,45,75,0.9)}
+
+/* WDTV footer */
+.wdtv-footer{position:fixed;bottom:0;left:0;right:0;z-index:1;padding:24px 0;pointer-events:none}
+.wdtv-footer-inner{max-width:100%;margin:0;padding:0 48px;display:flex;align-items:center;justify-content:space-between;text-align:center}
+.wdtv-footer-left{display:flex;align-items:center;gap:8px;color:var(--silver);font-size:0.82rem}
+.wdtv-footer-brand{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:0.95rem}
+.wdtv-footer-copy{color:var(--text-muted)}
+.wdtv-footer-right{display:flex;gap:16px;font-size:0.82rem}
+.wdtv-footer-right a{color:var(--text-muted);text-decoration:none;transition:color 0.2s;pointer-events:auto}
+.wdtv-footer-right a:hover{color:var(--accent-light)}
+
+/* WDTV Modal - Liquid Glass (match history/settings panels) */
+.wdtv-modal-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:10000;background:rgba(200,220,245,0.25)}
+.wdtv-modal-overlay:not(.hidden){display:flex}
+.wdtv-modal{background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border:1px solid rgba(200,220,245,0.42);box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1);color:rgba(236,244,255,0.96);border-radius:20px;padding:22px 28px;width:min(1100px,94vw);max-height:90vh;display:flex;flex-direction:column}
+#modal>.wdtv-modal{background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border:1px solid rgba(200,220,245,0.42);box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1)}
+.wdtv-modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-shrink:0}
+.wdtv-modal-header h2{font-family:'Cormorant Garamond',serif;font-size:1.35rem;font-weight:300;letter-spacing:0.1em;color:rgba(222,234,250,0.92);text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22);word-break:break-word;padding-right:16px;line-height:1.3}
+.wdtv-modal-header h2 span{-webkit-text-fill-color:rgba(222,234,250,0.92)}
+.wdtv-modal-source-name{font-size:0.85rem;font-weight:400;color:rgba(180,200,230,0.7);margin-left:8px;font-family:'Noto Sans SC',sans-serif;letter-spacing:0.02em}
+.wdtv-modal-close{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:transparent;border:none;color:rgba(222,234,250,0.92);cursor:pointer;transition:all 0.2s;flex-shrink:0;font-size:1.4rem;line-height:1}
+.wdtv-modal-close:hover{color:#fff}
+.wdtv-modal-body{overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain;scrollbar-width:none}
+.wdtv-modal-body::-webkit-scrollbar{display:none}
+/* WDTV Modal detail hero: 左封面 + 右信息，无内部滚动 */
+#modal .wdtv-detail-hero{display:flex;gap:18px;align-items:flex-start;margin-bottom:14px}
+#modal .wdtv-detail-cover{width:150px;aspect-ratio:2/3;flex-shrink:0;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.35);box-shadow:0 10px 28px rgba(0,0,0,0.22);background:rgba(255,255,255,0.25)}
+#modal .wdtv-detail-cover img{width:100%;height:100%;object-fit:cover;display:block}
+#modal .wdtv-detail-main{flex:1;min-width:0;color:#2a3a5c}
+#modal .wdtv-detail-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+#modal .wdtv-detail-chip{font-size:0.74rem;padding:3px 10px;border-radius:9999px;background:rgba(255,255,255,0.35);border:1px solid rgba(255,255,255,0.3);color:#2a3a5c;letter-spacing:0.03em;line-height:1.4}
+#modal .wdtv-detail-people{display:flex;flex-direction:column;gap:2px;font-size:0.82rem;line-height:1.6;margin-bottom:8px}
+#modal .wdtv-detail-people span:last-child{color:rgba(30,45,75,0.9);word-break:break-word}
+#modal .detail-label{color:rgba(42,58,92,0.55);font-weight:500;flex-shrink:0;margin-right:6px}
+#modal .wdtv-detail-desc{margin:0;padding-top:8px;border-top:1px solid rgba(200,220,245,0.2);color:rgba(42,58,92,0.72);font-size:0.84rem;line-height:1.7;word-break:break-word}
+/* 集数操作栏 */
+#modal .episode-stats{color:rgba(42,58,92,0.6);font-size:0.85rem}
+.wdtv-episodes-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.wdtv-episodes-bar-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* WDTV Modal buttons */
+.wdtv-modal-mini-btn{padding:5px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-size:0.78rem;cursor:pointer;font-family:'Noto Serif SC',serif;letter-spacing:0.04em;transition:all 0.2s;text-shadow:none;display:inline-flex;align-items:center;gap:6px}
+.wdtv-modal-mini-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
+.wdtv-modal-primary-btn{padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-size:0.82rem;font-weight:500;cursor:pointer;font-family:'Noto Serif SC',serif;letter-spacing:0.04em;transition:all 0.2s;text-shadow:none}
+.wdtv-modal-primary-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
+.wdtv-episode-btn{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;border-radius:8px;padding:7px 4px;font-family:'Noto Serif SC',serif;font-size:0.85rem;transition:background-color 0.2s,border-color 0.2s;cursor:pointer;text-shadow:none;text-align:center}
+.wdtv-episode-btn:hover{background:rgba(255,255,255,0.45);border-color:rgba(255,255,255,0.4)}
+#episodesGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px}
+#episodesGrid .wdtv-episode-btn{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;box-shadow:none;min-width:0}
+#episodesGrid .wdtv-episode-btn:hover{background:rgba(255,255,255,0.45);border-color:rgba(255,255,255,0.4);color:#2a3a5c;box-shadow:none}
+/* 弹窗打开时冻结背景动效：背景静止后 backdrop-filter 结果可被缓存，弹窗内滚动才流畅 */
+body:has(#modal:not(.hidden)) .splash-glow{animation-play-state:paused}
+body:has(#modal:not(.hidden)) #splash{backdrop-filter:none;-webkit-backdrop-filter:none;transition:none}
+@media(max-width:640px){
+.wdtv-modal{padding:14px 16px;border-radius:16px}
+.wdtv-modal-header h2{font-size:1.15rem}
+#modal .wdtv-detail-hero{gap:12px}
+#modal .wdtv-detail-cover{width:96px}
+#modal .wdtv-detail-chip{font-size:0.68rem;padding:2px 8px}
+#modal .wdtv-detail-people{font-size:0.76rem}
+#modal .wdtv-detail-desc{font-size:0.78rem}
+#episodesGrid{grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:6px}
+.wdtv-episode-btn{font-size:0.8rem;padding:7px 4px}
+}
+
+/* WDTV Disclaimer Modal */
+.wdtv-disclaimer-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:10000;background:rgba(200,220,245,0.25);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5)}
+.wdtv-disclaimer-modal.show{display:flex}
+.wdtv-disclaimer-box{background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border:1px solid rgba(200,220,245,0.42);box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1);color:rgba(236,244,255,0.96);border-radius:24px;padding:32px;width:92%;max-width:560px;max-height:90vh;overflow-y:auto}
+.wdtv-disclaimer-box h2{font-size:1.4rem;font-weight:500;letter-spacing:0.14em;color:rgba(222,234,250,0.92);text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22);margin-bottom:24px;text-align:center}
+.wdtv-disclaimer-box .wdtv-disc-text{color:rgba(224,234,248,0.85);line-height:2}
+.wdtv-disclaimer-box .wdtv-disc-text p{margin-bottom:12px}
+.wdtv-disclaimer-box .wdtv-disc-text strong{color:#9cc4f5;font-weight:600}
+.wdtv-disclaimer-box .wdtv-disc-accept{display:block;margin:24px auto 0;padding:12px 32px;border-radius:14px;border:1px solid rgba(200,220,245,0.42);background:rgba(80,128,176,0.2);color:rgba(236,244,255,0.96);font-size:1rem;font-weight:500;cursor:pointer;font-family:'Noto Sans SC',sans-serif;letter-spacing:0.08em;transition:all 0.2s}
+.wdtv-disclaimer-box .wdtv-disc-accept:hover{background:rgba(80,128,176,0.35);border-color:rgba(200,220,245,0.6)}
+
+/* WDTV Toast */
+.wdtv-toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-100px);z-index:10001;padding:12px 28px;border-radius:9999px;background:rgba(255,255,255,0.85);backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);border:1px solid rgba(255,255,255,0.9);color:#1d1d1f;box-shadow:0 12px 40px rgba(0,0,0,0.1),inset 0 1px 0 rgba(255,255,255,0.95);font-weight:500;font-size:0.92rem;transition:transform 0.3s,opacity 0.3s;opacity:0;font-family:'Noto Sans SC',sans-serif}
+.wdtv-toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+/* WDTV Loading */
+.wdtv-loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:10001;background:rgba(200,220,245,0.25);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .25s ease,visibility .25s ease}
+.wdtv-loading.show{opacity:1;visibility:visible;pointer-events:auto}
+.wdtv-loading-content{text-align:center}
+.wdtv-loading-spinner{width:40px;height:40px;border:3px solid rgba(200,215,235,0.4);border-top-color:var(--accent);border-radius:50%;animation:wdtvSpin 0.8s linear infinite;margin:0 auto 12px}
+@keyframes wdtvSpin{to{transform:rotate(360deg)}}
+.wdtv-loading-text{color:rgba(236,244,255,0.96);font-size:0.88rem}
+
+/* Nav icon buttons for WDTV */
+/* Nav buttons - match splash-action-btn */
+.wdtv-nav-btn{position:fixed;z-index:10;height:44px;width:44px;border-radius:12px;border:none;background:transparent;color:rgba(236,244,255,0.72);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:all 0.3s}
+.wdtv-nav-btn:hover{color:rgba(236,244,255,0.96);background:rgba(200,220,245,0.12)}
+.wdtv-nav-btn svg{width:16px;height:16px;color:rgba(200,220,245,0.8)}
+#history-btn{top:24px;left:24px}
+#settings-btn{top:24px;right:24px}
+
+/* CHAT MINI ICON */
+#chat-mini{position:fixed;bottom:24px;right:24px;z-index:10000;display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:28px;background:rgba(255,255,255,0.32);border:1px solid rgba(180,215,245,0.5);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:0 4px 20px rgba(100,160,220,0.1);cursor:pointer;transition:all 0.4s var(--transition);opacity:0;transform:translateY(20px)}
+#chat-mini.visible{opacity:1;transform:translateY(0)}
+#chat-mini:hover{background:rgba(255,255,255,0.48)}
+#chat-mini .mini-icon{font-size:1.1rem}
+#chat-mini .mini-title{font-size:0.72rem;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+
+@media(max-width:768px){
+  .splash-left{padding:76px 16px 80px}
+  .wdtv-home-wrap{padding:0}
+  .wdtv-history-panel,.wdtv-settings-panel{width:300px}
+  #history-btn{top:16px;left:16px}
+  #settings-btn{top:16px;right:16px}
+  #chat-mini{right:16px;bottom:16px}
+}
+@media(max-width:480px){
+  .wdtv-history-panel,.wdtv-settings-panel{width:100%;max-width:100%}
+  #history-btn{top:12px;left:12px}
+  #settings-btn{top:12px;right:12px}
+}
+
+/* === GLASS CANVAS (splash water ripple) === */
+:root{--gw-ar:1.924779;--gw-h:100vh;--gw-w:100vw}
+#gw-slot{position:fixed;z-index:1;left:0;top:0;width:var(--gw-w);height:var(--gw-h);--gwfx:140px;--gwfy:68px;touch-action:none;-ms-touch-action:none;transition:opacity .5s ease,visibility .5s ease,filter .45s ease}
+#gw-slot.gw-exit{opacity:0;filter:blur(3px);pointer-events:none;transition:opacity .32s ease-out,filter .32s ease-out}
+#gw-pane{position:absolute;inset:0;border-radius:28px;overflow:hidden;cursor:crosshair;
+  -webkit-mask-image:linear-gradient(to right,rgba(0,0,0,.34),rgba(0,0,0,.62) calc(var(--gwfx)*.42),rgba(0,0,0,.86) calc(var(--gwfx)*.72),#000 var(--gwfx),#000 calc(100% - var(--gwfx)),rgba(0,0,0,.86) calc(100% - var(--gwfx)*.72),rgba(0,0,0,.62) calc(100% - var(--gwfx)*.42),rgba(0,0,0,.34)),
+                     linear-gradient(to bottom,transparent,rgba(0,0,0,.22) calc(var(--gwfy)*.45),rgba(0,0,0,.68) calc(var(--gwfy)*.78),#000 var(--gwfy),#000 calc(100% - var(--gwfy)),rgba(0,0,0,.68) calc(100% - var(--gwfy)*.78),rgba(0,0,0,.22) calc(100% - var(--gwfy)*.45),transparent);
+  -webkit-mask-composite:source-in;-webkit-mask-repeat:no-repeat;
+  mask-image:linear-gradient(to right,rgba(0,0,0,.34),rgba(0,0,0,.62) calc(var(--gwfx)*.42),rgba(0,0,0,.86) calc(var(--gwfx)*.72),#000 var(--gwfx),#000 calc(100% - var(--gwfx)),rgba(0,0,0,.86) calc(100% - var(--gwfx)*.72),rgba(0,0,0,.62) calc(100% - var(--gwfx)*.42),rgba(0,0,0,.34)),
+             linear-gradient(to bottom,transparent,rgba(0,0,0,.22) calc(var(--gwfy)*.45),rgba(0,0,0,.68) calc(var(--gwfy)*.78),#000 var(--gwfy),#000 calc(100% - var(--gwfy)),rgba(0,0,0,.68) calc(100% - var(--gwfy)*.78),rgba(0,0,0,.22) calc(100% - var(--gwfy)*.45),transparent);
+  mask-composite:intersect;mask-repeat:no-repeat}
+.gw-ly{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.gw-img{z-index:1;background-size:cover;background-position:center;opacity:0;transition:opacity 1.1s ease;filter:saturate(0.92) brightness(0.97)}
+#gw-slot.gw-has-img .gw-img{opacity:1}
+#gw-ripple{z-index:1;opacity:0;transition:opacity 1.1s ease;will-change:transform}
+#gw-slot.gw-rippling #gw-ripple{opacity:1}
+#gw-slot.gw-gloss #gw-ripple{mix-blend-mode:overlay}
+#gw-ripple-bg{position:absolute;inset:0;z-index:2;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity 1.1s ease;will-change:transform}
+#gw-ripple-bg.on{opacity:1}
+.gw-grade-c{z-index:2;background:#3a5587;mix-blend-mode:color;opacity:0;transition:opacity 1.2s ease}
+#gw-slot.gw-has-img .gw-grade-c{opacity:0.34}
+.gw-grade-s{z-index:2;background:linear-gradient(168deg,rgba(198,218,248,0.16) 0%,rgba(14,26,50,0.30) 80%);mix-blend-mode:soft-light;opacity:0;transition:opacity 1.2s ease}
+#gw-slot.gw-has-img .gw-grade-s{opacity:1}
+.gw-depth{z-index:3;background:radial-gradient(130% 160% at 50% 46%,rgba(12,22,44,0) 46%,rgba(12,22,44,0.18) 76%,rgba(12,22,44,0.34) 100%)}
+.gw-frost{z-index:4;opacity:0.55;transition:opacity .4s ease;background:linear-gradient(rgba(16,28,54,0.06),rgba(16,28,54,0.06)),linear-gradient(150deg,rgba(184,204,236,0.07) 0%,rgba(112,136,178,0.04) 52%,rgba(86,108,150,0.07) 100%)}
+#gw-fogwipe{z-index:5}
+@media (max-width:900px){
+/* 小屏性能优化：背景图显示后每帧都要叠加水波画布，裁掉昂贵的合成特效（全屏面板的边缘渐隐在移动端不可见，着色层改用普通半透明叠加） */
+#gw-pane{-webkit-mask-image:none;mask-image:none;border-radius:0}
+/* 空白处触摸不被浏览器接管为滚动手势，保证滑动持续触发水波（封面等内容区不受影响，正常滚动） */
+#gw-slot{touch-action:none}
+.gw-img{filter:none}
+.gw-grade-c{mix-blend-mode:normal}
+.gw-grade-s{mix-blend-mode:normal}}
+
+/* === FX OFF（动态效果关闭模式：停用一切动画与视觉特效，降低性能开销） === */
+html.fx-off{scroll-behavior:auto}
+html.fx-off *{animation:none!important;transition:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;text-shadow:none!important;box-shadow:none!important;filter:none!important}
+html.fx-off #preloader,html.fx-off #rain-container,html.fx-off #gw-slot,html.fx-off #gw-ripple-bg{display:none!important}
+
+/* FX OFF 豁免：选集弹窗与两侧侧边栏窗口保持原有玻璃样式（打开时才渲染，不影响首页持续性能；遮罩层不再加 blur） */
+html.fx-off .wdtv-disclaimer-modal{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.25)!important}
+html.fx-off .wdtv-disclaimer-box{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.13)!important;border:1px solid rgba(200,220,245,0.42)!important;box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1)!important}
+html.fx-off .wdtv-modal,html.fx-off #modal>.wdtv-modal{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.13)!important;border:1px solid rgba(200,220,245,0.42)!important;box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1)!important}
+html.fx-off .wdtv-modal-header h2{text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22)!important}
+html.fx-off .wdtv-history-panel,html.fx-off .wdtv-settings-panel{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.13)!important}
+html.fx-off .wdtv-history-panel{box-shadow:4px 0 30px rgba(0,0,0,0.3)!important}
+html.fx-off .wdtv-settings-panel{box-shadow:-4px 0 30px rgba(0,0,0,0.3)!important}
+html.fx-off .wdtv-history-panel .wdtv-panel-header h3,html.fx-off .wdtv-settings-panel .wdtv-panel-header h3{text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22)!important}
+html.fx-off .wdtv-settings-panel .wdtv-toggle .wdtv-toggle-dot{box-shadow:0 0 8px rgba(42,58,92,0.15)!important}
+html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + .wdtv-toggle-dot{box-shadow:0 0 12px rgba(42,90,160,0.3)!important}
+
+</style>
+</head>
+<body>
+<div id="preloader">
+  <p class="preloader-text">Now Loading...</p>
+  <p class="preloader-sub">preparing your space</p>
+</div>
+<script>
+(function(){
+  function revealPreloader(){
+    var pre=document.getElementById('preloader');
+    if(!pre||pre._done)return;pre._done=true;
+    pre.classList.add('fade-out');
+    setTimeout(function(){if(pre.parentNode)pre.parentNode.removeChild(pre)},1500);
+  }
+  if(document.readyState==='complete'){setTimeout(revealPreloader,300)}
+  else{window.addEventListener('load',function(){setTimeout(revealPreloader,400)})}
+  setTimeout(revealPreloader,3000);
+  setTimeout(revealPreloader,8000);
+})();
+</script>
+<div id="rain-container"></div>
+
+<div id="splash">
+  <div class="splash-glow" id="splash-glow"></div>
+  <canvas id="gw-ripple-bg"></canvas>
+  <div id="gw-slot">
+    <div id="gw-pane">
+      <div class="gw-ly gw-img" id="gw-img"></div>
+      <canvas id="gw-ripple" class="gw-ly"></canvas>
+      <div class="gw-ly gw-grade-c"></div>
+      <div class="gw-ly gw-grade-s"></div>
+      <div class="gw-ly gw-frost"></div>
+      <div class="gw-ly gw-depth"></div>
+      <canvas id="gw-fogwipe" class="gw-ly"></canvas>
+    </div>
+  </div>
+  <div class="splash-content" id="splash-welcome">
+    <div class="splash-left">
+      <div class="wdtv-home-wrap">
+        <div class="wdtv-header">
+          <h1 class="wdtv-title">WDTV</h1>
+          <p class="wdtv-slogan">自由观影，畅享精彩</p>
+        </div>
+
+        <div id="searchArea">
+          <div class="wdtv-search-wrap">
+            <div class="wdtv-search-glass">
+              <input type="text" id="searchInput" placeholder="搜索你喜欢的视频..." autocomplete="off" oninput="toggleClearButton()">
+              <button id="clearSearchInput" class="wdtv-clear-btn" onclick="clearSearchInput()">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+              <button class="wdtv-search-btn" onclick="search()">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+              </button>
+            </div>
+            <div id="recentSearches" class="wdtv-recent"></div>
+          </div>
+        </div>
+
+        <div id="doubanArea" class="wdtv-douban hidden">
+          <div class="wdtv-douban-header">
+            <div style="display:flex;align-items:center;gap:12px">
+              <h2>豆瓣热门</h2>
+              <div class="wdtv-douban-toggle">
+                <button id="douban-movie-toggle" class="active">电影</button>
+                <button id="douban-tv-toggle">电视剧</button>
+              </div>
+            </div>
+            <button id="douban-refresh" class="wdtv-douban-refresh">
+              <span>换一批</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            </button>
+          </div>
+          <div id="douban-tags" class="wdtv-douban-tags"></div>
+          <div id="douban-results" class="wdtv-douban-grid"></div>
+        </div>
+
+        <div id="resultsArea" class="hidden">
+          <div class="wdtv-result-toolbar">
+            <div id="nameFilterBar" class="wdtv-name-filter hidden">
+              <div id="nameDropdown" class="wdtv-name-dropdown">
+                <button type="button" id="nameDropdownToggle" class="wdtv-name-dropdown-toggle" onclick="toggleNameDropdown(event)">
+                  <span id="nameDropdownLabel">全部</span>
+                  <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                <div id="nameDropdownMenu" class="wdtv-name-dropdown-menu hidden"></div>
+              </div>
+            </div>
+            <div class="wdtv-result-toolbar-right">
+              <button id="blockAIManhuaBtn" type="button" class="wdtv-block-btn" onclick="toggleBlockFilter('blockAIManhuaEnabled')">屏蔽AI漫剧</button>
+              <button id="blockShortDramaBtn" type="button" class="wdtv-block-btn" onclick="toggleBlockFilter('blockShortDramaEnabled')">屏蔽短剧</button>
+              <div class="wdtv-result-count"><span id="searchResultsCount">0</span> 个结果</div>
+            </div>
+          </div>
+          <div id="results" class="wdtv-search-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WDTV History Button -->
+  <button id="history-btn" class="wdtv-nav-btn" onclick="toggleHistory(event)" aria-label="观看历史">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+  </button>
+
+  <!-- WDTV Settings Button -->
+  <button id="settings-btn" class="wdtv-nav-btn" onclick="toggleSettings(event)" aria-label="设置">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+  </button>
+</div>
+
+<!-- WDTV History Panel -->
+<div id="historyPanel" class="wdtv-history-panel">
+  <div class="wdtv-panel-header">
+    <h3>观看历史</h3>
+    <button class="wdtv-close-btn" onclick="toggleHistory(event)"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+  </div>
+  <div id="historyList">
+    <div class="wdtv-history-empty">暂无观看记录</div>
+  </div>
+  <button class="wdtv-history-clear" onclick="clearViewingHistory()">清空历史记录</button>
+</div>
+
+<!-- WDTV Settings Panel -->
+<div id="settingsPanel" class="wdtv-settings-panel">
+  <div class="wdtv-panel-header">
+    <h3>设置</h3>
+    <button class="wdtv-close-btn" onclick="toggleSettings(event)"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+  </div>
+  <!-- 数据源设置 -->
+  <div class="wdtv-settings-block">
+    <label class="block-label">数据源设置</label>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button onclick="selectAllAPIs(true)" class="wdtv-mini-btn">全选</button>
+      <button onclick="selectAllAPIs(false)" class="wdtv-mini-btn">全不选</button>
+    </div>
+    <div id="apiCheckboxes" class="wdtv-api-scroll"></div>
+    <div class="wdtv-api-info">
+      <span>已选API数量：<span id="selectedApiCount" class="wdtv-count">0</span></span>
+      <span id="siteStatus"></span>
+    </div>
+  </div>
+  <!-- 视频源连接测试 -->
+  <div class="wdtv-settings-block">
+    <label class="block-label">视频源连接测试</label>
+    <button onclick="runConnectionTest()" class="wdtv-settings-func-btn">测试全部视频源连接</button>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button onclick="copyConnectionLog()" class="wdtv-mini-btn">复制日志</button>
+      <button onclick="clearConnectionLog()" class="wdtv-mini-btn">清空日志</button>
+    </div>
+    <div id="connectionLog" class="wdtv-conn-log"></div>
+    <div class="wdtv-api-info"><span>测试会逐一校验每个视频源 API 的连通性，日志含完整原因</span></div>
+  </div>
+  <!-- 功能开关 -->
+  <div class="wdtv-settings-block">
+    <label class="block-label">功能开关</label>
+    <div class="wdtv-settings-row">
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">动态效果</div><div class="wdtv-sr-desc">关闭后停用全部动画与视觉特效，提升性能</div></div>
+      <label class="wdtv-toggle"><input type="checkbox" id="dynamicEffectsToggle" checked><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
+    </div>
+    <div class="wdtv-settings-row">
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">分片广告过滤</div><div class="wdtv-sr-desc">关闭可减少旧版浏览器卡顿</div></div>
+      <label class="wdtv-toggle"><input type="checkbox" id="adFilterToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
+    </div>
+    <div class="wdtv-settings-row">
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">豆瓣热门推荐</div><div class="wdtv-sr-desc">首页显示豆瓣热门影视内容</div></div>
+      <label class="wdtv-toggle"><input type="checkbox" id="doubanToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
+    </div>
+  </div>
+  <!-- 一般功能 -->
+  <div class="wdtv-settings-block">
+    <label class="block-label">一般功能</label>
+    <button onclick="importConfig()" class="wdtv-settings-func-btn">导入配置</button>
+    <button onclick="exportConfig()" class="wdtv-settings-func-btn">导出配置</button>
+    <button onclick="clearLocalStorage()" class="wdtv-settings-func-btn wdtv-secondary">清除Cookie</button>
+    <button onclick="window.open('about.html','_blank')" class="wdtv-settings-func-btn wdtv-secondary">隐私政策</button>
+  </div>
+</div>
+
+
+
+<!-- WDTV Detail Modal -->
+<div id="modal" class="wdtv-modal-overlay hidden">
+  <div class="wdtv-modal">
+    <div class="wdtv-modal-header">
+      <h2 id="modalTitle"></h2>
+      <button class="wdtv-modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div id="modalContent" class="wdtv-modal-body"></div>
+  </div>
+</div>
+
+<!-- WDTV Disclaimer Modal -->
+<div id="disclaimerModal" class="wdtv-disclaimer-modal">
+  <div class="wdtv-disclaimer-box">
+    <h2>使用声明</h2>
+    <div class="wdtv-disc-text">
+      <p>欢迎使用 WDTV。在开始使用前，请您了解并同意以下条款：</p>
+      <p><strong>服务性质：</strong> WDTV 仅提供视频搜索服务，不直接提供、存储或上传任何视频内容。所有搜索结果均来自第三方公开接口。</p>
+      <p><strong>用户责任：</strong> 用户在使用本站服务时，须遵守相关法律法规，不得利用搜索结果从事侵权行为。</p>
+      <p><strong>广告风险提示：</strong> 本站所有视频均来自第三方采集站，视频中出现的广告与本站无关，请勿相信或点击视频中的任何广告内容。</p>
+    </div>
+    <button id="acceptDisclaimerBtn" class="wdtv-disc-accept">我已了解并接受</button>
+  </div>
+</div>
+
+<!-- WDTV Toast -->
+<div id="toast" class="wdtv-toast"><p id="toastMessage"></p></div>
+
+<!-- WDTV Loading -->
+<div id="loading" class="wdtv-loading">
+  <div class="wdtv-loading-content">
+    <div class="wdtv-loading-spinner"></div>
+    <p class="wdtv-loading-text">加载中...</p>
+  </div>
+</div>
+
+<!-- JSON-LD Structured Data -->
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "WDTV",
+    "url": "https://libretv.is-an.org/",
+    "description": "免费在线视频搜索与观看平台",
+    "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://libretv.is-an.org/?s={search_term_string}",
+        "query-input": "required name=search_term_string"
+    }
+}
+</script>
+
+<!-- External JS -->
+<script src="libs/tailwindcss.min.js"></script>
+<script src="libs/sha256.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/connection-test.js"></script>
+<script src="js/customer_site.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/api.js"></script>
+<script src="js/douban.js"></script>
+<script src="js/search.js"></script>
+<script src="js/app.js?v=6"></script>
+<script src="js/pwa-register.js"></script>
+<script src="js/index-page.js"></script>
+
+<!-- InternalBeyond Scripts -->
+<script>
+/* SPLASH VISIBLE IMMEDIATELY (no dissolution needed) */
+
+/* Fix: Reset UI state when page is restored from bfcache (browser back/forward) */
+window.addEventListener('pageshow', function(event) {
+  // event.persisted is true when page is restored from bfcache
+  if (event.persisted) {
+    // Reset glass canvas system to non-interactive state
+    var slot = document.getElementById('gw-slot');
+    if (slot) {
+      slot.classList.add('gw-exit');
+    }
+    
+    // Ensure splash content is interactive
+    var splashContent = document.querySelector('.splash-content');
+    if (splashContent) {
+      splashContent.style.pointerEvents = '';
+    }
+    
+    // Close any open panels that might block interactions
+    var historyPanel = document.getElementById('historyPanel');
+    if (historyPanel) {
+      historyPanel.classList.remove('show');
+    }
+    
+    var settingsPanel = document.getElementById('settingsPanel');
+    if (settingsPanel) {
+      settingsPanel.classList.remove('show');
+    }
+    
+    // Close any open modals
+    var modal = document.getElementById('modal');
+    if (modal) {
+      modal.classList.add('hidden');
+    }
+    
+    var disclaimerModal = document.getElementById('disclaimerModal');
+    if (disclaimerModal) {
+      disclaimerModal.style.display = 'none';
+    }
+    
+    // Hide loading indicator if visible
+    var loading = document.getElementById('loading');
+    if (loading) {
+      loading.style.display = 'none';
+    }
+    
+    // Hide toast if visible
+    var toast = document.getElementById('toast');
+    if (toast) {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(-50%) translateY(-100%)';
+    }
+  }
+});
+
+
+
+/* RAIN */
+(function(){
+  var box=document.getElementById('rain-container');
+  if(!box)return;
+  var cv=document.createElement('canvas');box.appendChild(cv);
+  var ctx=cv.getContext('2d');
+  var dpr=Math.max(1,Math.min(2,devicePixelRatio||1));
+  var W=0,H=0;
+  function R(a,b){return a+Math.random()*(b-a)}
+  var WIND=24;
+  var drops=[];
+  function reset(d){
+    d.z=R(0.35,1);d.x=Math.random()*W;d.v=(380+R(0,320))*d.z;
+    d.y=-R(0.05,1.2)*d.v;d.w=1.8+d.z*0.8;d.wf=R(0.8,1.2);
+  }
+  function size(){
+    W=innerWidth;H=innerHeight;
+    cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
+    drops.length=0;
+    for(var i=0;i<45;i++){var d={};reset(d);drops.push(d)}
+  }
+  var last=0,rafId=null,rainHeld=false;
+  function fxOff(){return document.documentElement.classList.contains('fx-off')}
+  function loop(ts){
+    if(fxOff()){rafId=null;return}
+    rafId=requestAnimationFrame(loop);
+    var mo=document.getElementById('modal');
+    if(mo&&!mo.classList.contains('hidden')){if(!rainHeld){ctx.clearRect(0,0,W,H);rainHeld=true}last=ts;return}
+    rainHeld=false;
+    var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
+    ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);ctx.lineCap='round';
+    for(var i=0;i<drops.length;i++){
+      var d=drops[i];var wz=WIND*d.z*d.wf;d.y+=d.v*dt;d.x+=wz*dt;
+      if(d.x>W+30)d.x-=W+60;
+      var len=Math.min(72,d.v*0.1);
+      if(d.y-len>H){reset(d);continue}
+      if(d.y<-40)continue;
+      var a=0.18+0.26*d.z;
+      var tx=d.x-wz*(len/d.v),ty=d.y-len;
+      var g=ctx.createLinearGradient(tx,ty,d.x,d.y);
+      g.addColorStop(0,'rgba(200,220,242,0)');
+      g.addColorStop(0.62,'rgba(208,225,245,'+(a*0.55).toFixed(3)+')');
+      g.addColorStop(1,'rgba(218,232,250,'+Math.min(0.5,a*1.15).toFixed(3)+')');
+      ctx.strokeStyle=g;ctx.lineWidth=d.w;
+      ctx.beginPath();ctx.moveTo(tx,ty);ctx.lineTo(d.x,d.y);ctx.stroke();
+      ctx.fillStyle='rgba(224,238,252,'+Math.min(0.45,a*0.9).toFixed(3)+')';
+      ctx.beginPath();ctx.arc(d.x,d.y,d.w*0.55,0,6.2832);ctx.fill();
+    }
+  }
+  function startRain(){if(rafId==null&&!fxOff())rafId=requestAnimationFrame(loop)}
+  window.__fxRain=startRain;
+  addEventListener('resize',size);size();startRain();
+})();
+</script>
+
+<script>
+/* GLASS CANVAS — water ripple */
+(function(){
+'use strict';
+var slot=document.getElementById('gw-slot');
+var pane=document.getElementById('gw-pane');
+var rcv=document.getElementById('gw-ripple');
+var bgcv=document.getElementById('gw-ripple-bg');
+var sp=document.getElementById('splash');
+if(!slot||!pane||!rcv||!bgcv)return;
+var rctx=rcv.getContext('2d');
+var bgctx=bgcv.getContext('2d');
+var dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1)),bscale=dpr;
+function R(a,b){return a+Math.random()*(b-a)}
+var REDUCED=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+var mqSmall=window.matchMedia?window.matchMedia('(max-width:900px)'):{matches:false};
+var W=0,H=0,img=null;var REFRACT_OK=true;
+var SW=0,SH=0,h1=null,h2=null,bgData=null,outImg=null;
+var rippleScale=1;
+var sim=document.createElement('canvas'),simCtx=null;
+var RIPPLE_MAG=1.5;
+var MOUSE_MAG=2;
+var MOUSE_STR_MAG=1.4;
+var DAMP=0.9855,REFRACT=2.0,LIGHT=10,STEP=1/30;
+function poke(cx,cy,str,rad){rad=rad*rippleScale*RIPPLE_MAG;cx|=0;cy|=0;var r2=rad*rad,R0=Math.ceil(rad);for(var y=-R0;y<=R0;y++){for(var x=-R0;x<=R0;x++){var px=cx+x,py=cy+y;if(px<1||py<1||px>=SW-1||py>=SH-1)continue;var f=(x*x+y*y)/r2;if(f>1)continue;h1[py*SW+px]+=str*(0.5+0.5*Math.cos(Math.PI*Math.sqrt(f)))}}}
+var swT=0;
+var SIN_TABLE=new Float32Array(1024);
+for(var i=0;i<1024;i++)SIN_TABLE[i]=Math.sin(i/1024*Math.PI*2);
+function fastSin(x){x=x%(Math.PI*2);if(x<0)x+=Math.PI*2;return SIN_TABLE[(x/(Math.PI*2)*1024)|0]}
+function stepWater(){swT+=0.0333;for(var y=1;y<SH-1;y++){var i=y*SW+1;for(var x=1;x<SW-1;x++,i++){h2[i]=((h1[i-1]+h1[i+1]+h1[i-SW]+h1[i+SW])*0.5-h2[i])*DAMP+0.0024*fastSin(swT*0.7+x*0.05+y*0.021)+0.0019*fastSin(swT*0.43-x*0.023+y*0.041)}}var t=h1;h1=h2;h2=t}
+function renderWater(){
+  var gloss=true;var ctx=(mode==='bg')?bgctx:rctx;
+  var GAIN=(mode==='bg')?150*RIPPLE_MAG:330*RIPPLE_MAG,CAP=(mode==='bg')?110*RIPPLE_MAG:165*RIPPLE_MAG;
+  var dst=outImg.data,h=h1;
+  for(var y=0;y<SH;y++){var yu=y>0?y-1:y,yd=y<SH-1?y+1:y;for(var x=0;x<SW;x++){var i=y*SW+x;var xl=x>0?i-1:i,xr=x<SW-1?i+1:i;var gx=h[xl]-h[xr];var gy=h[yu*SW+x]-h[yd*SW+x];var di=i*4;var a=gy*GAIN;if(a>=0){a=a*0.18;dst[di]=224;dst[di+1]=238;dst[di+2]=255;dst[di+3]=(a>CAP?CAP:a)|0}else{a=-a*0.1;dst[di]=10;dst[di+1]=22;dst[di+2]=44;dst[di+3]=(a>CAP?CAP:a)|0}}}
+  simCtx.putImageData(outImg,0,0);var rs=(mode==='bg')?bscale:dpr;ctx.setTransform(rs,0,0,rs,0,0);ctx.imageSmoothingEnabled=true;
+  ctx.clearRect(0,0,W,H);ctx.drawImage(sim,0,0,W,H);
+}
+var rainT=R(0.6,1.6),ambT=R(1.5,3);
+function rhythm(dt){rainT-=dt;if(rainT<=0){rainT=R(0.9,2.4);spawnDrop(R(0.8,1.5));if(Math.random()<0.18)spawnDrop(R(0.5,0.9))}ambT-=dt;if(ambT<=0){ambT=R(2.5,5.5);poke(R(2,SW-2),R(2,SH-2),R(0.25,0.55),3)}}
+var drops=[],plips=[];
+function spawnDrop(str){var sx=R(2,SW-2),sy=R(2,SH-2);var px=sx/SW*W,py=sy/SH*H;var fall=H*R(0.34,0.52);var dur=R(0.3,0.42),vx=R(-8,14);drops.push({x:px-vx*dur,y:py-fall,ty:py,sx:sx,sy:sy,str:str,v:fall/dur,vx:vx,w:1.0+str*0.35})}
+function updateDrops(dt,ctx){for(var i=drops.length-1;i>=0;i--){var d=drops[i];d.x+=d.vx*dt;d.y+=d.v*dt;if(d.y>=d.ty){poke(d.sx,d.sy,d.str*1.15,1.6);poke(d.sx,d.sy,-d.str*0.4,3.2);plips.push({x:d.x,y:d.ty,t:0.22});drops.splice(i,1);continue}var len=Math.min(26,d.v*0.045);var tx=d.x-d.vx*(len/d.v),ty=d.y-len;var g=ctx.createLinearGradient(tx,ty,d.x,d.y);g.addColorStop(0,'rgba(214,229,248,0)');g.addColorStop(0.7,'rgba(206,223,246,0.42)');g.addColorStop(1,'rgba(232,243,255,0.8)');ctx.strokeStyle=g;ctx.lineWidth=d.w;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(tx,ty);ctx.lineTo(d.x,d.y);ctx.stroke()}for(var j=plips.length-1;j>=0;j--){var p=plips[j];p.t-=dt;if(p.t<=0){plips.splice(j,1);continue}var a=p.t/0.22;ctx.strokeStyle='rgba(228,241,255,'+(0.45*a).toFixed(3)+')';ctx.lineWidth=0.9;ctx.beginPath();ctx.arc(p.x,p.y,1.2+(1-a)*5,0,6.2832);ctx.stroke();ctx.fillStyle='rgba(236,246,255,'+(0.55*a*a).toFixed(3)+')';ctx.beginPath();ctx.arc(p.x,p.y,1.4*a+0.3,0,6.2832);ctx.fill()}}
+var stirPts={};
+function toSim(e){if(mode==='pane'){var r=pane.getBoundingClientRect();if(r.width<2||e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)return null;return{x:(e.clientX-r.left)/r.width*SW,y:(e.clientY-r.top)/r.height*SH}}return{x:e.clientX/W*SW,y:e.clientY/H*SH}}
+function stir(e){if(!(e.buttons&1))return;if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;var lp=stirPts[e.pointerId];if(!lp){stirPts[e.pointerId]={x:p.x,y:p.y};return}var dx=p.x-lp.x,dy=p.y-lp.y;var d=Math.sqrt(dx*dx+dy*dy);if(d<1.15)return;var steps=Math.min(6,Math.ceil(d/1.5));var s=Math.min(0.55,0.12+d*0.05);for(var i=1;i<=steps;i++)poke(lp.x+dx*i/steps,lp.y+dy*i/steps,s*MOUSE_STR_MAG,1.7*MOUSE_MAG);lp.x=p.x;lp.y=p.y}
+function tap(e){if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;stirPts[e.pointerId]={x:p.x,y:p.y};poke(p.x,p.y,2.0*MOUSE_STR_MAG,2.8*MOUSE_MAG)}
+function lift(e){delete stirPts[e.pointerId]}
+function bgBlank(e){var t=e.target;if(!t||t===sp||t===slot||t===pane)return true;if(t.closest&&(t.closest('#searchArea')||t.closest('#doubanArea')||t.closest('#resultsArea')||t.closest('.wdtv-modal-overlay')||t.closest('.wdtv-disclaimer-modal')||t.closest('.wdtv-history-panel')||t.closest('.wdtv-settings-panel')||t.closest('#chat-mini')))return false;return true}
+if(sp&&!REDUCED){var gwTouch={};sp.addEventListener('pointerdown',function(e){if(mode!=='bg')return;var ok=bgBlank(e);gwTouch[e.pointerId]=ok;if(ok)tap(e)},{passive:true});sp.addEventListener('pointermove',function(e){if(mode==='bg'&&gwTouch[e.pointerId]!==false)stir(e)},{passive:true});sp.addEventListener('pointerup',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointercancel',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointerleave',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true})}
+var fogCv=document.getElementById('gw-fogwipe');var fog=fogCv?fogCv.getContext('2d'):null;var wipeStrokes=[];
+function blotch(x,y,r,a){if(!fog)return;var g=fog.createRadialGradient(W*x,H*y,0,W*x,H*y,Math.max(W,H)*r);g.addColorStop(0,'rgba(222,234,250,'+a+')');g.addColorStop(1,'rgba(222,234,250,0)');fog.fillStyle=g;fog.fillRect(0,0,W,H)}
+function paintHaze(){if(!fog)return;fog.globalCompositeOperation='source-over';fog.shadowBlur=0;fog.fillStyle='rgba(208,224,244,0.10)';fog.fillRect(0,0,W,H);var g=fog.createRadialGradient(W*0.5,H*0.46,Math.min(W,H)*0.22,W*0.5,H*0.5,Math.max(W,H)*0.72);g.addColorStop(0,'rgba(214,228,246,0)');g.addColorStop(1,'rgba(214,228,246,0.12)');fog.fillStyle=g;fog.fillRect(0,0,W,H);blotch(0.18,0.20,0.50,0.06);blotch(0.82,0.74,0.55,0.05);blotch(0.60,0.12,0.40,0.04)}
+function renderWipeStroke(p){if(!fog)return;var w=p.w||19;fog.globalCompositeOperation='destination-out';fog.lineCap='round';fog.lineJoin='round';fog.strokeStyle='rgba(0,0,0,0.92)';fog.lineWidth=w;if(p.length===1){fog.fillStyle='rgba(0,0,0,0.92)';fog.beginPath();fog.arc(p[0].x*W,p[0].y*H,w/2,0,Math.PI*2);fog.fill()}for(var i=1;i<p.length;i++){fog.beginPath();fog.moveTo(p[i-1].x*W,p[i-1].y*H);fog.lineTo(p[i].x*W,p[i].y*H);fog.stroke()}fog.globalCompositeOperation='source-over'}
+function redrawFog(){if(!fog)return;fog.globalCompositeOperation='source-over';fog.clearRect(0,0,W,H);paintHaze();for(var i=0;i<wipeStrokes.length;i++)renderWipeStroke(wipeStrokes[i]);fog.globalCompositeOperation='source-over'}
+function wipeSegLive(a,b,w){if(!fog)return;fog.globalCompositeOperation='destination-out';fog.lineCap='round';fog.lineJoin='round';fog.strokeStyle='rgba(0,0,0,0.92)';fog.lineWidth=w||19;fog.beginPath();fog.moveTo(a.x*W,a.y*H);fog.lineTo(b.x*W,b.y*H);fog.stroke();fog.globalCompositeOperation='source-over'}
+var fogCur=null;
+function fogPt(e){var r=fogCv.getBoundingClientRect();return{x:(e.clientX-r.left)/W,y:(e.clientY-r.top)/H}}
+if(fogCv&&!REDUCED){fogCv.addEventListener('pointerdown',function(e){if(mode!=='pane'||idleNow())return;try{fogCv.setPointerCapture(e.pointerId)}catch(_){}var p=fogPt(e);fogCur={pts:[p],w:19};wipeStrokes.push(fogCur.pts);renderWipeStroke([p]);e.preventDefault()});fogCv.addEventListener('pointermove',function(e){if(!fogCur)return;var p=fogPt(e),pts=fogCur.pts,last=pts[pts.length-1];if(Math.hypot((p.x-last.x)*W,(p.y-last.y)*H)<1.2)return;pts.push(p);wipeSegLive(pts[pts.length-2],pts[pts.length-1],fogCur.w)});fogCv.addEventListener('pointerup',function(){if(fogCur){redrawFog();fogCur=null}});fogCv.addEventListener('pointercancel',function(){if(fogCur){redrawFog();fogCur=null}})}
+function gridFit(){var targetW=Math.min(800,Math.max(200,Math.round(W/2)));SW=Math.max(200,targetW);SH=Math.max(100,Math.round(SW*H/W));var baseSW=SW;rippleScale=1;sim.width=SW;sim.height=SH;simCtx=sim.getContext('2d');h1=new Float32Array(SW*SH);h2=new Float32Array(SW*SH);stepAcc=0;stirPts={};if(drops)drops.length=0;if(plips)plips.length=0}
+function rebuildBg(){if(!img)return false;var iw=img.naturalWidth,ih=img.naturalHeight;if(!iw||!ih)return false;var scale=Math.max(W/iw,H/ih);var sw=W/scale,sh=H/scale;var sx=(iw-sw)/2,sy=(ih-sh)/2;var tmp=document.createElement('canvas');tmp.width=SW;tmp.height=SH;var tc=tmp.getContext('2d');tc.drawImage(img,sx,sy,sw,sh,0,0,SW,SH);try{bgData=tc.getImageData(0,0,SW,SH);REFRACT_OK=true;slot.classList.remove('gw-gloss')}catch(_){bgData=null;REFRACT_OK=false;slot.classList.add('gw-gloss')}outImg=simCtx.createImageData(SW,SH);return true}
+function retarget(m){if(m==='pane'){var r=pane.getBoundingClientRect();if(r.width<2||r.height<2)return false;W=r.width;H=r.height;rcv.width=Math.round(W*dpr);rcv.height=Math.round(H*dpr);if(fogCv){fogCv.width=Math.round(W*dpr);fogCv.height=Math.round(H*dpr);fog.setTransform(dpr,0,0,dpr,0,0);redrawFog()}gridFit();return rebuildBg()}W=window.innerWidth;H=window.innerHeight;if(W<2||H<2)return false;bscale=Math.min(dpr,1.5);bgcv.width=Math.round(W*bscale);bgcv.height=Math.round(H*bscale);gridFit();outImg=simCtx.createImageData(SW,SH);for(var k=0;k<3;k++)poke(R(2,SW-2),R(2,SH-2),R(0.5,1.1),2);return true}
+var mode=null,tgtOk=false,shownP=false,shownB=false;
+function computeMode(){return mqSmall.matches?'bg':'pane'}
+function idleNow(){if(document.hidden)return true;if(slot.classList.contains('gw-exit'))return true;var m=document.getElementById('modal');if(m&&!m.classList.contains('hidden'))return true;return false}
+var last=0,stepAcc=0,gwRaf=false;
+function gwStart(){if(gwRaf)return;if(document.documentElement.classList.contains('fx-off'))return;gwRaf=true;requestAnimationFrame(loop)}
+function loop(ts){if((sp&&sp.classList.contains('hidden'))||document.documentElement.classList.contains('fx-off')){gwRaf=false;return}requestAnimationFrame(loop);var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}if(!tgtOk||idleNow()){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}
+if(window.ResizeObserver)new ResizeObserver(function(){if(mode==='pane')tgtOk=retarget('pane')}).observe(pane);
+window.addEventListener('resize',function(){if(!gwIsTyping()&&mode)tgtOk=retarget(mode)});
+(function probe(names){if(!names.length)return;var name=names.shift();var im=new Image();im.onload=function(){img=im;if(REDUCED){mode='pane';if(retarget('pane')){renderWater();slot.classList.add('gw-rippling')}return}if(mode==='pane')tgtOk=retarget('pane')};im.onerror=function(){probe(names)};im.src=name})(['bg-canvas.jpg','bg-canvas.png']);
+(function probeBg(names){if(!names.length)return;var name=names.shift();var im=new Image();im.onload=function(){var el=document.getElementById('gw-img');if(el)el.style.backgroundImage='url("'+name+'")';if(im.naturalWidth>0&&im.naturalHeight>0){document.documentElement.style.setProperty('--gw-ar',(im.naturalWidth/im.naturalHeight).toFixed(6))}slot.classList.add('gw-has-img')};im.onerror=function(){probeBg(names)};im.src=name})(['bg-canvas.jpg','bg-canvas.png']);
+if(sp&&!REDUCED){sp.addEventListener('pointerdown',function(e){if(mode==='pane')tap(e)});sp.addEventListener('pointermove',function(e){if(mode==='pane')stir(e)});sp.addEventListener('pointerup',lift);sp.addEventListener('pointercancel',lift);sp.addEventListener('pointerleave',lift)}
+if(!REDUCED)gwStart();
+/* 软键盘修复（Android/iOS 通用）：
+   - Android resize 型键盘：视口缩小导致 100vh 变矮、背景图跟着变/上移 → 键盘弹出期间锁定背景层为弹出前的像素高度；
+   - 推挤型浏览器（iOS/部分安卓内核）：整页上移 → 用 visualViewport.offsetTop 反向平移拉回；
+   - 键盘弹出期间不重建水波画布（retarget 跳过），收起后自动恢复。 */
+var gwTyping=false,gwBaseH=window.innerHeight;
+function gwIsTyping(){var ae=document.activeElement;return !!(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'))}
+function gwUnlock(){gwTyping=false;slot.style.height='';slot.style.transform=''}
+function gwVvFix(){
+  var off=0;
+  /* 高度锁定解决"背景变矮"，此处再叠加偏移修正解决"fixed 层被视觉滚动/推挤上移"（顶部露横条）；
+     两种行为在部分安卓内核上会同时出现，修正量取 offsetTop，收起键盘后自动归零。 */
+  if(gwTyping&&window.visualViewport)off=Math.round(window.visualViewport.offsetTop>0?window.visualViewport.offsetTop:0);
+  slot.style.transform=off?('translate3d(0,'+off+'px,0)'):'';
+}
+/* 兜底轮询：部分内核键盘弹出时 visualViewport 的 resize/scroll 事件迟发或不发 */
+var gwPollT=null;
+function gwPollStop(){if(gwPollT){clearInterval(gwPollT);gwPollT=null}}
+document.addEventListener('focusin',function(e){
+  var t=e.target;
+  if(!t||(t.tagName!=='INPUT'&&t.tagName!=='TEXTAREA'))return;
+  if(!gwTyping){gwTyping=true;slot.style.height=gwBaseH+'px'}
+  gwVvFix();
+  gwPollStop();
+  var n=0;
+  gwPollT=setInterval(function(){gwVvFix();if(++n>10||!gwTyping)gwPollStop()},120);
+});
+document.addEventListener('focusout',function(){
+  gwPollStop();
+  setTimeout(function(){if(!gwIsTyping())gwTyping=false},60);
+  setTimeout(function(){if(!gwIsTyping()&&!window.visualViewport)gwUnlock()},400);
+});
+window.addEventListener('resize',function(){
+  if(!gwIsTyping()){
+    gwBaseH=window.innerHeight;
+    if(slot.style.height)gwUnlock();
+  }
+  gwVvFix();
+});
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize',function(){
+    if(!gwTyping&&slot.style.height)gwUnlock();
+    gwVvFix();
+  });
+  window.visualViewport.addEventListener('scroll',gwVvFix);
+}
+window.__fxGlass=gwStart;
+})();
+</script>
+<script>
+/* RAIN VISIBILITY */
+(function(){
+  var rc=document.getElementById('rain-container');
+  if(!rc)return;
+  function show(){rc.classList.add('rain-visible')}
+  var pl=document.getElementById('preloader');
+  if(!pl||pl.classList.contains('fade-out')){show();return}
+  var obs=new MutationObserver(function(){if(pl.classList.contains('fade-out')){show();obs.disconnect()}});
+  obs.observe(pl,{attributes:true,attributeFilter:['class']});
+})();
+</script>
+
+</body>
+</html>
