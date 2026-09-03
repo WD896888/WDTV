@@ -237,7 +237,10 @@ function initializePageContent() {
     document.addEventListener('keydown', handleKeyboardShortcuts);
 
     // 添加页面离开事件监听，保存播放位置
-    window.addEventListener('beforeunload', saveCurrentProgress);
+    window.addEventListener('beforeunload', function () {
+        saveCurrentProgress();
+        clearNextEpisodePrefetch();
+    });
 
     // 新增：页面隐藏（切后台/切标签）时也保存
     document.addEventListener('visibilitychange', function () {
@@ -519,6 +522,151 @@ async function resolvePlayableUrl(videoUrl) {
     return videoUrl;
 }
 
+// 统一生成 hls.js 配置（播放与下一集预加载共用同一套，保证广告过滤逻辑一致）
+function createHlsConfig() {
+    return {
+        debug: false,
+        loader: adFilteringEnabled ? CustomHlsJsLoader : Hls.DefaultConfig.loader,
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 90,
+        maxBufferLength: 45,      // 单集内更大范围的超前预缓冲
+        maxMaxBufferLength: 90,
+        maxBufferSize: 60 * 1000 * 1000,
+        maxBufferHole: 0.5,
+        fragLoadingMaxRetry: 6,
+        fragLoadingMaxRetryTimeout: 64000,
+        fragLoadingRetryDelay: 1000,
+        manifestLoadingMaxRetry: 3,
+        manifestLoadingRetryDelay: 1000,
+        levelLoadingMaxRetry: 4,
+        levelLoadingRetryDelay: 1000,
+        startLevel: -1,
+        abrEwmaDefaultEstimate: 500000,
+        abrBandWidthFactor: 0.95,
+        abrBandWidthUpFactor: 0.7,
+        abrMaxWithRealBitrate: true,
+        stretchShortVideoTrack: true,
+        appendErrorMaxRetry: 5,  // 增加尝试次数
+        liveSyncDurationCount: 3,
+        liveDurationInfinity: false
+    };
+}
+
+// 下一集预加载状态
+let nextPrefetch = {
+    url: '',
+    hls: null,
+    video: null,
+    timer: null,
+    startedAt: 0
+};
+
+const NEXT_EPISODE_PREFETCH = {
+    proximitySeconds: 25,  // 距离当前集结束还剩多少秒时开始预加载
+    parseBufferMs: 8000,   // 清单解析后再拉这么多毫秒的分片就停止，避免过度占用源带宽
+    hardStopMs: 15000      // 兜底：无论解析是否成功，超时后强制停止
+};
+
+// 清理下一集预加载（释放离屏 video 与 hls 实例；浏览器 HTTP 缓存会保留已抓到的分片供切集复用）
+function clearNextEpisodePrefetch() {
+    if (nextPrefetch.timer) {
+        clearTimeout(nextPrefetch.timer);
+        nextPrefetch.timer = null;
+    }
+    if (nextPrefetch.hls) {
+        try {
+            nextPrefetch.hls.destroy();
+        } catch (e) {
+        }
+        nextPrefetch.hls = null;
+    }
+    if (nextPrefetch.video) {
+        try {
+            nextPrefetch.video.removeAttribute('src');
+            nextPrefetch.video.load();
+        } catch (e) {
+        }
+        nextPrefetch.video = null;
+    }
+    nextPrefetch.url = '';
+    nextPrefetch.startedAt = 0;
+}
+
+// 提前加载下一集：拉取清单 + 首屏分片到浏览器缓存，切集时几乎秒开
+async function startNextEpisodePrefetch() {
+    // 自动连播关闭、已是最后一集，或已经在预加载同一目标时跳过
+    if (!autoplayEnabled) return;
+    if (currentEpisodeIndex >= currentEpisodes.length - 1) return;
+
+    const nextUrl = currentEpisodes[currentEpisodeIndex + 1];
+    if (!nextUrl || nextPrefetch.url === nextUrl || nextPrefetch.hls) return;
+
+    let playableUrl;
+    try {
+        playableUrl = await resolvePlayableUrl(nextUrl);
+    } catch (e) {
+        return;
+    }
+    if (!playableUrl) return;
+
+    nextPrefetch.url = nextUrl;
+    nextPrefetch.startedAt = Date.now();
+
+    // 创建离屏 video 元素，只为让 hls.js 真正发起分片请求（写入 HTTP 缓存），不参与播放
+    const video = document.createElement('video');
+    video.setAttribute('preload', 'auto');
+    video.muted = true;
+    video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-9999px;';
+    document.body.appendChild(video);
+    nextPrefetch.video = video;
+
+    const hls = new Hls(createHlsConfig());
+    nextPrefetch.hls = hls;
+
+    hls.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
+        if (nextPrefetch.hls !== hls) return;
+        // 用最低档位预加载以节省带宽
+        if (data && data.levels && data.levels.length > 0) {
+            try {
+                hls.currentLevel = 0;
+            } catch (e) {
+            }
+        }
+        if (nextPrefetch.timer) clearTimeout(nextPrefetch.timer);
+        nextPrefetch.timer = setTimeout(function () {
+            try {
+                if (nextPrefetch.hls === hls) hls.stopLoad();
+            } catch (e) {
+            }
+        }, NEXT_EPISODE_PREFETCH.parseBufferMs);
+    });
+
+    // 兜底：无论是否解析成功，超时后强制停止，避免长期占用源带宽
+    nextPrefetch.timer = nextPrefetch.timer || setTimeout(function () {
+        try {
+            if (nextPrefetch.hls === hls) hls.stopLoad();
+        } catch (e) {
+        }
+    }, NEXT_EPISODE_PREFETCH.hardStopMs);
+
+    hls.loadSource(playableUrl);
+    hls.attachMedia(video);
+}
+
+// 随当前集播放进度推进，接近结尾时触发下一集预加载
+function onPrefetchTick() {
+    if (!art || !art.video || !autoplayEnabled) return;
+    const v = art.video;
+    if (v.paused || v.ended || isUserSeeking) return;
+    if (!isFinite(v.duration) || v.duration <= 0) return;
+
+    const remaining = v.duration - v.currentTime;
+    if (remaining <= NEXT_EPISODE_PREFETCH.proximitySeconds) {
+        startNextEpisodePrefetch();
+    }
+}
+
 // 初始化播放器
 async function initPlayer(videoUrl) {
     if (!videoUrl) {
@@ -540,33 +688,7 @@ async function initPlayer(videoUrl) {
     if (prevResolutionEl) prevResolutionEl.style.display = 'none';
 
     // 配置HLS.js选项
-    const hlsConfig = {
-        debug: false,
-        loader: adFilteringEnabled ? CustomHlsJsLoader : Hls.DefaultConfig.loader,
-        enableWorker: true,
-        lowLatencyMode: false,
-        backBufferLength: 90,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        maxBufferSize: 30 * 1000 * 1000,
-        maxBufferHole: 0.5,
-        fragLoadingMaxRetry: 6,
-        fragLoadingMaxRetryTimeout: 64000,
-        fragLoadingRetryDelay: 1000,
-        manifestLoadingMaxRetry: 3,
-        manifestLoadingRetryDelay: 1000,
-        levelLoadingMaxRetry: 4,
-        levelLoadingRetryDelay: 1000,
-        startLevel: -1,
-        abrEwmaDefaultEstimate: 500000,
-        abrBandWidthFactor: 0.95,
-        abrBandWidthUpFactor: 0.7,
-        abrMaxWithRealBitrate: true,
-        stretchShortVideoTrack: true,
-        appendErrorMaxRetry: 5,  // 增加尝试次数
-        liveSyncDurationCount: 3,
-        liveDurationInfinity: false
-    };
+    const hlsConfig = createHlsConfig();
 
     // Create new ArtPlayer instance
     art = new Artplayer({
@@ -725,6 +847,15 @@ async function initPlayer(videoUrl) {
     } catch (e) {
         console.warn('分辨率徽章挂载失败:', e);
     }
+
+    // 下一集预加载：接近当前集结尾时提前加载下一集
+    // 新启动时清理可能残留的预加载实例，避免占用多余带宽
+    clearNextEpisodePrefetch();
+    art.video.addEventListener('timeupdate', onPrefetchTick);
+    art.video.addEventListener('ended', function () {
+        // 当前集自然结束，随后将自动切到下一集；清理预加载实例交由切集逻辑统一处理
+        clearNextEpisodePrefetch();
+    });
 
     // artplayer 没有 'fullscreenWeb:enter', 'fullscreenWeb:exit' 等事件
     // 所以原控制栏隐藏代码并没有起作用
@@ -1016,6 +1147,9 @@ function playEpisode(index) {
     if (index < 0 || index >= currentEpisodes.length) {
         return;
     }
+
+    // 手动切集时，清理可能正在进行的目标集预加载，避免残留实例占带宽
+    clearNextEpisodePrefetch();
 
     // 保存当前播放进度（如果正在播放）
     if (art && art.video && !art.video.paused && !videoHasEnded) {
