@@ -327,13 +327,17 @@ function resolveM3u8Url(base, relative) {
 }
 
 // 通过解析 m3u8 播放列表累加分片时长得到总时长（主播放列表自动跳转一层取子列表）
+// url 可能是绝对地址，也可能是代理重写后的同源路径（/proxy/...）：
+// 代理透传多码率主列表时会把它内部的子列表地址重写为 /proxy/ 路径，
+// 这种子列表地址必须原样直接请求，不能再包一层代理、也不能基于原 URL 做相对解析
 async function fetchM3u8Duration(url, depth = 0) {
     try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 10000);
         let resp;
         try {
-            resp = await fetch(PROXY_URL + encodeURIComponent(url), { signal: controller.signal });
+            const requestUrl = url.startsWith(PROXY_URL) ? url : PROXY_URL + encodeURIComponent(url);
+            resp = await fetch(requestUrl, { signal: controller.signal });
         } finally {
             clearTimeout(timer);
         }
@@ -350,7 +354,9 @@ async function fetchM3u8Duration(url, depth = 0) {
                 for (let j = i + 1; j < lines.length; j++) {
                     const line = lines[j].trim();
                     if (!line || line.startsWith('#')) continue;
-                    return await fetchM3u8Duration(resolveM3u8Url(url, line), depth + 1);
+                    // 子列表地址已被代理重写为 /proxy/ 同源路径时直接透传，否则按原 URL 相对解析
+                    const nextUrl = line.startsWith(PROXY_URL) ? line : resolveM3u8Url(url, line);
+                    return await fetchM3u8Duration(nextUrl, depth + 1);
                 }
             }
             return null;
