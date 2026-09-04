@@ -326,22 +326,41 @@ function resolveM3u8Url(base, relative) {
     }
 }
 
+// 时长检测的请求预算：视频 CDN 的 m3u8 是小文件一般秒回，直连预算略高于接口请求
+const M3U8_DURATION_DIRECT_TIMEOUT = 4000;
+const M3U8_DURATION_TOTAL_BUDGET = 14000;
+
 // 通过解析 m3u8 播放列表累加分片时长得到总时长（主播放列表自动跳转一层取子列表）
 // url 可能是绝对地址，也可能是代理重写后的同源路径（/proxy/...）：
 // 代理透传多码率主列表时会把它内部的子列表地址重写为 /proxy/ 路径，
 // 这种子列表地址必须原样直接请求，不能再包一层代理、也不能基于原 URL 做相对解析
+// 拉取策略必须与播放路径对齐——播放器就是浏览器直连 CDN 的（视频 CDN 普遍开放 CORS），
+// 因此绝对地址直连优先、失败（CORS/超时/混合内容拦截）再回退本地代理。
+// 代理跑在海外 serverless 上时经常被视频 CDN 地域屏蔽/风控拒绝，
+// 全部依赖代理会导致时长大面积检测失败而播放却一切正常。
+// apiId 用 CDN 主机名：近期直连失败过的 CDN 自动跳过直连直接走代理，省去每集白等直连超时
 async function fetchM3u8Duration(url, depth = 0) {
     try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 10000);
         let resp;
-        try {
-            const requestUrl = url.startsWith(PROXY_URL) ? url : PROXY_URL + encodeURIComponent(url);
-            resp = await fetch(requestUrl, { signal: controller.signal });
-        } finally {
-            clearTimeout(timer);
+        if (url.startsWith(PROXY_URL)) {
+            // 代理重写后的同源路径：直接请求（不可再次编码，也没有直连一说）
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 10000);
+            try {
+                resp = await fetch(url, { signal: controller.signal });
+            } finally {
+                clearTimeout(timer);
+            }
+        } else {
+            let apiId = null;
+            try { apiId = 'm3u8:' + new URL(url).hostname; } catch (e) { /* 非法地址不记健康度 */ }
+            resp = await fetchWithFallback(url, {
+                directTimeout: M3U8_DURATION_DIRECT_TIMEOUT,
+                totalBudget: M3U8_DURATION_TOTAL_BUDGET,
+                apiId
+            });
         }
-        if (!resp.ok) return null;
+        if (!resp || !resp.ok) return null;
         const text = await resp.text();
         if (!text.includes('#EXTM3U')) return null;
 
@@ -349,13 +368,18 @@ async function fetchM3u8Duration(url, depth = 0) {
         if (text.includes('#EXT-X-STREAM-INF')) {
             if (depth >= 1) return null;
             const lines = text.split('\n');
+            // 相对地址需基于原始真实地址解析：入参若是代理重写路径，先还原出真实地址
+            let baseUrl = url;
+            if (url.startsWith(PROXY_URL)) {
+                try { baseUrl = decodeURIComponent(url.slice(PROXY_URL.length)); } catch (e) { /* 保持原样 */ }
+            }
             for (let i = 0; i < lines.length; i++) {
                 if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
                 for (let j = i + 1; j < lines.length; j++) {
                     const line = lines[j].trim();
                     if (!line || line.startsWith('#')) continue;
-                    // 子列表地址已被代理重写为 /proxy/ 同源路径时直接透传，否则按原 URL 相对解析
-                    const nextUrl = line.startsWith(PROXY_URL) ? line : resolveM3u8Url(url, line);
+                    // 子列表地址已被代理重写为 /proxy/ 同源路径时直接透传，否则按真实地址相对解析
+                    const nextUrl = line.startsWith(PROXY_URL) ? line : resolveM3u8Url(baseUrl, line);
                     return await fetchM3u8Duration(nextUrl, depth + 1);
                 }
             }
