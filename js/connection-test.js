@@ -1,21 +1,28 @@
 /**
- * 视频源连接测试模块
+ * 视频源连接测试模块 v2
  *
- * 功能：在设置面板中一键测试所有视频源（API_SITES）的连接情况。
- * 通过本地代理 /proxy/ 逐源发起真实的搜索 API 请求，完整记录每一阶段的
- * 日志（目标地址、代理地址、鉴权、请求耗时、HTTP 状态、底层错误原因等），
- * 保证仅凭日志即可判断设备无法连接的具体原因。
+ * 测试维度与真实使用链路对齐：
+ *  1) 搜索接口：直连 + 本地代理双路径各测一次（真实搜索为直连优先、失败回退代理）
+ *  2) 详情接口：按 config.js 各源 detailMode 配置测试（api=标准接口 / html=详情页解析 / auto=双路径），
+ *     用于暴露"搜索正常但详情拿不到集数"的源站劣化（反爬页 / 5xx 等）
+ *  3) 判定收紧：HTTP 200 但返回 HTML/风控页、无 list 数组的错误体、可提取集数为 0 → 判失败
+ *  4) 超时/网络错误自动重试 1 次（HTTP 状态码错误不重试，重试无意义）
+ *  5) 测试结果写入源健康度（与 search.js 的"失败源延后发起"策略联动）
  */
 
 (function () {
     'use strict';
 
-    // 单源请求超时时间（毫秒）
-    const CONN_TIMEOUT = 12000;
-    // 最大并发测试数（窗口有限，避免瞬间打满全部源）
+    // 代理路径单请求超时（代理函数冷启动 + 源站响应，给足余量）
+    const PROXY_TIMEOUT = 12000;
+    // 直连路径单请求超时（与真实详情直连预算 4s 接近，给点余量）
+    const DIRECT_TIMEOUT = 6000;
+    // 最大并发测试数（避免瞬间打满全部源导致代理限流互相干扰）
     const MAX_CONCURRENT = 3;
-    // 测试用的搜索关键词（只关心连通性，不关心返回内容）
-    const TEST_QUERY = 'a';
+    // 测试用的搜索关键词（真实高频词，避免超短词触发风控或空结果）
+    const TEST_QUERY = '爱情';
+    // 超时/网络错误自动重试 1 次
+    const RETRY_ONCE = true;
 
     // ---------- 工具函数 ----------
 
@@ -53,19 +60,85 @@
             current = current.cause;
             depth++;
         }
-        // 当消息是笼统的 "fetch failed" 时追加提示
         return parts.length ? parts : [String(err)];
     }
 
     // 诊断 fetch 阶段抛出的异常类型，给出可读结论
     function classifyFetchError(err) {
         if (err && err.name === 'AbortError') {
-            return '请求超时（CONN_TIMEOUT=' + CONN_TIMEOUT + 'ms）';
+            return '请求超时';
         }
         if (err && err.name === 'TypeError' && /failed|network|load/i.test(err.message || '')) {
-            return '浏览器无法建立网络连接（可能：站点不可达 / DNS 解析失败 / 被拦截 / 代理未部署）';
+            return '浏览器无法建立网络连接（可能：站点不可达 / DNS 解析失败 / 被拦截）';
         }
-        return '请求过程中发生异常';
+        return '请求过程中发生异常: ' + (err && err.message || err);
+    }
+
+    // 带重试的 fetch：仅超时/网络异常重试 1 次（HTTP 状态码错误不重试）
+    // 成功返回 { resp, elapsed, retried }；重试耗尽后 throw { err, elapsed, retried }
+    async function fetchWithRetry(url, options, timeoutMs) {
+        const maxAttempt = RETRY_ONCE ? 1 : 0;
+        let lastErr = null;
+        let lastElapsed = 0;
+        for (let attempt = 0; attempt <= maxAttempt; attempt++) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            const startedAt = performance.now();
+            try {
+                const resp = await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+                clearTimeout(timer);
+                return { resp, elapsed: Math.round(performance.now() - startedAt), retried: attempt > 0 };
+            } catch (err) {
+                clearTimeout(timer);
+                lastErr = err;
+                lastElapsed = Math.round(performance.now() - startedAt);
+                const retryable = err && (err.name === 'AbortError' || err instanceof TypeError);
+                if (!retryable || attempt === maxAttempt) {
+                    throw { err: lastErr, elapsed: lastElapsed, retried: attempt > 0 };
+                }
+            }
+        }
+        // 理论不可达
+        throw { err: lastErr, elapsed: lastElapsed, retried: true };
+    }
+
+    // 搜索响应统一判定（收紧版）：
+    //   'ok'    —— HTTP 2xx + 合法 JSON + list 为非空数组
+    //   'empty' —— HTTP 2xx + 合法 JSON + list 为空数组（连通但无结果）
+    //   'fail'  —— 非 2xx / 响应非 JSON（风控页、跳转页）/ JSON 无 list 数组（含 code 错误体）
+    function judgeSearchResponse(resp, body) {
+        if (!resp.ok) return { verdict: 'fail', detail: `HTTP ${resp.status} ${resp.statusText || ''}` };
+        let json = null;
+        try {
+            json = body ? JSON.parse(body) : null;
+        } catch (e) {
+            const head = (body || '').replace(/\s+/g, ' ').trim().substring(0, 60);
+            return { verdict: 'fail', detail: `HTTP 200 但响应不是 JSON（可能为风控/跳转页）: ${head}` };
+        }
+        if (!json || typeof json !== 'object') {
+            return { verdict: 'fail', detail: '响应体不是 JSON 对象' };
+        }
+        if (Array.isArray(json.list)) {
+            if (json.list.length > 0) return { verdict: 'ok', json, detail: `返回 ${json.list.length} 条结果` };
+            return { verdict: 'empty', json, detail: 'JSON 结构有效但结果数为 0' };
+        }
+        return { verdict: 'fail', detail: `JSON 结构异常（无 list 数组，code=${json.code} ${json.msg || ''}）`.trim() };
+    }
+
+    // 提取标准接口详情的集数（与 api.js fetchVideoDetailData 同逻辑）
+    function extractEpisodeCount(vod) {
+        if (!vod) return 0;
+        let eps = [];
+        if (vod.vod_play_url) {
+            eps = vod.vod_play_url.split('$$$')[0].split('#').map(e => {
+                const p = e.split('$');
+                return p.length > 1 ? p[1] : '';
+            }).filter(u => u && (u.startsWith('http://') || u.startsWith('https://')));
+        }
+        if (!eps.length && vod.vod_content) {
+            eps = (vod.vod_content.match(/\$https?:\/\/[^"'\s]+?\.m3u8/g) || []).map(l => l.slice(1));
+        }
+        return eps.length;
     }
 
     // ---------- DOM 日志渲染 ----------
@@ -85,88 +158,164 @@
 
     // ---------- 单源测试 ----------
 
-    // 返回 { key, ok, ms, html, tailHtml }
+    // 返回 { key, ok, searchOk, detailOk, ms, html }（detailOk: true/false/null=未测）
     async function testSource(key) {
         const api = API_SITES[key];
         const name = api ? api.name : key;
-        const apiUrl = `${api.api}${API_CONFIG.search.path}${encodeURIComponent(TEST_QUERY)}`;
+        const detailMode = (api && api.detailMode) || 'api';
+        const searchUrl = `${api.api}${API_CONFIG.search.path}${encodeURIComponent(TEST_QUERY)}`;
 
         const lines = [];
         const push = (cls, text) => lines.push(`<div class="${cls}">${esc(text)}</div>`);
-
-        push('conn-title', `════ [${name}]（${key}）════`);
-        push('conn-meta', `时间: ${now()}`);
-        push('conn-meta', `测试方式: 通过本地代理请求搜索接口（${API_CONFIG.search.path}）`);
-        push('conn-meta', `目标API地址: ${apiUrl}`);
-
-        // 生成代理地址
-        const proxiedUrl = PROXY_URL + encodeURIComponent(apiUrl);
-        push('conn-step', `代理地址: ${proxiedUrl}`);
-
-        // 发起请求
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), CONN_TIMEOUT);
         const startedAt = performance.now();
-        let result;
 
+        push('conn-title', `════ [${name}]（${key}） detailMode=${detailMode} ════`);
+        push('conn-meta', `时间: ${now()}`);
+
+        let directOk = false;
+        let proxyOk = false;
+        let searchJson = null;
+
+        // ===== 阶段一：搜索接口 · 直连 =====
+        push('conn-step', `[搜索·直连] ${searchUrl}`);
         try {
-            const resp = await fetch(proxiedUrl, {
+            const { resp, elapsed, retried } = await fetchWithRetry(searchUrl, {
                 headers: API_CONFIG.search.headers,
-                signal: controller.signal,
-                cache: 'no-store' // 连接测试必须绕过本地缓存
-            });
-            const elapsed = Math.round(performance.now() - startedAt);
-            push('conn-step', `[请求] 代理已响应，HTTP 状态 ${resp.status} ${resp.statusText || ''}，耗时 ${elapsed}ms`);
-
+                cache: 'no-store'
+            }, DIRECT_TIMEOUT);
             const body = await resp.text().catch(() => '');
-            const ctype = (resp.headers.get('content-type') || '未知').split(';')[0];
-            push('conn-meta', `Content-Type: ${ctype}`);
-
-            if (resp.ok) {
-                // 尝试解析 JSON，进一步校验数据格式是否合法
-                try {
-                    const json = body ? JSON.parse(body) : null;
-                    const isOkShape = json && (Array.isArray(json.list) || json.code !== undefined);
-                    if (isOkShape) {
-                        const len = Array.isArray(json.list) ? json.list.length : 0;
-                        push('conn-ok', `[校验] JSON 解析成功，返回条目数 ${len}`);
-                    } else {
-                        push('conn-warn', `[校验] 返回结构异常（未包含 list/code 字段），响应体前 200 字: ${body.substring(0, 200)}`);
-                    }
-                } catch (parseErr) {
-                    push('conn-warn', `[校验] 响应不是有效 JSON（可能被反代/防火墙改写）: ${describeError(parseErr).join(' / ')}`);
-                    push('conn-step', `[校验] 响应体前 ${Math.min(200, body.length)} 字节: ${body.substring(0, 200)}`);
-                }
-                result = { key, ok: true, ms: elapsed, html: lines.join('') };
-            } else {
-                // 尝试解析代理返回的错误体
-                let proxyMsg = '';
-                let details = '';
-                try {
-                    const errJson = JSON.parse(body);
-                    proxyMsg = errJson.error || '';
-                    details = (errJson.details && errJson.details.join) ? errJson.details.join('  →  ') : (errJson.details || '');
-                } catch (_) {
-                    proxyMsg = body.length ? body.substring(0, 300) : '(无错误信息返回)';
-                }
-                push('conn-fail', `[结果] 代理返回错误状态 ${resp.status}`);
-                if (proxyMsg) push('conn-fail', `  代理错误信息: ${proxyMsg}`);
-                if (details) push('conn-fail', `  底层详细原因: ${details}`);
-                result = { key, ok: false, ms: elapsed, html: lines.join('') };
-            }
-        } catch (fetchErr) {
-            clearTimeout(timer);
-            const elapsed = Math.round(performance.now() - startedAt);
-            push('conn-fail', `[请求] 异常（耗时 ${elapsed}ms）: ${classifyFetchError(fetchErr)}`);
-            const chain = describeError(fetchErr);
-            chain.forEach(line => push('conn-fail', `  原因 ${esc(line)}`));
-            result = { key, ok: false, ms: elapsed, html: lines.join('') };
-        } finally {
-            clearTimeout(timer);
+            const j = judgeSearchResponse(resp, body);
+            directOk = j.verdict === 'ok';
+            const tag = j.verdict === 'ok' ? '✓' : (j.verdict === 'empty' ? '⚠' : '✗');
+            push(j.verdict === 'ok' ? 'conn-ok' : (j.verdict === 'empty' ? 'conn-warn' : 'conn-fail'),
+                `[搜索·直连] ${tag} HTTP ${resp.status} ${elapsed}ms${retried ? '（重试后）' : ''} - ${j.detail}`);
+            if (j.json) searchJson = j.json;
+        } catch (e) {
+            push('conn-fail', `[搜索·直连] ✗ ${classifyFetchError(e.err)}（耗时 ${e.elapsed}ms${e.retried ? '，已重试' : ''}）`);
+            describeError(e.err).forEach(l => push('conn-fail', `  原因 ${esc(l)}`));
         }
 
-        result.html = lines.join('');
-        return result;
+        // ===== 阶段一：搜索接口 · 代理 =====
+        const proxiedSearchUrl = PROXY_URL + encodeURIComponent(searchUrl);
+        push('conn-step', `[搜索·代理] ${proxiedSearchUrl}`);
+        try {
+            const { resp, elapsed, retried } = await fetchWithRetry(proxiedSearchUrl, {
+                headers: API_CONFIG.search.headers,
+                cache: 'no-store'
+            }, PROXY_TIMEOUT);
+            const body = await resp.text().catch(() => '');
+            const j = judgeSearchResponse(resp, body);
+            proxyOk = j.verdict === 'ok';
+            const tag = j.verdict === 'ok' ? '✓' : (j.verdict === 'empty' ? '⚠' : '✗');
+            push(j.verdict === 'ok' ? 'conn-ok' : (j.verdict === 'empty' ? 'conn-warn' : 'conn-fail'),
+                `[搜索·代理] ${tag} HTTP ${resp.status} ${elapsed}ms${retried ? '（重试后）' : ''} - ${j.detail}`);
+            if (!searchJson && j.json) searchJson = j.json;
+        } catch (e) {
+            push('conn-fail', `[搜索·代理] ✗ ${classifyFetchError(e.err)}（耗时 ${e.elapsed}ms${e.retried ? '，已重试' : ''}）`);
+        }
+
+        const searchOk = directOk || proxyOk;
+        push(searchOk ? 'conn-ok' : 'conn-fail',
+            `[搜索小结] 直连${directOk ? '✓' : '✗'} / 代理${proxyOk ? '✓' : '✗'} → ${searchOk ? '搜索可用' + (directOk ? '' : '（将走代理）') : '搜索不可用'}`);
+
+        // ===== 阶段二：详情链路（按 detailMode 配置；搜索拿到结果才测）=====
+        let detailOk = null; // null=未测/跳过
+
+        if (searchJson && Array.isArray(searchJson.list) && searchJson.list.length > 0) {
+            const vodId = String(searchJson.list[0].vod_id || '');
+            push('conn-meta', `[详情测试] 使用搜索结果首个 vod_id=${vodId}（detailMode=${detailMode}）`);
+
+            // --- A) 标准接口详情（'api' / 'auto'；复刻真实链路：直连优先，失败回退代理）---
+            if (detailMode === 'api' || detailMode === 'auto') {
+                const dUrl = `${api.api}${API_CONFIG.detail.path}${vodId}`;
+                let ok = false;
+                let note = '';
+                // 直连
+                try {
+                    const { resp, elapsed, retried } = await fetchWithRetry(dUrl, {
+                        headers: API_CONFIG.detail.headers,
+                        cache: 'no-store'
+                    }, DIRECT_TIMEOUT);
+                    const jd = await resp.json().catch(() => null);
+                    if (resp.ok && jd && Array.isArray(jd.list) && jd.list.length > 0) {
+                        const eps = extractEpisodeCount(jd.list[0]);
+                        ok = eps > 0;
+                        note = ok ? `✓ 直连 HTTP ${resp.status} ${elapsed}ms，可提取 ${eps} 集`
+                                  : `✗ 接口返回数据但无法提取集数（play_url 为空）`;
+                    } else if (resp.ok) {
+                        note = `✗ 直连 HTTP ${resp.status}，返回 list 为空或结构异常`;
+                    } else {
+                        note = `✗ 直连 HTTP ${resp.status}`;
+                    }
+                } catch (e) {
+                    note = `✗ 直连 ${classifyFetchError(e.err)}（${e.elapsed}ms）`;
+                }
+                // 直连未拿到 → 代理（与真实 fetchDetailData 行为一致）
+                if (!ok) {
+                    try {
+                        const { resp, elapsed, retried } = await fetchWithRetry(PROXY_URL + encodeURIComponent(dUrl), {
+                            headers: API_CONFIG.detail.headers,
+                            cache: 'no-store'
+                        }, PROXY_TIMEOUT);
+                        const jd = await resp.json().catch(() => null);
+                        if (resp.ok && jd && Array.isArray(jd.list) && jd.list.length > 0) {
+                            const eps = extractEpisodeCount(jd.list[0]);
+                            ok = eps > 0;
+                            note = ok ? `✓ 代理 HTTP ${resp.status} ${elapsed}ms，可提取 ${eps} 集`
+                                      : `✗ 代理返回数据但无法提取集数（play_url 为空）`;
+                        } else if (resp.ok) {
+                            note = `✗ 代理 HTTP ${resp.status}，返回 list 为空或结构异常`;
+                        } else {
+                            note = `✗ 代理 HTTP ${resp.status}`;
+                        }
+                    } catch (e) {
+                        note += `；✗ 代理 ${classifyFetchError(e.err)}`;
+                    }
+                }
+                push(ok ? 'conn-ok' : 'conn-fail', `[详情·标准接口] ${note}`);
+                if (ok) detailOk = true;
+                else if (detailOk === null) detailOk = false;
+            }
+
+            // --- B) 详情页 HTML 解析（'html' / 'auto'；真实链路仅走代理）---
+            if ((detailMode === 'html' || detailMode === 'auto') && api.detail) {
+                const hUrl = `${api.detail}/index.php/vod/detail/id/${vodId}.html`;
+                let ok = false;
+                let note = '';
+                try {
+                    const { resp, elapsed, retried } = await fetchWithRetry(PROXY_URL + encodeURIComponent(hUrl), {
+                        headers: API_CONFIG.detail.headers,
+                        cache: 'no-store'
+                    }, PROXY_TIMEOUT);
+                    const body = await resp.text().catch(() => '');
+                    if (resp.ok) {
+                        const m = body.match(/\$https?:\/\/[^"'\s]+?\.m3u8/g) || [];
+                        ok = m.length > 0;
+                        note = ok ? `✓ 代理 HTTP ${resp.status} ${elapsed}ms，正则提取 ${m.length} 个 m3u8`
+                                  : `✗ HTTP ${resp.status} 但页面无 m3u8 特征（可能被反爬验证页拦截），正文 ${body.length}B`;
+                    } else {
+                        note = `✗ HTTP ${resp.status}`;
+                    }
+                } catch (e) {
+                    note = `✗ ${classifyFetchError(e.err)}`;
+                }
+                push(ok ? 'conn-ok' : 'conn-fail', `[详情·页面解析] ${note}`);
+                if (ok) detailOk = true;
+                else if (detailOk === null) detailOk = false;
+            }
+        } else {
+            push('conn-warn', `[详情测试] 搜索无结果，跳过详情链路测试`);
+        }
+
+        // ===== 结果汇总与源健康度联动 =====
+        if (typeof window.markSourceHealth === 'function') {
+            window.markSourceHealth(key, searchOk);
+        }
+
+        const elapsedTotal = Math.round(performance.now() - startedAt);
+        push('conn-meta', `[本源结论] 搜索:${searchOk ? '可用' : '不可用'}  详情:${detailOk === null ? '未测' : (detailOk ? '可用' : '不可用')}  总耗时 ${elapsedTotal}ms`);
+
+        return { key, ok: searchOk, searchOk, detailOk, ms: elapsedTotal, html: lines.join('') };
     }
 
     // ---------- 串联并发池 ----------
@@ -174,20 +323,16 @@
     async function runPool(keys, worker) {
         const total = keys.length;
         let idx = 0;
-        let done = 0;
         const results = new Array(total);
 
         async function nextSlot() {
             while (idx < total) {
                 const i = idx++;
                 const key = keys[i];
-                // 先输出占位日志，提示正在测试
                 const api = API_SITES[key];
                 append(`<div class="conn-step">⏳ 正在测试 [${esc(api ? api.name : key)}]（${i + 1}/${total}）…</div>`);
                 const r = await worker(key);
                 results[i] = r;
-                done++;
-                // 覆盖占位日志：追加完整结果块
                 append(r.html);
             }
         }
@@ -207,22 +352,30 @@
             return;
         }
         append(`<div class="conn-title">——— 连接测试开始 ———</div>`);
-        append(`<div class="conn-meta">共 ${keys.length} 个源 | 并发 ${MAX_CONCURRENT} | 单源超时 ${CONN_TIMEOUT}ms | 开始时间 ${now()}</div>`);
+        append(`<div class="conn-meta">共 ${keys.length} 个源 | 并发 ${MAX_CONCURRENT} | 搜索词 "${TEST_QUERY}" | 测试项: 搜索（直连+代理）、详情（按各源 detailMode） | 开始时间 ${now()}</div>`);
 
         const results = await runPool(keys, testSource);
 
-        const okCount = results.filter(r => r && r.ok).length;
-        const fail = results.filter(r => r && !r.ok);
-        const totalMs = results.reduce((s, r) => s + (r && r.ms || 0), 0);
+        const searchOkList = results.filter(r => r && r.searchOk);
+        const searchFail = results.filter(r => r && !r.searchOk);
+        const detailTested = results.filter(r => r && r.detailOk !== null);
+        const detailOkList = detailTested.filter(r => r.detailOk);
+        const detailBad = detailTested.filter(r => !r.detailOk);
 
         append(`<div class="conn-title">——— 测试结束 ———</div>`);
-        append(`<div class="${okCount === keys.length ? 'conn-ok' : 'conn-fail'}">汇总: ${okCount}/${keys.length} 个源可正常连接</div>`);
-        if (fail.length) {
-            append(`<div class="conn-fail">连接失败源: ${fail.map(f => API_SITES[f.key].name || f.key).join('、')}</div>`);
-            append(`<div class="conn-step">请展开上方对应源的日志，查看“代理错误信息 / 底层详细原因”。</div>`);
+        append(`<div class="${searchOkList.length === keys.length ? 'conn-ok' : 'conn-fail'}">汇总: 搜索可用 ${searchOkList.length}/${keys.length} 个源</div>`);
+        if (detailTested.length) {
+            append(`<div class="${detailBad.length ? 'conn-warn' : 'conn-ok'}">详情链路: ${detailOkList.length}/${detailTested.length} 个已测源可提取集数</div>`);
         }
-        append(`<div class="conn-meta">全部测试完成 | 累计耗时（并行，非累加）参考 ${totalMs}ms | 结束时间 ${now()}</div>`);
-        append('<div class="conn-meta">提示：若日志显示“fetch failed / load failed”，通常是设备到当前站点网络不通；若显示鉴权错误，请检查部署的 PASSWORD 是否与本地登录密码一致。</div>');
+        if (searchFail.length) {
+            append(`<div class="conn-fail">搜索失败源: ${searchFail.map(f => API_SITES[f.key].name || f.key).join('、')}</div>`);
+        }
+        if (detailBad.length) {
+            append(`<div class="conn-warn">⚠ 搜索可用但详情拿不到集数（点击详情会无集数）: ${detailBad.map(f => API_SITES[f.key].name || f.key).join('、')}</div>`);
+            append(`<div class="conn-step">此类源建议调整 config.js 中对应源的 detailMode 配置（如由 'html' 改 'api'）。</div>`);
+        }
+        append(`<div class="conn-meta">提示：直连✗ 代理✓ 表示源站对本机直连做了限制，搜索会自动走代理，不影响使用；两者都✗ 通常表示源已失效。测试结果已写入源健康度，失败源在搜索时会自动延后。</div>`);
+        append(`<div class="conn-meta">全部测试完成 | 结束时间 ${now()}</div>`);
     };
 
     window.clearConnectionLog = function () {
