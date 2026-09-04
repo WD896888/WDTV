@@ -693,3 +693,8 @@
         font-size: 0.8rem;
     }
 }
+
+/* ===== 豆瓣推荐骨架屏（请求期间灰底占位，脉动动画） ===== */
+.wdtv-skeleton{background:rgba(155,180,218,0.08);border-radius:12px;animation:wdtvSkeletonPulse 1.4s ease-in-out infinite}
+.wdtv-skeleton-text{height:14px;margin:8px 6px;border-radius:7px;width:70%}
+@keyframes wdtvSkeletonPulse{0%,100%{opacity:.55}50%{opacity:1}}

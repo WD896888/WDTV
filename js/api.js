@@ -1,203 +1,93 @@
-// 改进的API请求处理函数
-async function handleApiRequest(url) {
-    const source = url.searchParams.get('source') || 'heimuer';
+// ===== 统一请求出口：直连优先，失败回退本地代理（搜索与详情共用） =====
+// 资源站 MacCMS 接口普遍支持 CORS，直连速度最快；
+// 全部请求挤过本地 /proxy/ 代理会多一跳且受服务端超时/重试影响，是搜索变慢的主因。
+// 连接策略单点维护：后续调整超时、并发、重试只需改这里。
 
+const DIRECT_TIMEOUT_DEFAULT = 2500;  // 直连尝试预算（不可达主机快速失败后立即回退代理）
+const TOTAL_BUDGET_DEFAULT = 12000;   // 单请求总预算（含代理回退）
+
+// 源健康度记录（localStorage，10 分钟 TTL）：
+//   ok     —— 该源最近一次请求成败（近期失败过的源在聚合搜索时延后发起）
+//   direct —— 该源最近一次直连成败（近期直连失败过的源跳过直连直接走代理，省去每次白等）
+const SOURCE_HEALTH_KEY = 'wdtvSourceHealth';
+const SOURCE_HEALTH_TTL = 10 * 60 * 1000;
+
+function readSourceHealth() {
     try {
-        if (url.pathname === '/api/search') {
-            const searchQuery = url.searchParams.get('wd');
-            if (!searchQuery) {
-                throw new Error('缺少搜索参数');
-            }
-
-            // 验证source的有效性
-            if (!API_SITES[source]) {
-                throw new Error('无效的API来源');
-            }
-
-            const apiUrl = `${API_SITES[source].api}${API_CONFIG.search.path}${encodeURIComponent(searchQuery)}`;
-            
-            // 添加超时处理
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
-            
-            try {
-                const proxiedUrl = PROXY_URL + encodeURIComponent(apiUrl);
-                    
-                const response = await fetch(proxiedUrl, {
-                    headers: API_CONFIG.search.headers,
-                    signal: controller.signal
-                });
-                
-                clearTimeout(timeoutId);
-                
-                if (!response.ok) {
-                    throw new Error(`API请求失败: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                
-                // 检查JSON格式的有效性
-                if (!data || !Array.isArray(data.list)) {
-                    throw new Error('API返回的数据格式无效');
-                }
-                
-                // 添加源信息到每个结果
-                data.list.forEach(item => {
-                    item.source_name = API_SITES[source].name;
-                    item.source_code = source;
-                });
-                
-                return JSON.stringify({
-                    code: 200,
-                    list: data.list || [],
-                });
-            } catch (fetchError) {
-                clearTimeout(timeoutId);
-                throw fetchError;
-            }
-        }
-
-        // 详情处理
-        if (url.pathname === '/api/detail') {
-            const id = url.searchParams.get('id');
-            const sourceCode = url.searchParams.get('source') || 'heimuer'; // 获取源代码
-            
-            if (!id) {
-                throw new Error('缺少视频ID参数');
-            }
-            
-            // 验证ID格式 - 只允许数字和有限的特殊字符
-            if (!/^[\w-]+$/.test(id)) {
-                throw new Error('无效的视频ID格式');
-            }
-
-            // 验证source的有效性
-            if (!API_SITES[sourceCode]) {
-                throw new Error('无效的API来源');
-            }
-
-            // 对于有detail参数的源，都使用特殊处理方式
-            if (API_SITES[sourceCode].detail) {
-                return await handleSpecialSourceDetail(id, sourceCode);
-            }
-
-            const detailUrl = `${API_SITES[sourceCode].api}${API_CONFIG.detail.path}${id}`;
-            
-            // 添加超时处理
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
-            
-            try {
-                const proxiedUrl = PROXY_URL + encodeURIComponent(detailUrl);
-                    
-                const response = await fetch(proxiedUrl, {
-                    headers: API_CONFIG.detail.headers,
-                    signal: controller.signal
-                });
-                
-                clearTimeout(timeoutId);
-                
-                if (!response.ok) {
-                    throw new Error(`详情请求失败: ${response.status}`);
-                }
-                
-                // 解析JSON
-                const data = await response.json();
-                
-                // 检查返回的数据是否有效
-                if (!data || !data.list || !Array.isArray(data.list) || data.list.length === 0) {
-                    throw new Error('获取到的详情内容无效');
-                }
-                
-                // 获取第一个匹配的视频详情
-                const videoDetail = data.list[0];
-                
-                // 提取播放地址
-                let episodes = [];
-                
-                if (videoDetail.vod_play_url) {
-                    // 分割不同播放源
-                    const playSources = videoDetail.vod_play_url.split('$$$');
-                    
-                    // 提取第一个播放源的集数（通常为主要源）
-                    if (playSources.length > 0) {
-                        const mainSource = playSources[0];
-                        const episodeList = mainSource.split('#');
-                        
-                        // 从每个集数中提取URL
-                        episodes = episodeList.map(ep => {
-                            const parts = ep.split('$');
-                            // 返回URL部分(通常是第二部分，如果有的话)
-                            return parts.length > 1 ? parts[1] : '';
-                        }).filter(url => url && (url.startsWith('http://') || url.startsWith('https://')));
-                    }
-                }
-                
-                // 如果没有找到播放地址，尝试使用正则表达式查找m3u8链接
-                if (episodes.length === 0 && videoDetail.vod_content) {
-                    const matches = videoDetail.vod_content.match(M3U8_PATTERN) || [];
-                    episodes = matches.map(link => link.replace(/^\$/, ''));
-                }
-                
-                return JSON.stringify({
-                    code: 200,
-                    episodes: episodes,
-                    detailUrl: detailUrl,
-                    videoInfo: {
-                        title: videoDetail.vod_name,
-                        cover: videoDetail.vod_pic,
-                        desc: videoDetail.vod_content,
-                        type: videoDetail.type_name,
-                        year: videoDetail.vod_year,
-                        area: videoDetail.vod_area,
-                        director: videoDetail.vod_director,
-                        actor: videoDetail.vod_actor,
-                        remarks: videoDetail.vod_remarks,
-                        // 添加源信息
-                        source_name: API_SITES[sourceCode].name,
-                        source_code: sourceCode
-                    }
-                });
-            } catch (fetchError) {
-                clearTimeout(timeoutId);
-                throw fetchError;
-            }
-        }
-
-        throw new Error('未知的API路径');
-    } catch (error) {
-        console.error('API处理错误:', error);
-        return JSON.stringify({
-            code: 400,
-            msg: error.message || '请求处理失败',
-            list: [],
-            episodes: [],
-        });
+        return JSON.parse(localStorage.getItem(SOURCE_HEALTH_KEY) || '{}') || {};
+    } catch (e) {
+        return {};
     }
 }
 
-// 详情请求：直连优先，失败后回退本地代理（与搜索策略一致）
-const DETAIL_DIRECT_TIMEOUT = 4000;
-const DETAIL_TOTAL_BUDGET = 15000;
-
-async function fetchDetailData(url) {
-    const deadline = Date.now() + DETAIL_TOTAL_BUDGET;
-
-    // 1) 直连尝试
+function updateSourceHealth(apiId, patch) {
     try {
+        const health = readSourceHealth();
+        health[apiId] = Object.assign({}, health[apiId], patch);
+        localStorage.setItem(SOURCE_HEALTH_KEY, JSON.stringify(health));
+    } catch (e) { /* 存储失败不影响请求 */ }
+}
+
+// 记录源整体请求成败
+function markSourceHealth(apiId, ok) {
+    updateSourceHealth(apiId, { ok: ok ? 1 : 0, ts: Date.now() });
+}
+
+// 记录源直连成败（独立于整体成败维度）
+function markDirectHealth(apiId, directOk) {
+    updateSourceHealth(apiId, { direct: directOk ? 1 : 0, dts: Date.now() });
+}
+
+// 该源近期（TTL 内）整体请求是否失败过
+function isSourceUnhealthy(apiId) {
+    const entry = readSourceHealth()[apiId];
+    return !!(entry && entry.ok === 0 && Date.now() - entry.ts < SOURCE_HEALTH_TTL);
+}
+
+// 该源近期（TTL 内）直连是否失败过：是则跳过直连直接走代理
+function hasRecentDirectFailure(apiId) {
+    const entry = readSourceHealth()[apiId];
+    return !!(entry && entry.direct === 0 && entry.dts && Date.now() - entry.dts < SOURCE_HEALTH_TTL);
+}
+
+// 将外部 signal（如"新搜索 abort 旧请求"）联动到请求自身的超时 controller
+function linkAbortSignal(externalSignal, controller) {
+    if (!externalSignal) return;
+    if (externalSignal.aborted) {
+        controller.abort();
+        return;
+    }
+    externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+}
+
+// 统一"直连 → 代理回退"请求出口：
+//   headers       请求头
+//   directTimeout 直连预算（毫秒）
+//   totalBudget   总预算（毫秒），代理回退使用剩余预算
+//   apiId         源标识：提供时直连成败计入源健康度，且近期直连失败过的源自动跳过直连
+//   signal        外部中止信号（新搜索发起时 abort 旧请求）
+async function fetchWithFallback(url, { headers, directTimeout = DIRECT_TIMEOUT_DEFAULT, totalBudget = TOTAL_BUDGET_DEFAULT, apiId = null, signal = null } = {}) {
+    const deadline = Date.now() + totalBudget;
+
+    // 1) 直连尝试（近期直连失败过的源跳过，直接走代理）
+    if (!(apiId && hasRecentDirectFailure(apiId))) {
         const directController = new AbortController();
-        const directTimer = setTimeout(() => directController.abort(), DETAIL_DIRECT_TIMEOUT);
+        const directTimer = setTimeout(() => directController.abort(), directTimeout);
+        linkAbortSignal(signal, directController);
         try {
-            const direct = await fetch(url, {
-                headers: API_CONFIG.detail.headers,
-                signal: directController.signal
-            });
-            if (direct.ok) return direct;
+            const direct = await fetch(url, { headers, signal: directController.signal });
+            if (direct.ok) {
+                if (apiId) markDirectHealth(apiId, true);
+                return direct;
+            }
+            // 直连拿到非 2xx 响应：连通性正常，不计直连失败，继续尝试代理
+        } catch (e) {
+            if (e && e.name === 'AbortError' && signal && signal.aborted) throw e; // 外部主动中止，不再回退
+            // 直连失败（CORS/网络错误/超时）：计入直连失败维度，回退本地代理
+            if (apiId) markDirectHealth(apiId, false);
         } finally {
             clearTimeout(directTimer);
         }
-    } catch (e) {
-        // 直连失败（CORS/网络错误/超时），回退本地代理
     }
 
     // 2) 回退本地代理（使用剩余总预算）
@@ -206,14 +96,27 @@ async function fetchDetailData(url) {
     const remaining = Math.max(deadline - Date.now(), 3000);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), remaining);
+    linkAbortSignal(signal, controller);
     try {
-        return await fetch(proxiedUrl, {
-            headers: API_CONFIG.detail.headers,
-            signal: controller.signal
-        });
+        return await fetch(proxiedUrl, { headers, signal: controller.signal });
     } finally {
         clearTimeout(timer);
     }
+}
+
+// 详情请求参数（直连/总预算与搜索略有差异）
+const DETAIL_DIRECT_TIMEOUT = 2500;
+const DETAIL_TOTAL_BUDGET = 15000;
+
+// 详情请求：直连优先，失败后回退本地代理（与搜索共用统一请求出口与源健康度）
+function fetchDetailData(url, apiId, signal) {
+    return fetchWithFallback(url, {
+        headers: API_CONFIG.detail.headers,
+        directTimeout: DETAIL_DIRECT_TIMEOUT,
+        totalBudget: DETAIL_TOTAL_BUDGET,
+        apiId: apiId || null,
+        signal: signal || null
+    });
 }
 
 // 获取视频详情与集数列表（不依赖 Service Worker 的 /api/detail，任何环境均可直接调用）
@@ -234,25 +137,36 @@ async function fetchVideoDetailData(opts) {
         const detailMode = API_SITES[source].detailMode || 'api';
         const detailUrl = `${API_SITES[source].api}${API_CONFIG.detail.path}${id}`;
 
-        // 1) 标准接口详情（'api' / 'auto' 路径；直连优先，失败回退代理）
+        // 1) 标准接口详情（'api' / 'auto' 路径；直连优先，失败回退代理，直连成败计入源健康度）
         let apiResult = null;
         if (detailMode === 'api' || detailMode === 'auto') {
             try {
-                const response = await fetchDetailData(detailUrl);
+                const response = await fetchDetailData(detailUrl, source);
                 if (response.ok) {
                     const data = await response.json();
                     if (data && data.list && Array.isArray(data.list) && data.list.length > 0) {
                         const videoDetail = data.list[0];
 
-                        // 提取播放地址（第一组播放源）
+                        // 提取播放地址（多播放源智能选择）
+                        // 优先选含 .m3u8 直链的源（可直连/走代理播放）；
+                        // 避免选到分享页链接源（如非凡影视的 feifan 源返回 HTML 页面，hls.js 无法播放）
                         let episodes = [];
                         if (videoDetail.vod_play_url) {
+                            const extractEps = src => src.split('#').map(ep => {
+                                const parts = ep.split('$');
+                                return parts.length > 1 ? parts[1] : '';
+                            }).filter(url => url && (url.startsWith('http://') || url.startsWith('https://')));
                             const playSources = videoDetail.vod_play_url.split('$$$');
-                            if (playSources.length > 0) {
-                                episodes = playSources[0].split('#').map(ep => {
-                                    const parts = ep.split('$');
-                                    return parts.length > 1 ? parts[1] : '';
-                                }).filter(url => url && (url.startsWith('http://') || url.startsWith('https://')));
+                            for (const src of playSources) {
+                                const eps = extractEps(src);
+                                if (eps.length === 0) continue;
+                                if (eps.some(u => /\.m3u8([?#]|$)/i.test(u))) {
+                                    episodes = eps; // 命中 m3u8 直链源，直接采用
+                                    break;
+                                }
+                                if (episodes.length === 0) {
+                                    episodes = eps; // 兜底：暂存第一个非空源（可能是 mp4 等其他可播格式）
+                                }
                             }
                         }
 
@@ -391,145 +305,92 @@ async function handleSpecialSourceDetail(id, sourceCode) {
     }
 }
 
-// 处理聚合搜索
-async function handleAggregatedSearch(searchQuery) {
-    // 获取可用的API源列表
-    const availableSources = Object.keys(API_SITES);
-    
-    if (availableSources.length === 0) {
-        throw new Error('没有可用的API源');
-    }
-    
-    // 创建所有API源的搜索请求
-    const searchPromises = availableSources.map(async (source) => {
-        try {
-            const apiUrl = `${API_SITES[source].api}${API_CONFIG.search.path}${encodeURIComponent(searchQuery)}`;
-            
-            // 使用Promise.race添加超时处理
-            const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error(`${source}源搜索超时`)), 8000)
-            );
-            
-            const proxiedUrl = PROXY_URL + encodeURIComponent(apiUrl);
-            
-            const fetchPromise = fetch(proxiedUrl, {
-                headers: API_CONFIG.search.headers
-            });
-            
-            const response = await Promise.race([fetchPromise, timeoutPromise]);
-            
-            if (!response.ok) {
-                throw new Error(`${source}源请求失败: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            
-            if (!data || !Array.isArray(data.list)) {
-                throw new Error(`${source}源返回的数据格式无效`);
-            }
-            
-            // 为搜索结果添加源信息
-            const results = data.list.map(item => ({
-                ...item,
-                source_name: API_SITES[source].name,
-                source_code: source
-            }));
-            
-            return results;
-        } catch (error) {
-            console.warn(`${source}源搜索失败:`, error);
-            return []; // 返回空数组表示该源搜索失败
-        }
-    });
-    
+// ===== 各集时长检测共享工具（首页详情弹窗与播放页通用） =====
+
+// 秒数格式化为 时:分:秒 或 分:秒
+function formatEpisodeDuration(seconds) {
+    const sec = Math.round(seconds);
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// m3u8 内相对地址转绝对地址
+function resolveM3u8Url(base, relative) {
     try {
-        // 并行执行所有搜索请求
-        const resultsArray = await Promise.all(searchPromises);
-        
-        // 合并所有结果
-        let allResults = [];
-        resultsArray.forEach(results => {
-            if (Array.isArray(results) && results.length > 0) {
-                allResults = allResults.concat(results);
-            }
-        });
-        
-        // 如果没有搜索结果，返回空结果
-        if (allResults.length === 0) {
-            return JSON.stringify({
-                code: 200,
-                list: [],
-                msg: '所有源均无搜索结果'
-            });
-        }
-        
-        // 去重（根据vod_id和source_code组合）
-        const uniqueResults = [];
-        const seen = new Set();
-        
-        allResults.forEach(item => {
-            const key = `${item.source_code}_${item.vod_id}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                uniqueResults.push(item);
-            }
-        });
-        
-        // 按照视频名称和来源排序
-        uniqueResults.sort((a, b) => {
-            // 首先按照视频名称排序
-            const nameCompare = (a.vod_name || '').localeCompare(b.vod_name || '');
-            if (nameCompare !== 0) return nameCompare;
-            
-            // 如果名称相同，则按照来源排序
-            return (a.source_name || '').localeCompare(b.source_name || '');
-        });
-        
-        return JSON.stringify({
-            code: 200,
-            list: uniqueResults,
-        });
-    } catch (error) {
-        console.error('聚合搜索处理错误:', error);
-        return JSON.stringify({
-            code: 400,
-            msg: '聚合搜索处理失败: ' + error.message,
-            list: []
-        });
+        return new URL(relative, base).href;
+    } catch {
+        return relative;
     }
 }
 
-// 拦截API请求
-(function() {
-    const originalFetch = window.fetch;
-    
-    window.fetch = async function(input, init) {
-        const requestUrl = typeof input === 'string' ? new URL(input, window.location.origin) : input.url;
-        
-        if (requestUrl.pathname.startsWith('/api/')) {
-            try {
-                const data = await handleApiRequest(requestUrl);
-                return new Response(data, {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*',
-                    },
-                });
-            } catch (error) {
-                return new Response(JSON.stringify({
-                    code: 500,
-                    msg: '服务器内部错误',
-                }), {
-                    status: 500,
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                });
-            }
+// 通过解析 m3u8 播放列表累加分片时长得到总时长（主播放列表自动跳转一层取子列表）
+async function fetchM3u8Duration(url, depth = 0) {
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10000);
+        let resp;
+        try {
+            resp = await fetch(PROXY_URL + encodeURIComponent(url), { signal: controller.signal });
+        } finally {
+            clearTimeout(timer);
         }
-        
-        // 非API请求使用原始fetch
-        return originalFetch.apply(this, arguments);
-    };
-})();
+        if (!resp.ok) return null;
+        const text = await resp.text();
+        if (!text.includes('#EXTM3U')) return null;
+
+        // 主播放列表：取第一个子播放列表再解析
+        if (text.includes('#EXT-X-STREAM-INF')) {
+            if (depth >= 1) return null;
+            const lines = text.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+                if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
+                for (let j = i + 1; j < lines.length; j++) {
+                    const line = lines[j].trim();
+                    if (!line || line.startsWith('#')) continue;
+                    return await fetchM3u8Duration(resolveM3u8Url(url, line), depth + 1);
+                }
+            }
+            return null;
+        }
+
+        // 媒体播放列表：累加所有 #EXTINF 分片时长
+        let total = 0;
+        let found = false;
+        const re = /#EXTINF:([\d.]+)/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            total += parseFloat(m[1]);
+            found = true;
+        }
+        return found ? total : null;
+    } catch {
+        return null;
+    }
+}
+
+// 非 m3u8（如 mp4）地址：用隐藏 video 元素读取元数据时长
+function fetchMediaDurationByVideo(url) {
+    return new Promise(resolve => {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.muted = true;
+        let settled = false;
+        const finish = val => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            video.removeAttribute('src');
+            video.remove();
+            resolve(val);
+        };
+        const timer = setTimeout(() => finish(null), 8000);
+        video.addEventListener('loadedmetadata', () => finish(isFinite(video.duration) ? video.duration : null));
+        video.addEventListener('error', () => finish(null));
+        video.src = url;
+    });
+}
+
 

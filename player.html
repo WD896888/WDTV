@@ -24,14 +24,18 @@
 
     <script src="libs/tailwindcss.min.js"></script>
     <link rel="stylesheet" href="css/styles.css">
-    <link rel="stylesheet" href="css/player.css?v=8">
+    <link rel="stylesheet" href="css/player.css?v=18">
 
     <meta http-equiv="Cache-Control" content="no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
 
+    <!-- Google Fonts 异步加载：preconnect 预热连接 + media 技巧避免阻塞首屏渲染（字体带 display=swap，晚到仅切换不遮挡文字） -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Raleway:wght@200;300&display=swap" media="print" onload="this.media='all'">
+
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Raleway:wght@200;300&display=swap');
 
     /* 全局紧凑化：根字号缩小 12.5%~19%，页面所有 rem 尺寸（Tailwind 字号/间距/组件）等比缩小，
        桌面/平板 14px，手机 13px（触控目标仍保持可用） */
@@ -131,7 +135,7 @@
     main button,main input,main a,main label,main select,main textarea,
     main #player,main .art-video-player,main video,main .switch,
     main .episode-grid,main #episodesGrid,main #episodesList,
-    main #resourceInfoBarContainer{pointer-events:auto}
+    main #resourceInfoBarContainer,main #playerEpisodesBar{pointer-events:auto}
     footer{position:relative;z-index:10;pointer-events:none;color:rgba(180,200,230,0.7)}
     footer svg{color:rgba(180,200,230,0.7)}
     footer a{pointer-events:auto}
@@ -232,10 +236,9 @@
             </div>
         </div>
 
-        <!-- 添加自动播放开关和排序按钮 -->
+        <!-- 自动连播开关 -->
         <div class="player-container mb-2">
             <div class="flex flex-wrap items-center gap-2">
-                <!-- 自动连播开关 -->
                 <div class="flex items-center gap-1 flex-shrink-0 mr-auto">
                     <span class="text-gray-600 whitespace-nowrap">自动连播</span>
                     <label class="switch">
@@ -243,14 +246,57 @@
                         <span class="slider"></span>
                     </label>
                 </div>
+            </div>
+        </div>
 
-                <!-- 倒序排列按钮（纯图标，无包裹） -->
-                <button onclick="toggleEpisodeOrder()" id="orderButton" title="倒序排列"
-                        class="player-icon-button flex-shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" id="orderIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16M8 8l4-4 4 4M8 16l4 4 4-4" />
+        <!-- 排序方式与时长检测工具栏（与首页详情弹窗同款） -->
+        <div class="player-container mb-2">
+            <div id="playerEpisodesBar">
+                <div id="sortModeDropdown" class="wdtv-name-dropdown">
+                    <button type="button" class="wdtv-name-dropdown-toggle" onclick="toggleSortDropdown(event)">
+                        <span id="sortModeLabel">默认排序</span>
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    <div id="sortModeMenu" class="wdtv-name-dropdown-menu hidden">
+                        <div class="wdtv-sort-dropdown-item active" data-mode="default"><span>默认排序</span></div>
+                        <div class="wdtv-sort-dropdown-item" data-mode="variety"><span>综艺排序</span></div>
+                    </div>
+                </div>
+                <span id="defaultSortControls" class="wdtv-sort-subcontrols">
+                    <button onclick="toggleEpisodeOrder()" class="wdtv-modal-mini-btn">
+                        <svg class="w-4 h-4" id="orderToggleIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                        </svg>
+                        <span id="orderToggleLabel">倒序排列</span>
+                    </button>
+                </span>
+                <span id="varietySortControls" class="wdtv-sort-subcontrols hidden">
+                    <button data-nummode="group" onclick="setVarietyNumberMode('group')"
+                            class="wdtv-modal-mini-btn num-mode active">新集数</button>
+                    <button data-nummode="original" onclick="setVarietyNumberMode('original')"
+                            class="wdtv-modal-mini-btn num-mode">原集数</button>
+                    <button data-nummode="both" onclick="setVarietyNumberMode('both')"
+                            class="wdtv-modal-mini-btn num-mode">双显</button>
+                    <span class="wdtv-threshold-label" title="按时长划分两组的分界线">分组线
+                        <span id="thresholdDropdown" class="wdtv-name-dropdown wdtv-inline-dropdown">
+                            <span class="wdtv-name-dropdown-toggle wdtv-threshold-toggle" onclick="toggleThresholdDropdown(event)">
+                                <input id="varietyThresholdInput" type="number" min="1" step="1"
+                                       value="60" onchange="setVarietyThreshold(this.value)"
+                                       onclick="event.stopPropagation()" class="wdtv-threshold-input"
+                                       title="输入自定义分组线（分钟），回车生效">分钟
+                                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </span>
+                            <div id="thresholdDropdownMenu" class="wdtv-name-dropdown-menu hidden"></div>
+                        </span>
+                    </span>
+                </span>
+                <button id="detectDurationBtn" onclick="detectEpisodeDurations()" class="wdtv-modal-mini-btn">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
+                    <span id="detectDurationLabel">检测时长</span>
                 </button>
+                <span id="playerEpisodeStats" class="player-episode-stats"></span>
             </div>
         </div>
 
@@ -315,15 +361,16 @@
         </div>
     </div>
 
-    <script src="libs/hls.min.js" crossorigin="anonymous"></script>
-    <script src="libs/artplayer.min.js" crossorigin="anonymous"></script>
+    <!-- defer：不阻塞 HTML 解析，保持原有执行顺序（defer 保证），DOMContentLoaded 前执行完毕 -->
+    <script defer src="libs/hls.min.js" crossorigin="anonymous"></script>
+    <script defer src="libs/artplayer.min.js" crossorigin="anonymous"></script>
 
-    <script src="js/config.js"></script>
-    <script src="js/customer_site.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/search.js"></script>
-    <script src="js/player.js?v=6"></script>
+    <script defer src="js/config.js?v=8"></script>
+    <script defer src="js/customer_site.js?v=8"></script>
+    <script defer src="js/ui.js?v=9"></script>
+    <script defer src="js/api.js?v=9"></script>
+    <script defer src="js/search.js?v=8"></script>
+    <script defer src="js/player.js?v=18"></script>
 
     <script>
         // 修复 home 跳转

@@ -1,13 +1,15 @@
 // /api/proxy/[...path].mjs - Vercel Serverless Function (ES Module)
+// 响应发送契约与原版保持一致（全量缓冲 + Content-Length + res.send()）：
+// Vercel 的 Node 运行时为 res 包装了 Express 风格方法（status/send/json），
+// 该契约已在生产环境验证可靠；流式 pipe 在其包装层上行为不可控，不采用。
 
 import fetch from 'node-fetch';
-import { URL } from 'url'; // 使用 Node.js 内置 URL 处理
-import crypto from 'crypto'; // 导入 crypto 模块用于密码哈希
+import { URL } from 'url';
 
 // --- 配置 (从环境变量读取) ---
 const DEBUG_ENABLED = process.env.DEBUG === 'true';
-const CACHE_TTL = parseInt(process.env.CACHE_TTL || '86400', 10); // 默认 24 小时
-const MAX_RECURSION = parseInt(process.env.MAX_RECURSION || '5', 10); // 默认 5 层
+const CACHE_TTL = parseInt(process.env.CACHE_TTL || '86400', 10); // ts 分片等二进制内容缓存 24 小时
+const M3U8_CACHE_TTL = parseInt(process.env.M3U8_CACHE_TTL || '120', 10); // m3u8 短缓存，避免换源/动态列表拿到陈旧数据
 
 // --- User Agent 处理 ---
 // 默认 User Agent 列表
@@ -27,8 +29,6 @@ try {
         } else {
             console.warn("[代理日志] 环境变量 USER_AGENTS_JSON 不是有效的非空数组，使用默认值。");
         }
-    } else {
-        console.log("[代理日志] 未设置环境变量 USER_AGENTS_JSON，使用默认 User Agent。");
     }
 } catch (e) {
     // 如果 JSON 解析失败，记录错误并使用默认值
@@ -38,6 +38,32 @@ try {
 // 广告过滤在代理中禁用，由播放器处理
 const FILTER_DISCONTINUITY = false;
 
+// --- m3u8 处理结果内存缓存（LRU，上限 200 条） ---
+// 命中直接返回处理后的文本，跳过上游 fetch 与逐行重写（Serverless 实例存活期间有效）
+const M3U8_CACHE_MAX = 200;
+const m3u8Cache = new Map(); // 目标 URL -> { text, ts }
+
+function getM3u8Cache(key) {
+    const entry = m3u8Cache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.ts > M3U8_CACHE_TTL * 1000) {
+        m3u8Cache.delete(key);
+        return null;
+    }
+    // LRU：命中时移到末尾（最新）
+    m3u8Cache.delete(key);
+    m3u8Cache.set(key, entry);
+    return entry.text;
+}
+
+function setM3u8Cache(key, text) {
+    if (!text) return; // 空结果不缓存
+    if (m3u8Cache.size >= M3U8_CACHE_MAX) {
+        // 淘汰最旧（Map 首个 key）
+        m3u8Cache.delete(m3u8Cache.keys().next().value);
+    }
+    m3u8Cache.set(key, { text, ts: Date.now() });
+}
 
 // --- 辅助函数 ---
 
@@ -159,8 +185,8 @@ function getRandomUserAgent() {
     return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-async function fetchContentWithType(targetUrl, requestHeaders) {
-    // 准备请求头
+// 构建转发到上游的请求头
+function buildUpstreamHeaders(targetUrl, requestHeaders) {
     const headers = {
         'User-Agent': getRandomUserAgent(),
         'Accept': requestHeaders['accept'] || '*/*', // 传递原始 Accept 头（如果有）
@@ -174,30 +200,55 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
     }
     // 清理空值的头
     Object.keys(headers).forEach(key => headers[key] === undefined || headers[key] === null || headers[key] === '' ? delete headers[key] : {});
+    return headers;
+}
 
+// 请求上游（30s 超时保护，防止慢源挂死函数占满 maxDuration 预算）
+// 注意：使用手动 AbortController + setTimeout 而非 AbortSignal.timeout——
+// 后者需要 Node 17.3+，旧版运行时上不存在会导致所有代理请求崩溃
+async function fetchUpstream(targetUrl, requestHeaders) {
+    const headers = buildUpstreamHeaders(targetUrl, requestHeaders);
     logDebug(`准备请求目标: ${targetUrl}，请求头: ${JSON.stringify(headers)}`);
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    let response;
     try {
-        // 发起 fetch 请求
-        const response = await fetch(targetUrl, { headers, redirect: 'follow' });
+        response = await fetch(targetUrl, {
+            headers,
+            redirect: 'follow',
+            signal: controller.signal
+        });
+    } catch (error) {
+        const err = new Error(`连接目标 URL 失败 ${targetUrl}: ${error.message}`);
+        throw err;
+    } finally {
+        clearTimeout(timer);
+    }
 
-        // 检查响应是否成功
-        if (!response.ok) {
-            const errorBody = await response.text().catch(() => ''); // 尝试获取错误响应体
-            logDebug(`请求失败: ${response.status} ${response.statusText} - ${targetUrl}`);
-            // 创建一个包含状态码的错误对象
-            const err = new Error(`HTTP 错误 ${response.status}: ${response.statusText}. URL: ${targetUrl}. Body: ${errorBody.substring(0, 200)}`);
-            err.status = response.status; // 将状态码附加到错误对象
-            throw err; // 抛出错误
-        }
+    // 检查响应是否成功
+    if (!response.ok) {
+        const errorBody = await response.text().catch(() => ''); // 尝试获取错误响应体
+        logDebug(`请求失败: ${response.status} ${response.statusText} - ${targetUrl}`);
+        // 创建一个包含状态码的错误对象
+        const err = new Error(`HTTP 错误 ${response.status}: ${response.statusText}. URL: ${targetUrl}. Body: ${errorBody.substring(0, 200)}`);
+        err.status = response.status; // 将状态码附加到错误对象
+        throw err; // 抛出错误
+    }
 
+    return response;
+}
+
+// 全量缓冲请求（m3u8 处理与二进制转发统一路径：先缓冲再嗅探，与原版行为一致）
+async function fetchContentWithType(targetUrl, requestHeaders) {
+    try {
+        const response = await fetchUpstream(targetUrl, requestHeaders);
         // 以二进制读取响应（视频分片等二进制内容绝不能用 text() 读取，否则数据损坏）
         const buffer = Buffer.from(await response.arrayBuffer());
         const contentType = response.headers.get('content-type') || '';
         logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${buffer.length}`);
         // 返回结果
         return { buffer, contentType, responseHeaders: response.headers };
-
     } catch (error) {
         // 捕获 fetch 本身的错误（网络、超时等）或上面抛出的 HTTP 错误
         logDebug(`请求异常 ${targetUrl}: ${error.message}`);
@@ -206,7 +257,8 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
     }
 }
 
-// 判断 Buffer 内容是否为 M3U8（优先看 Content-Type，再看文件头）
+// 判断 Buffer 内容是否为 M3U8（优先看 Content-Type，再看文件头——
+// 很多采集站 CDN 用 application/octet-stream 提供 m3u8，必须嗅探内容）
 function isM3u8Buffer(buffer, contentType) {
     if (contentType && (contentType.includes('mpegurl'))) {
         return true;
@@ -268,75 +320,75 @@ function processMediaPlaylist(url, content) {
     return output.join('\n');
 }
 
-async function processM3u8Content(targetUrl, content, recursionDepth = 0) {
+// 主播放列表：透传多码率（不再服务端选最高码率、不再二次 fetch 子列表）
+// 标准重写所有变体/音轨 URI 为代理路径后原样输出整个主列表：
+//   - 起播减少一次串行上游往返
+//   - hls.js 恢复 ABR 自适应（弱网自动降档）
+//   - 前端清晰度菜单恢复生效
+function processMasterPlaylist(url, content) {
+    const baseUrl = getBaseUrl(url);
+    const lines = content.split('\n');
+    const output = [];
+    let expectUri = false; // #EXT-X-STREAM-INF 的 URI 在下一非注释行
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) { if (i === lines.length - 1) output.push(line); continue; }
+        if (expectUri && !line.startsWith('#')) {
+            output.push(rewriteUrlToProxy(resolveUrl(baseUrl, line)));
+            expectUri = false;
+            continue;
+        }
+        expectUri = false;
+        if (line.startsWith('#EXT-X-STREAM-INF')) {
+            output.push(line);
+            expectUri = true;
+            continue;
+        }
+        if (line.startsWith('#EXT-X-MEDIA')) {
+            // 音轨/字幕轨的 URI 同样重写为代理路径
+            output.push(line.replace(/URI="([^"]+)"/, (m, uri) => `URI="${rewriteUrlToProxy(resolveUrl(baseUrl, uri))}"`));
+            continue;
+        }
+        if (!line.startsWith('#')) {
+            // 主列表中游离的 URI 行（罕见），同样重写
+            output.push(rewriteUrlToProxy(resolveUrl(baseUrl, line)));
+            continue;
+        }
+        // 保留其他 M3U8 标签
+        output.push(line);
+    }
+    return output.join('\n');
+}
+
+function processM3u8Content(targetUrl, content) {
     // 判断是主列表还是媒体列表
     if (content.includes('#EXT-X-STREAM-INF') || content.includes('#EXT-X-MEDIA:')) {
-        logDebug(`检测到主播放列表: ${targetUrl} (深度: ${recursionDepth})`);
-        return await processMasterPlaylist(targetUrl, content, recursionDepth);
+        logDebug(`检测到主播放列表: ${targetUrl}`);
+        return processMasterPlaylist(targetUrl, content);
     }
-    logDebug(`检测到媒体播放列表: ${targetUrl} (深度: ${recursionDepth})`);
+    logDebug(`检测到媒体播放列表: ${targetUrl}`);
     return processMediaPlaylist(targetUrl, content);
 }
 
-async function processMasterPlaylist(url, content, recursionDepth) {
-    // 检查递归深度
-    if (recursionDepth > MAX_RECURSION) {
-        throw new Error(`处理主播放列表时，递归深度超过最大限制 (${MAX_RECURSION}): ${url}`);
-    }
-    const baseUrl = getBaseUrl(url);
-    const lines = content.split('\n');
-    let highestBandwidth = -1;
-    let bestVariantUrl = '';
-
-    // 查找最高带宽的流
-    for (let i = 0; i < lines.length; i++) {
-        if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
-            const bandwidthMatch = lines[i].match(/BANDWIDTH=(\d+)/);
-            const currentBandwidth = bandwidthMatch ? parseInt(bandwidthMatch[1], 10) : 0;
-            let variantUriLine = '';
-            // 找到下一行的 URI
-            for (let j = i + 1; j < lines.length; j++) {
-                const line = lines[j].trim();
-                if (line && !line.startsWith('#')) { variantUriLine = line; i = j; break; }
-            }
-            if (variantUriLine && currentBandwidth >= highestBandwidth) {
-                highestBandwidth = currentBandwidth;
-                bestVariantUrl = resolveUrl(baseUrl, variantUriLine);
-            }
+// 二进制响应头过滤：
+// 排除 CORS（已显式设置）、已解压/需自定的头，并剔除干扰 Vercel 边缘缓存判定的头
+// （Vary 会碎片化缓存键、Set-Cookie 会直接禁用边缘缓存、Expires/Pragma 干扰缓存决策）
+function applyFilteredUpstreamHeaders(res, responseHeaders) {
+    responseHeaders.forEach((value, key) => {
+        const lowerKey = key.toLowerCase();
+        if (!lowerKey.startsWith('access-control-') &&
+            lowerKey !== 'content-encoding' && // node-fetch 已解压，原头不再适用
+            lowerKey !== 'content-length' &&   // 由实际转发内容决定
+            lowerKey !== 'transfer-encoding' &&
+            lowerKey !== 'content-type' &&     // 显式设置，避免缺失
+            lowerKey !== 'vary' &&             // 碎片化边缘缓存键
+            lowerKey !== 'set-cookie' &&       // 直接禁用边缘缓存
+            lowerKey !== 'cache-control' &&    // 用我们自己的缓存策略
+            lowerKey !== 'expires' &&
+            lowerKey !== 'pragma') {
+            res.setHeader(key, value);
         }
-    }
-    // 如果没有找到带宽信息，尝试查找第一个 .m3u8 链接
-    if (!bestVariantUrl) {
-        logDebug(`主播放列表中未找到 BANDWIDTH 信息，尝试查找第一个 URI: ${url}`);
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
-             // 更可靠地匹配 .m3u8 链接
-            if (line && !line.startsWith('#') && line.match(/\.m3u8($|\?.*)/i)) {
-                bestVariantUrl = resolveUrl(baseUrl, line);
-                logDebug(`备选方案: 找到第一个子播放列表 URI: ${bestVariantUrl}`);
-                break;
-            }
-        }
-    }
-    // 如果仍然没有找到子列表 URL
-    if (!bestVariantUrl) {
-        logDebug(`在主播放列表 ${url} 中未找到有效的子列表 URI，将其作为媒体列表处理。`);
-        return processMediaPlaylist(url, content);
-    }
-
-    logDebug(`选择的子播放列表 (带宽: ${highestBandwidth}): ${bestVariantUrl}`);
-    // 请求选定的子播放列表内容 (注意：这里传递 {} 作为请求头，不传递客户端的原始请求头)
-    const { buffer: variantBuffer, contentType: variantContentType } = await fetchContentWithType(bestVariantUrl, {});
-    const variantContent = variantBuffer.toString('utf8');
-
-    // 检查获取的内容是否是 M3U8
-    if (!isM3u8Content(variantContent, variantContentType)) {
-        logDebug(`获取的子播放列表 ${bestVariantUrl} 不是 M3U8 (类型: ${variantContentType})，将其作为媒体列表处理。`);
-        return processMediaPlaylist(bestVariantUrl, variantContent);
-    }
-
-    // 递归处理获取到的子 M3U8 内容
-    return await processM3u8Content(bestVariantUrl, variantContent, recursionDepth + 1);
+    });
 }
 
 // --- Vercel Handler 函数 ---
@@ -344,12 +396,7 @@ async function processMasterPlaylist(url, content, recursionDepth) {
 export const maxDuration = 60;
 
 export default async function handler(req, res) {
-    // --- 记录请求开始 ---
-    console.info('--- Vercel 代理请求开始 ---');
-    console.info('时间:', new Date().toISOString());
-    console.info('方法:', req.method);
-    console.info('URL:', req.url); // 原始请求 URL (例如 /proxy/...)
-    console.info('查询参数:', JSON.stringify(req.query)); // Vercel 解析的查询参数
+    logDebug(`--- 代理请求: ${req.method} ${req.url}`);
 
     // --- 提前设置 CORS 头 ---
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -358,8 +405,10 @@ export default async function handler(req, res) {
 
     // --- 处理 OPTIONS 预检请求 ---
     if (req.method === 'OPTIONS') {
-        console.info("处理 OPTIONS 预检请求");
-        res.status(204).setHeader('Access-Control-Max-Age', '86400').end(); // 缓存预检结果 24 小时
+        // 注意：不使用链式调用（Node 原生 removeHeader/setHeader 返回值不保证可链）
+        res.status(204);
+        res.setHeader('Access-Control-Max-Age', '86400'); // 缓存预检结果 24 小时
+        res.end();
         return;
     }
 
@@ -375,19 +424,16 @@ export default async function handler(req, res) {
         if (pathData) {
             if (Array.isArray(pathData)) {
                 encodedUrlPath = pathData.join('/'); // 重新组合
-                console.info(`从 req.query["...path"] (数组) 组合的编码路径: ${encodedUrlPath}`);
             } else if (typeof pathData === 'string') {
                 encodedUrlPath = pathData; // 也处理 Vercel 可能只返回字符串的情况
-                console.info(`从 req.query["...path"] (字符串) 获取的编码路径: ${encodedUrlPath}`);
             } else {
-                console.warn(`[代理警告] req.query["...path"] 类型未知: ${typeof pathData}`);
+                logDebug(`[代理警告] req.query["...path"] 类型未知: ${typeof pathData}`);
             }
         } else {
-            console.warn(`[代理警告] req.query["...path"] 为空或未定义。`);
+            logDebug(`[代理警告] req.query["...path"] 为空或未定义。`);
             // 备选：尝试从 req.url 提取（如果需要）
             if (req.url && req.url.startsWith('/proxy/')) {
                 encodedUrlPath = req.url.substring('/proxy/'.length);
-                console.info(`使用备选方法从 req.url 提取的编码路径: ${encodedUrlPath}`);
             }
         }
 
@@ -398,7 +444,6 @@ export default async function handler(req, res) {
 
         // 解析目标 URL
         targetUrl = getTargetUrlFromPath(encodedUrlPath);
-        console.info(`解析出的目标 URL: ${targetUrl || 'null'}`); // 记录解析结果
 
         // 检查目标 URL 是否有效
         if (!targetUrl) {
@@ -406,68 +451,57 @@ export default async function handler(req, res) {
             throw new Error(`无效的代理请求路径。无法从组合路径 "${encodedUrlPath}" 中提取有效的目标 URL。`);
         }
 
-        console.info(`开始处理目标 URL 的代理请求: ${targetUrl}`);
+        logDebug(`开始处理目标 URL 的代理请求: ${targetUrl}`);
 
-        // --- 获取并处理目标内容 ---
+        // --- 获取并全量缓冲目标内容（与原版一致：先缓冲，再按内容嗅探） ---
         const { buffer, contentType, responseHeaders } = await fetchContentWithType(targetUrl, req.headers);
 
-        // --- 如果是 M3U8，处理并返回（文本协议，需要重写内部 URL） ---
+        // --- 内容嗅探判断是否 M3U8（文件头/Content-Type，不依赖 URL 后缀） ---
+        // 注意：不能按 URL 预判——部分 CDN 用 application/octet-stream 且无 .m3u8
+        // 后缀提供主/子播放列表，按 URL 预判会把 m3u8 当二进制原样透传，
+        // 内部 URL 得不到重写，多档位列表与代理回放全挂。
         if (isM3u8Buffer(buffer, contentType)) {
             const content = buffer.toString('utf8');
-            console.info(`正在处理 M3U8 内容: ${targetUrl}`);
-            const processedM3u8 = await processM3u8Content(targetUrl, content);
+            // 内存缓存命中直接返回，跳过逐行重写
+            let processedM3u8 = getM3u8Cache(targetUrl);
+            if (processedM3u8 === null) {
+                processedM3u8 = processM3u8Content(targetUrl, content);
+                setM3u8Cache(targetUrl, processedM3u8);
+            }
 
-            console.info(`成功处理 M3U8: ${targetUrl}`);
-            // 发送处理后的 M3U8 响应
-            res.status(200)
-                .setHeader('Content-Type', 'application/vnd.apple.mpegurl;charset=utf-8')
-                .setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`)
-                // 显式声明内容长度：避免分块流式发送。某些设备网络栈对
-                // 分块(chunked)响应的“结束块”识别有异常，会一直等不到结尾而挂起超时，
-                // 带 Content-Length 的完整响应可让这类设备按长度判断取完。
-                .removeHeader('content-encoding') // 很重要！node-fetch 已解压
-                .setHeader('Content-Length', String(Buffer.byteLength(processedM3u8)))
-                .send(processedM3u8); // 发送 M3U8 文本
+            logDebug(`成功处理 M3U8: ${targetUrl}`);
+            // 发送处理后的 M3U8 响应（分步调用，不依赖链式返回值）
+            res.removeHeader('content-encoding'); // 很重要！node-fetch 已解压，原头不再适用
+            res.setHeader('Content-Type', 'application/vnd.apple.mpegurl;charset=utf-8');
+            // m3u8 短缓存：避免换源/动态列表拿到陈旧缓存（ts 分片保持长缓存）
+            res.setHeader('Cache-Control', `public, max-age=${M3U8_CACHE_TTL}`);
+            // 显式声明内容长度：避免分块流式发送。某些设备网络栈对
+            // 分块(chunked)响应的"结束块"识别有异常，会一直等不到结尾而挂起超时
+            res.setHeader('Content-Length', String(Buffer.byteLength(processedM3u8)));
+            res.status(200);
+            res.send(processedM3u8); // 发送 M3U8 文本
 
         } else {
-            // --- 非 M3U8（视频分片、图片等二进制内容）：按二进制原样转发 ---
-            console.info(`直接返回非 M3U8 内容: ${targetUrl}, 类型: ${contentType}, 大小: ${buffer.length}`);
+            // --- 非 M3U8（视频分片、图片、HTML、JSON 等）：按二进制原样转发 ---
+            logDebug(`直接返回非 M3U8 内容: ${targetUrl}, 类型: ${contentType}, 大小: ${buffer.length}`);
 
-            // 设置原始响应头，但排除有问题的头和 CORS 头（已设置）
-            responseHeaders.forEach((value, key) => {
-                 const lowerKey = key.toLowerCase();
-                 if (!lowerKey.startsWith('access-control-') &&
-                     lowerKey !== 'content-encoding' && // node-fetch 已解压，原头不再适用
-                     lowerKey !== 'content-length' &&   // 由实际转发内容决定
-                     lowerKey !== 'transfer-encoding' &&
-                     lowerKey !== 'content-type') {     // 显式设置，避免缺失
-                     res.setHeader(key, value); // 设置其他原始头
-                 }
-             });
+            // 响应头过滤（剔除 Vary/Set-Cookie 等干扰边缘缓存的头，保证 /proxy/* 可被 Vercel 边缘缓存命中）
+            applyFilteredUpstreamHeaders(res, responseHeaders);
             res.setHeader('Content-Type', contentType || 'application/octet-stream');
-            // 设置我们自己的缓存策略
+            // 设置我们自己的缓存策略（ts 分片内容不变，长缓存 + 边缘缓存）
             res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
             // 显式声明内容长度（见上方注释）：避免分块流式，兼容收不到分块结束信号的设备
             res.setHeader('Content-Length', String(buffer.length));
 
             // 以二进制发送原始内容（切勿转成字符串，否则视频数据损坏）
-            res.status(200).send(buffer);
+            res.status(200);
+            res.send(buffer);
         }
 
     // ---- 结束主处理逻辑的 try 块 ----
     } catch (error) { // ---- 捕获处理过程中的任何错误 ----
-        // **检查这个错误是否是 "Assignment to constant variable"**
-        console.error(`[代理错误处理 V3] 捕获错误！目标: ${targetUrl || '解析失败'} | 错误类型: ${error.constructor.name} | 错误消息: ${error.message}`);
-        console.error(`[代理错误堆栈 V3] ${error.stack}`); // 记录完整的错误堆栈信息
-
-        // 特别标记 "Assignment to constant variable" 错误
-        if (error instanceof TypeError && error.message.includes("Assignment to constant variable")) {
-             console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-             console.error("捕获到 'Assignment to constant variable' 错误!");
-             console.error("请再次检查函数代码及所有辅助函数中，是否有 const 声明的变量被重新赋值。");
-             console.error("错误堆栈指向:", error.stack);
-             console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-        }
+        console.error(`[代理错误] 目标: ${targetUrl || '解析失败'} | ${error.message}`);
+        logDebug(`[代理错误堆栈] ${error.stack}`);
 
         // 尝试从错误对象获取状态码，否则默认为 500
         const statusCode = error.status || 500;
@@ -476,7 +510,8 @@ export default async function handler(req, res) {
         if (!res.headersSent) {
              res.setHeader('Content-Type', 'application/json');
              // CORS 头应该已经在前面设置好了
-             res.status(statusCode).json({
+             res.status(statusCode);
+             res.json({
                 success: false,
                 error: `代理处理错误: ${error.message}`, // 返回错误消息给前端
                 targetUrl: targetUrl, // 包含目标 URL 以便调试
@@ -484,19 +519,13 @@ export default async function handler(req, res) {
             });
         } else {
             // 如果响应头已发送，无法再发送 JSON 错误
-            console.error("[代理错误处理 V3] 响应头已发送，无法发送 JSON 错误响应。");
+            logDebug("[代理错误] 响应头已发送，无法发送 JSON 错误响应。");
             // 尝试结束响应
              if (!res.writableEnded) {
                  res.end();
              }
         }
     } finally {
-         // 记录请求处理结束
-         console.info('--- Vercel 代理请求结束 ---');
+        logDebug('--- 代理请求结束 ---');
     }
 }
-
-// --- [确保所有辅助函数定义都在这里] ---
-// getTargetUrlFromPath, getBaseUrl, resolveUrl, rewriteUrlToProxy, getRandomUserAgent,
-// fetchContentWithType, isM3u8Content, processKeyLine, processMapLine,
-// processMediaPlaylist, processM3u8Content, processMasterPlaylist

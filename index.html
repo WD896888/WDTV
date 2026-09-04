@@ -26,11 +26,15 @@
 
 <!-- WDTV External CSS -->
 <link rel="stylesheet" href="css/styles.css?v=6">
-<link rel="stylesheet" href="css/index.css?v=6">
+<link rel="stylesheet" href="css/index.css?v=7">
 <link rel="stylesheet" href="css/modals.css?v=6">
 
+<!-- Google Fonts 异步加载：preconnect 预热连接 + media 技巧避免阻塞首屏渲染（字体带 display=swap，晚到仅切换不遮挡文字） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Great+Vibes&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Pinyon+Script&family=Raleway:wght@200;300&family=Spectral:ital,wght@1,300&display=swap" media="print" onload="this.media='all'">
+
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Great+Vibes&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Pinyon+Script&family=Raleway:wght@200;300&family=Spectral:ital,wght@1,300&display=swap');
 
 :root{
   --bg-deep:#181e32;--bg-mid:#263050;
@@ -293,6 +297,36 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 #episodesGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px}
 #episodesGrid .wdtv-episode-btn{background:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.2);color:#2a3a5c;box-shadow:none;min-width:0}
 #episodesGrid .wdtv-episode-btn:hover{background:rgba(255,255,255,0.45);border-color:rgba(255,255,255,0.4);color:#2a3a5c;box-shadow:none}
+/* 各集时长检测：按钮内两行布局（集数 + 时长） */
+#episodesGrid .wdtv-episode-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;line-height:1.2}
+#episodesGrid .wdtv-episode-btn .ep-num{display:block}
+#episodesGrid .wdtv-episode-btn .ep-dur{display:block;font-size:0.64rem;color:rgba(42,58,92,0.55);font-family:'Noto Sans SC',sans-serif;font-weight:400;letter-spacing:0.02em;line-height:1.2}
+#episodesGrid .wdtv-episode-btn .ep-dur-detecting{animation:wdtvDurPulse 1.2s ease-in-out infinite}
+#episodesGrid .wdtv-episode-btn .ep-dur-fail{color:rgba(229,115,115,0.75)}
+@keyframes wdtvDurPulse{0%,100%{opacity:0.35}50%{opacity:0.9}}
+.wdtv-modal-mini-btn:disabled{opacity:0.55;cursor:default}
+/* 排序模式下拉框（与搜索页同名筛选 wdtv-name-dropdown 同款）与综艺排序子控件 */
+.wdtv-modal-mini-btn.active{background:rgba(120,170,255,0.42);border-color:rgba(130,180,255,0.7);color:#1d3557}
+.wdtv-sort-subcontrols{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.wdtv-inline-dropdown{display:inline-block}
+.wdtv-threshold-toggle{padding:4px 8px;font-size:0.78rem;border-radius:8px;gap:4px}
+.wdtv-threshold-toggle:focus-within{border-color:rgba(130,180,255,0.7);background:rgba(155,180,218,0.14)}
+.wdtv-sort-dropdown-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border-radius:8px;color:var(--pale);font-size:0.85rem;cursor:pointer;white-space:nowrap;transition:background 0.15s}
+.wdtv-sort-dropdown-item:hover{background:rgba(255,255,255,0.18)}
+.wdtv-sort-dropdown-item.active{background:rgba(80,128,176,0.3);color:var(--white);font-weight:500}
+.wdtv-threshold-label{display:inline-flex;align-items:center;gap:4px;font-size:0.78rem;color:rgba(42,58,92,0.65);font-family:'Noto Sans SC',sans-serif;letter-spacing:0.02em}
+/* 分组线 combo：输入框内嵌在下拉按钮内，透明无框 */
+.wdtv-threshold-input{width:44px;border:none;background:transparent;padding:0;color:var(--pale);font-size:0.85rem;font-family:inherit;text-align:center;outline:none;-moz-appearance:textfield;appearance:textfield}
+/* 隐藏数字输入框的原生增减按钮 */
+.wdtv-threshold-input::-webkit-outer-spin-button,.wdtv-threshold-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+/* 综艺排序分组显示 */
+/* 分组渲染时外层网格退化为块级，避免两个分组被塞进外层网格列里挤成细竖条 */
+#episodesGrid:has(.wdtv-variety-section){display:block}
+.wdtv-variety-section{margin-bottom:12px}
+.wdtv-variety-section:last-child{margin-bottom:0}
+.wdtv-variety-label{font-size:0.78rem;color:rgba(42,58,92,0.65);font-family:'Noto Sans SC',sans-serif;letter-spacing:0.04em;margin-bottom:6px}
+.wdtv-variety-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px}
+#episodesGrid .wdtv-episode-btn .ep-num-g{font-style:normal;font-size:0.6rem;color:rgba(42,58,92,0.5);margin-left:1px}
 /* 弹窗打开时冻结背景动效：背景静止后 backdrop-filter 结果可被缓存，弹窗内滚动才流畅 */
 body:has(#modal:not(.hidden)) .splash-glow{animation-play-state:paused}
 body:has(#modal:not(.hidden)) #splash{backdrop-filter:none;-webkit-backdrop-filter:none;transition:none}
@@ -306,6 +340,9 @@ body:has(#modal:not(.hidden)) #splash{backdrop-filter:none;-webkit-backdrop-filt
 #modal .wdtv-detail-desc{font-size:0.78rem}
 #episodesGrid{grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:6px}
 .wdtv-episode-btn{font-size:0.8rem;padding:7px 4px}
+#episodesGrid .wdtv-episode-btn .ep-dur{font-size:0.58rem}
+.wdtv-variety-grid{grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:6px}
+.wdtv-variety-label{font-size:0.72rem}
 }
 
 /* WDTV Disclaimer Modal */
@@ -464,7 +501,7 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
               <button id="clearSearchInput" class="wdtv-clear-btn" onclick="clearSearchInput()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
-              <button class="wdtv-search-btn" onclick="search()">
+              <button class="wdtv-search-btn" onclick="debouncedSearch()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
               </button>
             </div>
@@ -507,6 +544,7 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
               <div class="wdtv-result-count"><span id="searchResultsCount">0</span> 个结果</div>
             </div>
           </div>
+          <div id="searchProgress" style="display:none;text-align:center;padding:16px 0;color:var(--text-muted);font-size:0.85rem;"></div>
           <div id="results" class="wdtv-search-grid"></div>
         </div>
       </div>
@@ -649,16 +687,16 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 <!-- External JS -->
 <script src="libs/tailwindcss.min.js"></script>
 <script src="libs/sha256.min.js"></script>
-<script src="js/config.js"></script>
-<script src="js/connection-test.js"></script>
-<script src="js/customer_site.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/api.js"></script>
-<script src="js/douban.js"></script>
-<script src="js/search.js"></script>
-<script src="js/app.js?v=6"></script>
-<script src="js/pwa-register.js"></script>
-<script src="js/index-page.js"></script>
+<script src="js/config.js?v=8"></script>
+<script src="js/connection-test.js?v=8"></script>
+<script src="js/customer_site.js?v=8"></script>
+<script src="js/ui.js?v=9"></script>
+<script src="js/api.js?v=9"></script>
+<script src="js/douban.js?v=9"></script>
+<script src="js/search.js?v=8"></script>
+<script src="js/app.js?v=9"></script>
+<script src="js/pwa-register.js?v=8"></script>
+<script src="js/index-page.js?v=8"></script>
 
 <!-- InternalBeyond Scripts -->
 <script>

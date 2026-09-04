@@ -19,8 +19,14 @@ function showToast(message, type = 'error') {
     if (!toast) {
         toast = document.createElement('div');
         toast.id = 'toast';
-        toast.className = 'fixed top-4 left-1/2 -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 z-50 opacity-0';
-        toast.style = 'z-index: 2147483647'
+        // 初始隐藏状态：位于底部下方（与播放器恢复提示一致的出场方向）
+        toast.style.position = 'fixed';
+        toast.style.top = 'auto';
+        toast.style.bottom = '20px';
+        toast.style.left = '50%';
+        toast.style.zIndex = '2147483647';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(-50%) translateY(30px)';
         toastMessage = document.createElement('p');
         toastMessage.id = 'toastMessage';
         toast.appendChild(toastMessage);
@@ -44,38 +50,44 @@ function showNextToast() {
     }
 
     isShowingToast = true;
-    const { message, type } = toastQueue.shift();
+    const { message } = toastQueue.shift();
 
     const toast = document.getElementById('toast');
     const toastMessage = document.getElementById('toastMessage');
 
-    // iOS 系统色 - 用于玻璃风格左侧色条
-    const accentColors = {
-        'error': '#ff453a',
-        'success': '#30d158',
-        'info': '#0a84ff',
-        'warning': '#ff9f0a'
-    };
-
-    const accentColor = accentColors[type] || accentColors.error;
-    // 玻璃风格 toast
-    toast.className = 'fixed top-4 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full transform transition-all duration-300 text-gray-800 z-50';
-    toast.style.background = 'rgba(255, 255, 255, 0.85)';
-    toast.style.backdropFilter = 'blur(30px) saturate(180%)';
-    toast.style.webkitBackdropFilter = 'blur(30px) saturate(180%)';
-    toast.style.border = '1px solid rgba(255, 255, 255, 0.8)';
-    toast.style.boxShadow = '0 12px 40px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.95)';
-    toast.style.borderLeft = `4px solid ${accentColor}`;
+    // 播放器"已从 xx 继续播放"提示同款深色玻璃风格
+    toast.style.position = 'fixed';
+    toast.style.top = 'auto';
+    toast.style.bottom = '20px';
+    toast.style.left = '50%';
+    toast.style.zIndex = '2147483647';
+    toast.style.padding = '12px 24px';
+    toast.style.borderRadius = '8px';
+    toast.style.fontSize = '14px';
+    toast.style.fontWeight = '400';
+    toast.style.fontFamily = 'inherit';
+    toast.style.color = 'rgba(236,244,255,0.96)';
+    // 深色半透明基底，保证在浅色/深色页面上都与播放器提示观感一致
+    toast.style.background = 'rgba(24, 30, 50, 0.6)';
+    toast.style.backdropFilter = 'blur(32px) saturate(1.5)';
+    toast.style.webkitBackdropFilter = 'blur(32px) saturate(1.5)';
+    toast.style.border = '1px solid rgba(200,220,245,0.42)';
+    toast.style.boxShadow = '0 12px 40px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1)';
+    toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
     toastMessage.textContent = message;
 
-    // 显示提示
-    toast.style.opacity = '1';
-    toast.style.transform = 'translateX(-50%) translateY(0)';
+    // 从底部滑入显示
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateX(-50%) translateY(0)';
+        });
+    });
 
     // 3秒后自动隐藏
     setTimeout(() => {
         toast.style.opacity = '0';
-        toast.style.transform = 'translateX(-50%) translateY(-100%)';
+        toast.style.transform = 'translateX(-50%) translateY(30px)';
 
         // 等待动画完成后显示下一个toast
         setTimeout(() => {
@@ -390,14 +402,22 @@ function loadViewingHistory() {
         const episodeText = item.episodeIndex !== undefined ?
             `第${item.episodeIndex + 1}集` : '';
 
-        // 格式化剧集信息
+        // 格式化剧集信息（新格式瘦身后存集数总数 total；旧格式仍内嵌 episodes 数组，向后兼容）
         let episodeInfoHtml = '';
-        if (item.episodes && Array.isArray(item.episodes) && item.episodes.length > 0) {
-            const totalEpisodes = item.episodes.length;
-            const syncStatus = item.lastSyncTime ?
-                `<span style="color: #30d158; font-size: 0.75rem;" title="剧集列表已同步">✓</span>` :
-                `<span style="color: #ff9f0a; font-size: 0.75rem;" title="使用缓存数据">⚠</span>`;
-            episodeInfoHtml = `<span style="color: var(--text-muted); font-size: 0.75rem;">共${totalEpisodes}集 ${syncStatus}</span>`;
+        const totalEpisodes = (item.episodes && Array.isArray(item.episodes) && item.episodes.length > 0)
+            ? item.episodes.length
+            : (item.total || 0);
+        if (totalEpisodes > 0) {
+            if (item.episodes && Array.isArray(item.episodes) && item.episodes.length > 0) {
+                // 旧格式：内嵌集数数组，显示同步状态标记
+                const syncStatus = item.lastSyncTime ?
+                    `<span style="color: #30d158; font-size: 0.75rem;" title="剧集列表已同步">✓</span>` :
+                    `<span style="color: #ff9f0a; font-size: 0.75rem;" title="使用缓存数据">⚠</span>`;
+                episodeInfoHtml = `<span style="color: var(--text-muted); font-size: 0.75rem;">共${totalEpisodes}集 ${syncStatus}</span>`;
+            } else {
+                // 新格式：播放时实时同步最新剧集
+                episodeInfoHtml = `<span style="color: var(--text-muted); font-size: 0.75rem;">共${totalEpisodes}集</span>`;
+            }
         }
 
         // 格式化进度信息
@@ -572,6 +592,12 @@ async function playFromHistory(url, title, episodeIndex, playbackPosition = 0) {
             showToast('无法同步剧集列表，使用缓存数据', 'info');
         }
 
+
+        // 历史记录匹配但未能取到集数列表（瘦身后无内嵌 episodes 且实时同步失败）：
+        // 退化为单集播放（直接播放该集地址），避免误用上一个会话其他视频的集数数据
+        if (episodesList.length === 0 && historyItem && historyItem.directVideoUrl) {
+            episodesList = [historyItem.directVideoUrl];
+        }
 
         // 如果在历史记录中没找到，尝试使用上一个会话的集数数据
         if (episodesList.length === 0) {

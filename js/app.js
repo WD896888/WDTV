@@ -9,6 +9,15 @@ let currentEpisodes = [];
 let currentVideoTitle = '';
 // 全局变量用于倒序状态
 let episodesReversed = false;
+// 当前详情上下文（用于重渲染集数区域）
+let currentDetailSource = '';
+let currentDetailId = '';
+// 集数排序模式：'default' 默认排序（配合正序/倒序）；'variety' 综艺排序（按时长分两组）
+let sortMode = 'default';
+// 综艺排序下的集数数字显示方式：'group' 新集数（组内重编号，默认）；'original' 原集数；'both' 双显
+let varietyNumberMode = 'group';
+// 综艺排序的时长分组线（分钟），屏幕上可自由调整
+let varietyThresholdMinutes = 60;
 
 // 页面初始化
 document.addEventListener('DOMContentLoaded', function () {
@@ -138,10 +147,10 @@ function toggleSettings(e) {
 
 // 设置事件监听器
 function setupEventListeners() {
-    // 回车搜索
+    // 回车搜索（防抖：连续回车只执行最后一次）
     document.getElementById('searchInput').addEventListener('keypress', function (e) {
         if (e.key === 'Enter') {
-            search();
+            debouncedSearch();
         }
     });
 
@@ -198,8 +207,13 @@ function applyDynamicEffects(enabled) {
 
 // 重置搜索区域
 function resetSearchArea() {
-    // 清理搜索结果
+    // 清理搜索结果与进度提示
     document.getElementById('results').innerHTML = '';
+    const searchProgress = document.getElementById('searchProgress');
+    if (searchProgress) {
+        searchProgress.textContent = '';
+        searchProgress.style.display = 'none';
+    }
     document.getElementById('searchInput').value = '';
 
     // 重置同名筛选状态
@@ -265,25 +279,35 @@ let detailPrefetchActive = 0;
 
 async function prefetchDetail(id, sourceCode) {
     if (!id || !sourceCode || typeof window.fetchVideoDetailData !== 'function') return;
-    const key = `${sourceCode}_${id}`;
-    if (detailPrefetchCache.has(key) || detailPrefetchActive >= 2) return;
-    detailPrefetchCache.set(key, null); // 占位防止重复请求
-    detailPrefetchActive++;
-    try {
-        const data = await window.fetchVideoDetailData({ id, source: sourceCode });
-        if (data && data.code === 200 && Array.isArray(data.episodes) && data.episodes.length > 0) {
-            if (detailPrefetchCache.size >= DETAIL_PREFETCH_MAX) {
-                detailPrefetchCache.delete(detailPrefetchCache.keys().next().value);
+    // 搜索进行中不预取，避免挤占搜索请求连接池
+    if (searchInProgress) return;
+
+    const run = async () => {
+        if (!id || !sourceCode || typeof window.fetchVideoDetailData !== 'function') return;
+        const key = `${sourceCode}_${id}`;
+        if (detailPrefetchCache.has(key) || detailPrefetchActive >= 2) return;
+        detailPrefetchCache.set(key, null); // 占位防止重复请求
+        detailPrefetchActive++;
+        try {
+            const data = await window.fetchVideoDetailData({ id, source: sourceCode });
+            if (data && data.code === 200 && Array.isArray(data.episodes) && data.episodes.length > 0) {
+                if (detailPrefetchCache.size >= DETAIL_PREFETCH_MAX) {
+                    detailPrefetchCache.delete(detailPrefetchCache.keys().next().value);
+                }
+                detailPrefetchCache.set(key, data);
+            } else {
+                detailPrefetchCache.delete(key); // 预取失败则允许下次重试
             }
-            detailPrefetchCache.set(key, data);
-        } else {
-            detailPrefetchCache.delete(key); // 预取失败则允许下次重试
+        } catch (e) {
+            detailPrefetchCache.delete(key);
+        } finally {
+            detailPrefetchActive--;
         }
-    } catch (e) {
-        detailPrefetchCache.delete(key);
-    } finally {
-        detailPrefetchActive--;
-    }
+    };
+
+    // 空闲时再预取，进一步降低对交互与在途请求的干扰
+    if ('requestIdleCallback' in window) requestIdleCallback(() => run());
+    else setTimeout(run, 200);
 }
 
 // 读取预取的详情（命中返回数据，未命中返回 null）
@@ -293,6 +317,26 @@ function getPrefetchedDetail(id, sourceCode) {
 
 // 搜索序号：连续搜索时丢弃旧搜索的迟到的渲染/结果，防止遮罩与内容错位
 let searchSeq = 0;
+// 当前搜索会话的请求控制器：新搜索发起时 abort 旧搜索的全部在途请求
+let activeSearchController = null;
+// 搜索是否进行中（全部源就绪前暂停 hover 预取，避免挤占搜索连接池）
+let searchInProgress = false;
+
+// 搜索触发防抖：连续触发（回车/按钮）只执行最后一次
+let searchDebounceTimer = null;
+function debouncedSearch() {
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+        searchDebounceTimer = null;
+        search();
+    }, 300);
+}
+
+// 空闲调度：写操作等非关键任务移出关键路径，避免阻塞渲染与交互
+function runWhenIdle(fn) {
+    if ('requestIdleCallback' in window) requestIdleCallback(() => fn());
+    else setTimeout(fn, 50);
+}
 
 async function search() {
     const query = document.getElementById('searchInput').value.trim();
@@ -309,11 +353,16 @@ async function search() {
 
     const seq = ++searchSeq;
 
+    // abort 旧搜索的全部在途请求，避免新旧搜索互相抢连接拖慢彼此
+    if (activeSearchController) activeSearchController.abort();
+    activeSearchController = new AbortController();
+    const searchSignal = activeSearchController.signal;
+
     showLoading();
 
     try {
-        // 保存搜索历史
-        saveSearchHistory(query);
+        // 保存搜索历史（写 localStorage + 重建历史 DOM）移出关键路径，空闲时执行
+        runWhenIdle(() => saveSearchHistory(query));
 
         // 显示结果区域，调整搜索区域（缓存/渐进两条路径共用）
         document.getElementById('searchArea').classList.remove('flex-1');
@@ -334,6 +383,12 @@ async function search() {
                 if (parsed && Array.isArray(parsed.results) && Date.now() - parsed.ts < SEARCH_CACHE_TTL && parsed.results.length > 0) {
                     lastSearchResults = parsed.results;
                     currentNameFilter = '';
+                    // 隐藏可能残留的搜索进度提示
+                    const progressEl = document.getElementById('searchProgress');
+                    if (progressEl) {
+                        progressEl.textContent = '';
+                        progressEl.style.display = 'none';
+                    }
                     populateNameFilter(lastSearchResults);
                     renderFilteredSearchResults();
                     try {
@@ -350,7 +405,7 @@ async function search() {
         lastSearchResults = [];
         currentNameFilter = '';
         const resultsDiv = document.getElementById('results');
-        resultsDiv.innerHTML = `<div class="col-span-full" style="text-align:center;padding:40px 0;color:var(--text-muted);font-size:0.9rem;">正在搜索各资源站…</div>`;
+        resultsDiv.innerHTML = '';
         const searchResultsCount = document.getElementById('searchResultsCount');
         if (searchResultsCount) searchResultsCount.textContent = 0;
 
@@ -358,6 +413,10 @@ async function search() {
         let settled = 0;
         let renderTimer = null;
         let urlUpdated = false;
+        let renderedCount = 0;               // 渐进渲染已追加的卡片数（增量追加，不重建已渲染部分）
+        let finalRendered = false;           // 最终排序渲染是否已完成（决定迟到结果的渲染方式）
+        const seenKeys = new Set();          // 同源 source_code+vod_id 去重（第1/2页可能重复）
+        const blockedKeywords = getBlockedTypeRuleKeywords(); // 本次搜索期间屏蔽规则不变，一次读入
 
         const updateUrlOnce = () => {
             if (urlUpdated) return;
@@ -374,17 +433,28 @@ async function search() {
             }
         };
 
-        // 节流渲染：250ms 合并一次 DOM 重建，避免每个源到达都触发重排
+        // 进度提示独立于结果列表容器（不参与卡片追加，避免重建）
+        const updateProgressHint = (text) => {
+            const el = document.getElementById('searchProgress');
+            if (!el) return;
+            el.textContent = text || '';
+            el.style.display = text ? '' : 'none';
+        };
+        updateProgressHint('正在搜索各资源站…');
+
+        // 节流渲染：250ms 合并一次；只追加新增卡片，已渲染的图片不闪烁、不重复请求
         const renderProgressive = () => {
             renderTimer = null;
             if (seq !== searchSeq) return; // 已被更新的搜索取代，丢弃本次渲染
             const div = document.getElementById('results');
             if (!div) return;
-            const filtered = lastSearchResults.filter(item => !isBlockedByTypeFilter(item));
-            const progressHtml = settled < total
-                ? `<div class="col-span-full" style="text-align:center;padding:16px 0;color:var(--text-muted);font-size:0.85rem;">已搜索 ${settled}/${total} 个源，正在加载其余结果…</div>`
-                : '';
-            div.innerHTML = filtered.map(buildResultCard).join('') + progressHtml;
+            const filtered = lastSearchResults.filter(item => !isBlockedByTypeFilter(item, blockedKeywords));
+            if (filtered.length > renderedCount) {
+                if (renderedCount === 0) div.innerHTML = ''; // 清掉"正在搜索/无结果"占位
+                div.insertAdjacentHTML('beforeend', filtered.slice(renderedCount).map(buildResultCard).join(''));
+                renderedCount = filtered.length;
+            }
+            updateProgressHint(settled < total ? `已搜索 ${settled}/${total} 个源，正在加载其余结果…` : '');
             const count = document.getElementById('searchResultsCount');
             if (count) count.textContent = filtered.length;
 
@@ -396,19 +466,39 @@ async function search() {
             renderTimer = setTimeout(renderProgressive, 250);
         };
 
+        // 追加结果（同源 source_code+vod_id 去重）；最终渲染完成后改为全量重渲染以正确应用筛选
+        const appendResults = (results) => {
+            const fresh = results.filter(item => {
+                const key = `${item.source_code}_${item.vod_id}`;
+                if (seenKeys.has(key)) return false;
+                seenKeys.add(key);
+                return true;
+            });
+            if (fresh.length === 0) return;
+            lastSearchResults = lastSearchResults.concat(fresh);
+            updateUrlOnce();
+            if (finalRendered) renderFilteredSearchResults();
+            else scheduleProgressiveRender();
+        };
+
+        searchInProgress = true;
+
         // 从所有选中的API源搜索；10 分钟内失败过的源延后 2 秒发起，让稳定源先出结果
+        // 第 2 页起由后台补页回调追加（见 search.js searchByAPIAndKeyWord）
         const searchPromises = selectedAPIs.map(apiId => {
             const kick = (typeof isSourceUnhealthy === 'function' && isSourceUnhealthy(apiId))
                 ? new Promise(resolve => setTimeout(resolve, 2000))
                 : Promise.resolve();
             return kick
-                .then(() => searchByAPIAndKeyWord(apiId, query))
+                .then(() => searchByAPIAndKeyWord(apiId, query, additional => {
+                    if (seq !== searchSeq) return; // 已被更新的搜索取代
+                    appendResults(additional);
+                }, searchSignal))
                 .then(results => {
                     if (seq !== searchSeq) return []; // 已被更新的搜索取代
                     settled++;
                     if (Array.isArray(results) && results.length > 0) {
-                        lastSearchResults = lastSearchResults.concat(results);
-                        updateUrlOnce();
+                        appendResults(results);
                     }
                     scheduleProgressiveRender();
                     return results;
@@ -426,19 +516,17 @@ async function search() {
 
         // 已被更新的搜索取代：丢弃旧结果，不渲染不写缓存
         if (seq !== searchSeq) return;
-
-        // 3) 全部完成：合并、排序、最终渲染
-        let allResults = [];
-        resultsArray.forEach(results => {
-            if (Array.isArray(results) && results.length > 0) {
-                allResults = allResults.concat(results);
-            }
-        });
+        searchInProgress = false;
 
         if (renderTimer) {
             clearTimeout(renderTimer);
             renderTimer = null;
         }
+        updateProgressHint('');
+
+        // 3) 全部完成：合并、排序、最终渲染（一次全量重建，排序需要）
+        // lastSearchResults 已含第1页与已到达的第2页结果（appendResults 已去重），直接在其上排序
+        let allResults = [...lastSearchResults];
 
         // 对搜索结果进行排序：按名称优先，名称相同时按接口源排序
         allResults.sort((a, b) => {
@@ -474,10 +562,14 @@ async function search() {
         currentNameFilter = '';
         populateNameFilter(allResults);
         renderFilteredSearchResults();
+        finalRendered = true;
 
-        try {
-            sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), results: allResults }));
-        } catch (e) { /* 缓存写入失败不影响结果展示 */ }
+        // 会话缓存写入（大结果集同步 stringify 会阻塞渲染）移出关键路径
+        runWhenIdle(() => {
+            try {
+                sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), results: allResults }));
+            } catch (e) { /* 缓存写入失败不影响结果展示 */ }
+        });
     } catch (error) {
         if (seq !== searchSeq) return; // 已被更新的搜索取代，静默丢弃
         console.error('搜索错误:', error);
@@ -488,7 +580,10 @@ async function search() {
         }
     } finally {
         // 只有最新一次搜索才能关闭遮罩，避免旧搜索的收尾关掉新搜索的遮罩
-        if (seq === searchSeq) hideLoading();
+        if (seq === searchSeq) {
+            searchInProgress = false;
+            hideLoading();
+        }
     }
 }
 
@@ -524,6 +619,14 @@ function extractQualityTag(texts) {
     return '';
 }
 
+// 本地占位图：内联 SVG data URI（深色底 + 片名首字），不依赖外部占位图服务（慢且常挂）
+function buildPlaceholderCover(title) {
+    // 首字符去除引号/尖括号等会破坏 data URI 与 HTML 属性的字符
+    const ch = (((title || '').trim().charAt(0)) || '剧').replace(/['"\\&<>]/g, '') || '剧';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450"><rect width="300" height="450" fill="#20293e"/><text x="150" y="262" font-family="sans-serif" font-size="128" fill="#41506e" text-anchor="middle">${ch}</text></svg>`;
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
 // 构建单个搜索结果卡片
 function buildResultCard(item) {
     const safeId = item.vod_id ? item.vod_id.toString().replace(/[^\w-]/g, '') : '';
@@ -532,7 +635,8 @@ function buildResultCard(item) {
 
     // 修改为与首页豆瓣卡片一致的垂直布局
     const hasCover = item.vod_pic && item.vod_pic.startsWith('http');
-    const coverUrl = hasCover ? item.vod_pic : 'https://via.placeholder.com/300x450?text=无封面';
+    const placeholder = buildPlaceholderCover(item.vod_name);
+    const coverUrl = hasCover ? item.vod_pic : placeholder;
     const safeTypeName = escapeResultText(item.type_name);
     const safeSourceName = escapeResultText(item.source_name);
     // 源方备注（常含清晰度标注，如 "HD国语"、"1080P"、"蓝光" 等）
@@ -546,7 +650,7 @@ function buildResultCard(item) {
              onmouseenter="prefetchDetail('${safeId}','${sourceCode}')">
             <div class="douban-card-image">
                 <img src="${coverUrl}" alt="${safeName}"
-                     onerror="this.onerror=null; this.src='https://via.placeholder.com/300x450?text=无封面'; this.classList.add('object-contain');"
+                     onerror="this.onerror=null; this.src='${placeholder}'; this.classList.add('object-contain');"
                      loading="lazy" referrerpolicy="no-referrer">
                 <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(0,0,0,0.6), transparent 50%); pointer-events: none;"></div>
                 ${qualityTag ? `<div class="wdtv-quality-badge">${qualityTag}</div>` : ''}
@@ -586,14 +690,21 @@ const BLOCK_FILTER_RULES = {
     blockShortDramaEnabled: ['短剧']
 };
 
-// 判断某条结果是否命中启用的屏蔽规则
-function isBlockedByTypeFilter(item) {
+// 一次性读取当前启用的屏蔽关键词（渲染循环内复用，避免每条结果都读 localStorage）
+function getBlockedTypeRuleKeywords() {
+    const keywords = [];
+    Object.entries(BLOCK_FILTER_RULES).forEach(([key, kws]) => {
+        if (localStorage.getItem(key) === 'true') keywords.push(...kws);
+    });
+    return keywords;
+}
+
+// 判断某条结果是否命中启用的屏蔽规则；cachedKeywords 为预读的关键词列表（可选）
+function isBlockedByTypeFilter(item, cachedKeywords) {
     const typeName = (item.type_name || '').toString();
     if (!typeName) return false;
-    return Object.entries(BLOCK_FILTER_RULES).some(([key, keywords]) => {
-        if (localStorage.getItem(key) !== 'true') return false;
-        return keywords.some(kw => typeName.includes(kw));
-    });
+    const keywords = cachedKeywords || getBlockedTypeRuleKeywords();
+    return keywords.some(kw => typeName.includes(kw));
 }
 
 // 根据当前名称筛选与屏蔽规则渲染搜索结果
@@ -601,9 +712,10 @@ function renderFilteredSearchResults() {
     const resultsDiv = document.getElementById('results');
     if (!resultsDiv) return;
 
+    const blockedKeywords = getBlockedTypeRuleKeywords();
     const filtered = lastSearchResults.filter(item => {
         if (currentNameFilter && (item.vod_name || '').trim() !== currentNameFilter) return false;
-        if (isBlockedByTypeFilter(item)) return false;
+        if (isBlockedByTypeFilter(item, blockedKeywords)) return false;
         return true;
     });
 
@@ -856,23 +968,63 @@ async function showDetails(id, vod_name, sourceCode) {
 
             currentEpisodes = data.episodes;
             currentEpisodeIndex = 0;
+            currentDetailSource = sourceCode;
+            currentDetailId = id;
+
+            // 综艺排序下集数数字显示方式的激活态
+            const numModeBtnCls = m => varietyNumberMode === m ? ' active' : '';
 
             modalContent.innerHTML = `
                 ${detailInfoHtml}
                 <div class="wdtv-episodes-bar">
                     <div class="wdtv-episodes-bar-left">
-                        <button onclick="toggleEpisodeOrder('${sourceCode}', '${id}')"
-                                class="wdtv-modal-mini-btn">
-                            <svg class="w-4 h-4 transform ${episodesReversed ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+                        <div id="sortModeDropdown" class="wdtv-name-dropdown">
+                            <button type="button" class="wdtv-name-dropdown-toggle" onclick="toggleSortDropdown(event)">
+                                <span id="sortModeLabel">${sortMode === 'variety' ? '综艺排序' : '默认排序'}</span>
+                                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </button>
+                            <div id="sortModeMenu" class="wdtv-name-dropdown-menu hidden">
+                                <div class="wdtv-sort-dropdown-item${sortMode === 'default' ? ' active' : ''}" data-mode="default"><span>默认排序</span></div>
+                                <div class="wdtv-sort-dropdown-item${sortMode === 'variety' ? ' active' : ''}" data-mode="variety"><span>综艺排序</span></div>
+                            </div>
+                        </div>
+                        <span id="defaultSortControls" class="wdtv-sort-subcontrols${sortMode === 'default' ? '' : ' hidden'}">
+                            <button onclick="toggleEpisodeOrder('${sourceCode}', '${id}')"
+                                    class="wdtv-modal-mini-btn">
+                                <svg class="w-4 h-4 transform ${episodesReversed ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+                                </svg>
+                                <span>${episodesReversed ? '正序排列' : '倒序排列'}</span>
+                            </button>
+                        </span>
+                        <span id="varietySortControls" class="wdtv-sort-subcontrols${sortMode === 'variety' ? '' : ' hidden'}">
+                            <button data-nummode="group" onclick="setVarietyNumberMode('group')"
+                                    class="wdtv-modal-mini-btn num-mode${numModeBtnCls('group')}">新集数</button>
+                            <button data-nummode="original" onclick="setVarietyNumberMode('original')"
+                                    class="wdtv-modal-mini-btn num-mode${numModeBtnCls('original')}">原集数</button>
+                            <button data-nummode="both" onclick="setVarietyNumberMode('both')"
+                                    class="wdtv-modal-mini-btn num-mode${numModeBtnCls('both')}">双显</button>
+                            <span class="wdtv-threshold-label" title="按时长划分两组的分界线">分组线
+                                <span id="thresholdDropdown" class="wdtv-name-dropdown wdtv-inline-dropdown">
+                                    <span class="wdtv-name-dropdown-toggle wdtv-threshold-toggle" onclick="toggleThresholdDropdown(event)">
+                                        <input id="varietyThresholdInput" type="number" min="1" step="1"
+                                               value="${varietyThresholdMinutes}" onchange="setVarietyThreshold(this.value)"
+                                               onclick="event.stopPropagation()" class="wdtv-threshold-input"
+                                               title="输入自定义分组线（分钟），回车生效">分钟
+                                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                    </span>
+                                    <div id="thresholdDropdownMenu" class="wdtv-name-dropdown-menu hidden"></div>
+                                </span>
+                            </span>
+                        </span>
+                        <button id="detectDurationBtn" onclick="detectEpisodeDurations()" class="wdtv-modal-mini-btn${sortMode === 'variety' ? ' hidden' : ''}">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
-                            <span>${episodesReversed ? '正序排列' : '倒序排列'}</span>
+                            <span id="detectDurationLabel">检测时长</span>
                         </button>
                         <span class="episode-stats">共 ${data.episodes.length} 集</span>
                     </div>
-                    <button onclick="copyLinks()" class="wdtv-modal-primary-btn">
-                        复制链接
-                    </button>
                 </div>
                 <div id="episodesGrid">
                     ${renderEpisodes(vod_name, sourceCode, id)}
@@ -926,6 +1078,12 @@ function playVideo(url, vod_name, sourceCode, episodeIndex = 0, vodId = '') {
         localStorage.setItem('lastPlayTime', Date.now());
         localStorage.setItem('lastSearchPage', currentPath);
         localStorage.setItem('lastPageUrl', returnUrl);  // 确保保存返回页面URL
+        // 同步排序方式与已检测时长，播放页保持与详情页一致的展示
+        localStorage.setItem('episodesReversed', episodesReversed);
+        localStorage.setItem('episodeSortMode', sortMode);
+        localStorage.setItem('varietyNumberMode', varietyNumberMode);
+        localStorage.setItem('varietyThresholdMinutes', varietyThresholdMinutes);
+        localStorage.setItem('episodeDurationCache', JSON.stringify([...episodeDurationCache.entries()]));
     } catch (e) {
         console.error('保存播放状态失败:', e);
     }
@@ -1001,40 +1159,353 @@ function handlePlayerError() {
     showToast('视频播放加载失败，请尝试其他视频源', 'error');
 }
 
-// 辅助函数用于渲染剧集按钮（使用当前的排序状态）
+// 辅助函数用于渲染剧集按钮（使用当前的排序状态，附带已检测的时长）
 function renderEpisodes(vodName, sourceCode, vodId) {
+    // 综艺排序：按时长分为"60分钟以上 / 60分钟以下"两组，各自成块
+    if (sortMode === 'variety') {
+        return renderVarietyEpisodes(vodName, sourceCode, vodId);
+    }
     const episodes = episodesReversed ? [...currentEpisodes].reverse() : currentEpisodes;
     return episodes.map((episode, index) => {
         // 根据倒序状态计算真实的剧集索引
         const realIndex = episodesReversed ? currentEpisodes.length - 1 - index : index;
-        return `
-            <button id="episode-${realIndex}" onclick="playVideo('${episode}','${vodName.replace(/"/g, '&quot;')}', '${sourceCode}', ${realIndex}, '${vodId}')"
-                    class="wdtv-episode-btn">
-                ${realIndex + 1}
-            </button>
-        `;
+        return renderEpisodeButton(vodName, sourceCode, vodId, realIndex, index + 1);
     }).join('');
 }
 
-// 复制视频链接到剪贴板
-function copyLinks() {
-    const episodes = episodesReversed ? [...currentEpisodes].reverse() : currentEpisodes;
-    const linkList = episodes.join('\r\n');
-    navigator.clipboard.writeText(linkList).then(() => {
-        showToast('播放链接已复制', 'success');
-    }).catch(err => {
-        showToast('复制失败，请检查浏览器权限', 'error');
+// 渲染单个集数按钮（groupNum 为综艺排序下的组内序号，仅综艺排序使用）
+function renderEpisodeButton(vodName, sourceCode, vodId, realIndex, groupNum) {
+    const episode = currentEpisodes[realIndex];
+    const originalNum = realIndex + 1;
+
+    // 集数数字显示方式（仅综艺排序区分；默认排序恒为原集数）
+    let numHtml;
+    if (sortMode === 'variety') {
+        if (varietyNumberMode === 'group') {
+            numHtml = `<span class="ep-num" title="组内第 ${groupNum} 集 · 原第 ${originalNum} 集">${groupNum}</span>`;
+        } else if (varietyNumberMode === 'both') {
+            // 大数字为新排序序号，括号内小数字为原序号
+            numHtml = `<span class="ep-num" title="组内第 ${groupNum} 集 · 原第 ${originalNum} 集">${groupNum}<em class="ep-num-g">(${originalNum})</em></span>`;
+        } else {
+            numHtml = `<span class="ep-num" title="原第 ${originalNum} 集 · 组内第 ${groupNum} 集">${originalNum}</span>`;
+        }
+    } else {
+        numHtml = `<span class="ep-num">${originalNum}</span>`;
+    }
+
+    const durInfo = episodeDurationCache.get(episode);
+    let durHtml = '';
+    if (durInfo && durInfo.status === 'done' && isFinite(durInfo.seconds)) {
+        durHtml = `<span class="ep-dur">${formatEpisodeDuration(durInfo.seconds)}</span>`;
+    } else if (durInfo && durInfo.status === 'detecting') {
+        durHtml = `<span class="ep-dur ep-dur-detecting">···</span>`;
+    } else if (durInfo && durInfo.status === 'fail') {
+        durHtml = `<span class="ep-dur ep-dur-fail">--</span>`;
+    }
+
+    return `
+        <button id="episode-${realIndex}" onclick="playVideo('${episode}','${vodName.replace(/"/g, '&quot;')}', '${sourceCode}', ${realIndex}, '${vodId}')"
+                class="wdtv-episode-btn">
+            ${numHtml}
+            ${durHtml}
+        </button>
+    `;
+}
+
+// 综艺排序渲染：按时长分为"X分钟以上 / X分钟以下"两组（阈值可调），组内保持原有先后顺序，各组单独从 1 编号
+function renderVarietyEpisodes(vodName, sourceCode, vodId) {
+    const thresholdSec = varietyThresholdMinutes * 60;
+    const longIdx = [];
+    const shortIdx = [];
+    currentEpisodes.forEach((url, i) => {
+        const info = episodeDurationCache.get(url);
+        if (info && info.status === 'done' && isFinite(info.seconds) && info.seconds >= thresholdSec) {
+            longIdx.push(i);
+        } else {
+            shortIdx.push(i); // 未检测/检测失败的集数暂归入"X分钟以下"组，检测完成后实时重排
+        }
     });
+
+    const buildSection = (label, indices) => {
+        if (indices.length === 0) return '';
+        const btns = indices.map((realIndex, pos) =>
+            renderEpisodeButton(vodName, sourceCode, vodId, realIndex, pos + 1)
+        ).join('');
+        return `
+            <div class="wdtv-variety-section">
+                <div class="wdtv-variety-label">${label}（${indices.length} 集）</div>
+                <div class="wdtv-variety-grid">${btns}</div>
+            </div>
+        `;
+    };
+
+    return buildSection(`${varietyThresholdMinutes}分钟以上`, longIdx) + buildSection(`${varietyThresholdMinutes}分钟以下`, shortIdx);
+}
+
+// ===== 各集时长检测 =====
+// 缓存：集数地址 -> { status: 'detecting'|'done'|'fail', seconds }
+const episodeDurationCache = new Map();
+
+// 更新单个集数按钮上的时长显示（弹窗已切换到其他视频时跳过）
+function updateEpisodeDurationDom(realIndex, episodeUrl) {
+    if (!currentEpisodes || currentEpisodes[realIndex] !== episodeUrl) return;
+    const btn = document.getElementById(`episode-${realIndex}`);
+    if (!btn) return;
+    const old = btn.querySelector('.ep-dur');
+    if (old) old.remove();
+    const info = episodeDurationCache.get(episodeUrl);
+    if (!info) return;
+    const span = document.createElement('span');
+    if (info.status === 'done' && isFinite(info.seconds)) {
+        span.className = 'ep-dur';
+        span.textContent = formatEpisodeDuration(info.seconds);
+    } else if (info.status === 'detecting') {
+        span.className = 'ep-dur ep-dur-detecting';
+        span.textContent = '···';
+    } else if (info.status === 'fail') {
+        span.className = 'ep-dur ep-dur-fail';
+        span.textContent = '--';
+    } else {
+        return;
+    }
+    btn.appendChild(span);
+}
+
+// 检测全部集数时长（并发限制，逐集更新到按钮上；点击重试时仅重测失败项）
+// 综艺排序进入时也会自动调用，running 标志防止重复触发
+let durationDetectRunning = false;
+function detectEpisodeDurations() {
+    if (!currentEpisodes || currentEpisodes.length === 0) return;
+    if (durationDetectRunning) return;
+    durationDetectRunning = true;
+    runDurationDetection().finally(() => { durationDetectRunning = false; });
+}
+
+async function runDurationDetection() {
+    const episodesRef = currentEpisodes;
+    const btn = document.getElementById('detectDurationBtn');
+    const label = document.getElementById('detectDurationLabel');
+    if (btn) btn.disabled = true;
+
+    let completed = 0;
+    const updateProgress = () => {
+        if (currentEpisodes !== episodesRef || !label) return;
+        label.textContent = completed >= episodesRef.length ? '检测完成' : `检测中 ${completed}/${episodesRef.length}`;
+    };
+
+    const pending = episodesRef.map((url, idx) => ({ url, idx }));
+    const CONCURRENCY = 3;
+    const worker = async () => {
+        while (pending.length > 0) {
+            const task = pending.shift();
+            const cached = episodeDurationCache.get(task.url);
+            if (!cached || cached.status !== 'done') {
+                episodeDurationCache.set(task.url, { status: 'detecting' });
+                updateEpisodeDurationDom(task.idx, task.url);
+                let seconds = null;
+                try {
+                    if (/\.m3u8([?#]|$)/i.test(task.url)) {
+                        seconds = await fetchM3u8Duration(task.url);
+                    } else {
+                        seconds = await fetchMediaDurationByVideo(task.url);
+                    }
+                } catch (err) {
+                    console.warn('单集时长检测异常:', task.url, err);
+                    seconds = null;
+                }
+                episodeDurationCache.set(task.url, seconds != null
+                    ? { status: 'done', seconds }
+                    : { status: 'fail' });
+            }
+            completed++;
+            if (currentEpisodes === episodesRef) {
+                if (sortMode === 'variety') {
+                    // 综艺排序下每检测完一集即整体重排，时长到齐的集数实时归入对应分组
+                    rerenderEpisodesGrid();
+                } else {
+                    updateEpisodeDurationDom(task.idx, task.url);
+                }
+                updateProgress();
+            }
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pending.length) }, worker));
+
+    if (currentEpisodes === episodesRef) {
+        if (btn) btn.disabled = false;
+        let failCount = 0;
+        episodesRef.forEach(u => {
+            const info = episodeDurationCache.get(u);
+            if (info && info.status === 'fail') failCount++;
+        });
+        if (label) label.textContent = failCount > 0 ? '重试失败项' : '检测时长';
+        showToast(failCount > 0 ? `时长检测完成，${failCount} 集失败，可再次点击重试` : '时长检测完成', failCount > 0 ? 'error' : 'success');
+    }
+}
+
+// 重新渲染集数区域（使用当前详情上下文）
+function rerenderEpisodesGrid() {
+    const episodesGrid = document.getElementById('episodesGrid');
+    if (episodesGrid) {
+        episodesGrid.innerHTML = renderEpisodes(currentVideoTitle, currentDetailSource, currentDetailId);
+    }
+}
+
+// 切换排序模式：默认排序 / 综艺排序（下拉框二选一）
+function setSortMode(mode) {
+    if (mode !== 'default' && mode !== 'variety') return;
+    if (sortMode === mode) return;
+    sortMode = mode;
+    updateSortControlStates();
+    rerenderEpisodesGrid();
+    // 综艺排序依赖各集时长：进入后自动触发检测（已完成的集数自动跳过），完成后分组实时重排
+    if (mode === 'variety') {
+        detectEpisodeDurations();
+    }
+}
+
+// 切换综艺排序下的集数数字显示方式：original 原集数 / group 新集数 / both 双显
+function setVarietyNumberMode(mode) {
+    if (!['original', 'group', 'both'].includes(mode)) return;
+    varietyNumberMode = mode;
+    updateSortControlStates();
+    rerenderEpisodesGrid();
+}
+
+// 调整综艺排序的时长分组线（分钟），立即按新阈值重新分组
+function setVarietyThreshold(value) {
+    const minutes = parseInt(value, 10);
+    if (!isFinite(minutes) || minutes <= 0) {
+        // 无效输入时恢复为当前生效值
+        syncThresholdUI();
+        return;
+    }
+    applyThresholdMinutes(minutes);
+}
+
+// 应用分组线（分钟）：同步输入框显示并重新分组；菜单开着时刷新其高亮项
+function applyThresholdMinutes(minutes) {
+    if (!isFinite(minutes) || minutes <= 0 || minutes === varietyThresholdMinutes) {
+        syncThresholdUI();
+        return;
+    }
+    varietyThresholdMinutes = minutes;
+    syncThresholdUI();
+    const menu = document.getElementById('thresholdDropdownMenu');
+    if (menu && !menu.classList.contains('hidden')) menu.innerHTML = buildThresholdMenuHtml();
+    rerenderEpisodesGrid();
+}
+
+// 同步分组线输入框的显示
+function syncThresholdUI() {
+    const input = document.getElementById('varietyThresholdInput');
+    if (input) input.value = varietyThresholdMinutes;
+}
+
+// 展开/收起排序模式下拉菜单
+function toggleSortDropdown(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('sortModeMenu');
+    const dropdown = document.getElementById('sortModeDropdown');
+    if (!menu || !dropdown) return;
+    menu.classList.toggle('hidden');
+    dropdown.classList.toggle('open', !menu.classList.contains('hidden'));
+    closeThresholdDropdown();
+}
+
+// 关闭排序模式下拉菜单
+function closeSortDropdown() {
+    const menu = document.getElementById('sortModeMenu');
+    const dropdown = document.getElementById('sortModeDropdown');
+    if (menu) menu.classList.add('hidden');
+    if (dropdown) dropdown.classList.remove('open');
+}
+
+// 展开/收起分组线下拉菜单（每次展开时重建以同步激活态，并滚动定位到当前值）
+function toggleThresholdDropdown(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('thresholdDropdownMenu');
+    const dropdown = document.getElementById('thresholdDropdown');
+    if (!menu || !dropdown) return;
+    menu.innerHTML = buildThresholdMenuHtml();
+    menu.classList.toggle('hidden');
+    const opening = !menu.classList.contains('hidden');
+    dropdown.classList.toggle('open', opening);
+    closeSortDropdown();
+    if (opening) {
+        const activeItem = menu.querySelector('.wdtv-sort-dropdown-item.active');
+        if (activeItem) menu.scrollTop = activeItem.offsetTop - menu.clientHeight / 2;
+    }
+}
+
+// 关闭分组线下拉菜单
+function closeThresholdDropdown() {
+    const menu = document.getElementById('thresholdDropdownMenu');
+    const dropdown = document.getElementById('thresholdDropdown');
+    if (menu) menu.classList.add('hidden');
+    if (dropdown) dropdown.classList.remove('open');
+}
+
+// 分组线下拉菜单：1~360 分钟逐分钟列出（精确到每一分钟），超出范围的自定义值附加到末尾
+const THRESHOLD_MENU_MAX = 360;
+function buildThresholdMenuHtml() {
+    const max = Math.max(THRESHOLD_MENU_MAX, varietyThresholdMinutes);
+    let html = '';
+    for (let m = 1; m <= max; m++) {
+        html += `<div class="wdtv-sort-dropdown-item${m === varietyThresholdMinutes ? ' active' : ''}" data-threshold="${m}"><span>${m}</span></div>`;
+    }
+    return html;
+}
+
+// 下拉菜单点击委托：选择排序模式 / 选择分组线；点击菜单外区域时收起
+document.addEventListener('click', (e) => {
+    const sortItem = e.target.closest('#sortModeMenu .wdtv-sort-dropdown-item');
+    if (sortItem) {
+        closeSortDropdown();
+        setSortMode(sortItem.dataset.mode);
+        return;
+    }
+    const thresholdItem = e.target.closest('#thresholdDropdownMenu .wdtv-sort-dropdown-item');
+    if (thresholdItem) {
+        closeThresholdDropdown();
+        applyThresholdMinutes(parseInt(thresholdItem.dataset.threshold, 10));
+        return;
+    }
+    const sortDd = document.getElementById('sortModeDropdown');
+    if (sortDd && !sortDd.contains(e.target)) closeSortDropdown();
+    const thDd = document.getElementById('thresholdDropdown');
+    if (thDd && !thDd.contains(e.target)) closeThresholdDropdown();
+});
+
+// 同步排序控件状态：下拉框标签与选中项、子控件显隐、检测按钮显隐、显示方式激活态、分组线显示
+function updateSortControlStates() {
+    const sortLabel = document.getElementById('sortModeLabel');
+    if (sortLabel) sortLabel.textContent = sortMode === 'variety' ? '综艺排序' : '默认排序';
+    document.querySelectorAll('#sortModeMenu .wdtv-sort-dropdown-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.mode === sortMode);
+    });
+
+    const defCtl = document.getElementById('defaultSortControls');
+    const varCtl = document.getElementById('varietySortControls');
+    if (defCtl) defCtl.classList.toggle('hidden', sortMode !== 'default');
+    if (varCtl) varCtl.classList.toggle('hidden', sortMode !== 'variety');
+
+    // 综艺排序进入时自动检测，手动检测按钮仅在默认排序下显示
+    const detectBtn = document.getElementById('detectDurationBtn');
+    if (detectBtn) detectBtn.classList.toggle('hidden', sortMode === 'variety');
+
+    document.querySelectorAll('#varietySortControls .num-mode').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.nummode === varietyNumberMode);
+    });
+
+    syncThresholdUI();
 }
 
 // 切换排序状态的函数
 function toggleEpisodeOrder(sourceCode, vodId) {
     episodesReversed = !episodesReversed;
-    // 重新渲染剧集区域，使用 currentVideoTitle 作为视频标题
-    const episodesGrid = document.getElementById('episodesGrid');
-    if (episodesGrid) {
-        episodesGrid.innerHTML = renderEpisodes(currentVideoTitle, sourceCode, vodId);
-    }
+    // 重新渲染剧集区域
+    rerenderEpisodesGrid();
 
     // 更新按钮文本和箭头方向
     const toggleBtn = document.querySelector(`button[onclick="toggleEpisodeOrder('${sourceCode}', '${vodId}')"]`);

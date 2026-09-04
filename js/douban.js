@@ -389,15 +389,39 @@ function fetchDoubanTags() {
         });
 }
 
+// 豆瓣数据会话缓存：相同 type+tag+pageStart 10 分钟内直接复用，免远程往返
+const DOUBAN_CACHE_PREFIX = 'wdtvDoubanCache_';
+const DOUBAN_CACHE_TTL = 10 * 60 * 1000;
+
+async function fetchDoubanDataCached(url) {
+    const cacheKey = DOUBAN_CACHE_PREFIX + url; // url 已含 type/tag/page_limit/page_start 参数
+    try {
+        const raw = sessionStorage.getItem(cacheKey);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && Date.now() - parsed.ts < DOUBAN_CACHE_TTL) return parsed.data;
+        }
+    } catch (e) { /* 缓存读取失败继续请求 */ }
+
+    const data = await fetchDoubanData(url);
+    try {
+        sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data }));
+    } catch (e) { /* 缓存写入失败不影响展示 */ }
+    return data;
+}
+
 // 渲染热门推荐内容
 function renderRecommend(tag, pageLimit, pageStart) {
     const container = document.getElementById("douban-results");
     if (!container) return;
 
     const target = `https://movie.douban.com/j/search_subjects?type=${doubanMovieTvCurrentSwitch}&tag=${tag}&sort=recommend&page_limit=${pageLimit}&page_start=${pageStart}`;
-    
-    // 使用通用请求函数
-    fetchDoubanData(target)
+
+    // 请求期间渲染骨架屏占位，消除空白与"换一批"僵持
+    renderDoubanSkeleton(container);
+
+    // 使用通用请求函数（带会话缓存）
+    fetchDoubanDataCached(target)
         .then(data => {
             renderDoubanCards(data, container);
         })
@@ -412,6 +436,22 @@ function renderRecommend(tag, pageLimit, pageStart) {
                 </div>
             `;
         });
+}
+
+// 渲染灰底占位骨架卡（数量与一页一致，配合 CSS 脉动动画）
+function renderDoubanSkeleton(container) {
+    let html = '';
+    for (let i = 0; i < doubanPageSize; i++) {
+        html += `
+            <div class="douban-card flex flex-col" aria-hidden="true">
+                <div class="douban-card-image wdtv-skeleton"></div>
+                <div class="douban-card-title-area">
+                    <div class="wdtv-skeleton wdtv-skeleton-text"></div>
+                </div>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
 }
 
 async function fetchDoubanData(url) {
