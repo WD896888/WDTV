@@ -14,65 +14,84 @@ const SITE_CONFIG = {
 };
 
 // API站点配置
+// detailMode：每个源详情获取方式的显式配置（不依赖运行时猜测）
+//   'api'  —— 仅标准接口（api.php/provide/vod?ac=videolist&ids=），默认值，适用于未配置 detail 字段的源
+//   'html' —— 仅详情页 HTML 解析（detail 字段域名 + 正则提取 m3u8）
+//   'auto' —— 标准接口优先，失败自动回退详情页解析
+// 配置依据为实测结果；源站行为变化时请以实测为准调整
 const API_SITES = {
     heimuer: {
         api: 'https://json.heimuer.xyz',
         name: '黑木耳',
-        detail: 'https://heimuer.tv'
+        detail: 'https://heimuer.tv',
+        detailMode: 'api'   // 实测：详情页被反爬验证页拦截（无法提取 m3u8），标准接口可用
     },
     ffzy: {
         api: 'http://ffzy5.tv',
         name: '非凡影视',
-        detail: 'http://ffzy5.tv'
+        detail: 'http://ffzy5.tv',
+        detailMode: 'api'   // 实测：详情页返回 5xx，标准接口可用；若详情页恢复可改回 'html'（历史集数更全）
     },
     tyyszy: {
         api: 'https://tyyszy.com',
         name: '天涯资源',
+        detailMode: 'api'   // 实测：搜索接口已返回"暂不支持搜索"，源基本失效
     },
     zy360: {
         api: 'https://360zy.com',
         name: '360资源',
+        detailMode: 'api'
     },
     wolong: {
         api: 'https://wolongzyw.com',
         name: '卧龙资源',
+        detailMode: 'api'
     },
     cjhw: {
         api: 'https://cjhwba.com',
         name: '新华为',
+        detailMode: 'api'
     },
     hwba: {
         api: 'https://cjwba.com',
         name: '华为吧资源',
+        detailMode: 'api'
     },
     jisu: {
         api: 'https://jszyapi.com',
         name: '极速资源',
-        detail: 'https://jszyapi.com'
+        detail: 'https://jszyapi.com',
+        detailMode: 'auto'  // 实测：接口与详情页稳定性均一般，双路径互为兜底
     },
     dbzy: {
         api: 'https://dbzy.com',
         name: '豆瓣资源',
+        detailMode: 'api'
     },
     bfzy: {
         api: 'https://bfzyapi.com',
         name: '暴风资源',
+        detailMode: 'api'   // 实测：搜索与标准接口详情均正常（46集）
     },
     mozhua: {
         api: 'https://mozhuazy.com',
         name: '魔爪资源',
+        detailMode: 'api'
     },
     mdzy: {
         api: 'https://www.mdzyapi.com',
         name: '魔都资源',
+        detailMode: 'api'   // 实测：搜索与标准接口详情均正常（74集）
     },
     ruyi: {
         api: 'https://cj.rycjapi.com',
         name: '如意资源',
+        detailMode: 'api'   // 实测：搜索与标准接口详情均正常（74集）
     },
     zuid: {
         api: 'https://api.zuidapi.com',
-        name: '最大资源'
+        name: '最大资源',
+        detailMode: 'api'
     }
     // 您可以按需添加更多源
 };
