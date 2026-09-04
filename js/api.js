@@ -178,7 +178,7 @@ async function handleApiRequest(url) {
 
 // 详情请求：直连优先，失败后回退本地代理（与搜索策略一致）
 const DETAIL_DIRECT_TIMEOUT = 4000;
-const DETAIL_TOTAL_BUDGET = 12000;
+const DETAIL_TOTAL_BUDGET = 15000;
 
 async function fetchDetailData(url) {
     const deadline = Date.now() + DETAIL_TOTAL_BUDGET;
@@ -218,6 +218,9 @@ async function fetchDetailData(url) {
 
 // 获取视频详情与集数列表（不依赖 Service Worker 的 /api/detail，任何环境均可直接调用）
 // opts: { id, source }；返回 { code, episodes, videoInfo, ... }
+// 策略：标准 API 详情优先（绝大多数 MacCMS 源可用且稳定）；
+//       仅当 API 拿不到集数且源带 detail 字段时，才回退到 HTML 详情页正则解析。
+//       （大量资源站的 HTML 详情页已被反爬验证页/5xx 劣化，不再作为主路径）
 async function fetchVideoDetailData(opts) {
     try {
         const { id, source = 'heimuer' } = opts || {};
@@ -225,66 +228,81 @@ async function fetchVideoDetailData(opts) {
         if (!id) throw new Error('缺少视频ID参数');
         if (!/^[\w-]+$/.test(id)) throw new Error('无效的视频ID格式');
 
-        // 特殊详情源（HTML 页面解析）
-        if (API_SITES[source] && API_SITES[source].detail) {
-            return JSON.parse(await handleSpecialSourceDetail(id, source));
-        }
-
         if (!API_SITES[source]) {
             throw new Error('无效的API来源');
         }
 
         const detailUrl = `${API_SITES[source].api}${API_CONFIG.detail.path}${id}`;
 
-        const response = await fetchDetailData(detailUrl);
-        if (!response.ok) {
-            throw new Error(`详情请求失败: ${response.status}`);
+        // 1) 标准 API 详情（直连优先，失败回退代理）
+        let apiResult = null;
+        try {
+            const response = await fetchDetailData(detailUrl);
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.list && Array.isArray(data.list) && data.list.length > 0) {
+                    const videoDetail = data.list[0];
+
+                    // 提取播放地址（第一组播放源）
+                    let episodes = [];
+                    if (videoDetail.vod_play_url) {
+                        const playSources = videoDetail.vod_play_url.split('$$$');
+                        if (playSources.length > 0) {
+                            episodes = playSources[0].split('#').map(ep => {
+                                const parts = ep.split('$');
+                                return parts.length > 1 ? parts[1] : '';
+                            }).filter(url => url && (url.startsWith('http://') || url.startsWith('https://')));
+                        }
+                    }
+
+                    // 如果没有找到播放地址，尝试从简介中提取 m3u8 链接
+                    if (episodes.length === 0 && videoDetail.vod_content) {
+                        const matches = videoDetail.vod_content.match(M3U8_PATTERN) || [];
+                        episodes = matches.map(link => link.replace(/^\$/, ''));
+                    }
+
+                    apiResult = {
+                        code: 200,
+                        episodes: episodes,
+                        detailUrl: detailUrl,
+                        videoInfo: {
+                            title: videoDetail.vod_name,
+                            cover: videoDetail.vod_pic,
+                            desc: videoDetail.vod_content,
+                            type: videoDetail.type_name,
+                            year: videoDetail.vod_year,
+                            area: videoDetail.vod_area,
+                            director: videoDetail.vod_director,
+                            actor: videoDetail.vod_actor,
+                            remarks: videoDetail.vod_remarks,
+                            source_name: API_SITES[source].name,
+                            source_code: source
+                        }
+                    };
+
+                    // 标准 API 拿到集数，直接返回
+                    if (episodes.length > 0) return apiResult;
+                }
+            }
+        } catch (e) {
+            console.warn(`标准API详情获取失败(${source}):`, e.message);
         }
 
-        const data = await response.json();
-        if (!data || !data.list || !Array.isArray(data.list) || data.list.length === 0) {
-            throw new Error('获取到的详情内容无效');
-        }
-
-        // 获取第一个匹配的视频详情
-        const videoDetail = data.list[0];
-
-        // 提取播放地址（第一组播放源）
-        let episodes = [];
-        if (videoDetail.vod_play_url) {
-            const playSources = videoDetail.vod_play_url.split('$$$');
-            if (playSources.length > 0) {
-                episodes = playSources[0].split('#').map(ep => {
-                    const parts = ep.split('$');
-                    return parts.length > 1 ? parts[1] : '';
-                }).filter(url => url && (url.startsWith('http://') || url.startsWith('https://')));
+        // 2) 回退：HTML 详情页正则解析（仅源配置了 detail 字段时；受反爬验证页/5xx 影响成功率有限）
+        if (API_SITES[source].detail) {
+            try {
+                const htmlResult = JSON.parse(await handleSpecialSourceDetail(id, source));
+                if (htmlResult && Array.isArray(htmlResult.episodes) && htmlResult.episodes.length > 0) {
+                    return htmlResult;
+                }
+            } catch (e) {
+                console.warn(`HTML详情页解析失败(${source}):`, e.message);
             }
         }
 
-        // 如果没有找到播放地址，尝试从简介中提取 m3u8 链接
-        if (episodes.length === 0 && videoDetail.vod_content) {
-            const matches = videoDetail.vod_content.match(M3U8_PATTERN) || [];
-            episodes = matches.map(link => link.replace(/^\$/, ''));
-        }
-
-        return {
-            code: 200,
-            episodes: episodes,
-            detailUrl: detailUrl,
-            videoInfo: {
-                title: videoDetail.vod_name,
-                cover: videoDetail.vod_pic,
-                desc: videoDetail.vod_content,
-                type: videoDetail.type_name,
-                year: videoDetail.vod_year,
-                area: videoDetail.vod_area,
-                director: videoDetail.vod_director,
-                actor: videoDetail.vod_actor,
-                remarks: videoDetail.vod_remarks,
-                source_name: API_SITES[source].name,
-                source_code: source
-            }
-        };
+        // 3) 标准 API 有视频信息但无集数：仍返回（弹窗展示信息）；两条路径都拿不到数据则报错
+        if (apiResult) return apiResult;
+        throw new Error('详情获取失败：API 与详情页均无可用集数');
     } catch (error) {
         console.error('获取视频详情失败:', error);
         return { code: 400, msg: error.message || '请求处理失败', episodes: [] };
