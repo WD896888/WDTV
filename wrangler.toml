@@ -29,4 +29,4 @@ id = "2c83fb3ae9214837b21f9d84d4cdd821"
 [[d1_databases]]
 binding = "WDTV_DB"
 database_name = "wdtv-users"
-database_id = "TODO_REPLACE_WITH_D1_DATABASE_ID"
+database_id = "83bf889c-410e-482f-bdca-1b5890334d64"
