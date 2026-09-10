@@ -1,0 +1,32 @@
+# Cloudflare Pages 项目配置（Git 集成部署与 `npx wrangler pages deploy` 均读取本文件）
+# 注意：存在本文件后，非敏感环境变量以 [vars] 为准，Dashboard 中的同名变量将被忽略；
+# 敏感变量（AUTH_SECRET）请用 secret：npx wrangler pages secret put AUTH_SECRET --project-name=wdtv
+
+name = "wdtv"
+compatibility_date = "2025-09-01"
+pages_build_output_dir = "."
+
+# 代理函数使用的环境变量（与 Vercel 版语义一致）
+[vars]
+DEBUG = "false"
+# 二进制内容（ts 分片、图片等）缓存时长（秒）
+CACHE_TTL = "86400"
+# M3U8 播放列表缓存时长（秒）——短缓存，避免换源/动态列表拿到陈旧数据
+M3U8_CACHE_TTL = "120"
+# 是否开放注册（设为 "false" 关闭；缺省或其它值均视为开放）
+ALLOW_REGISTER = "true"
+
+# M3U8 代理缓存（已创建并绑定）
+# 命名空间: npx wrangler kv namespace create LIBRETV_PROXY_KV
+[[kv_namespaces]]
+binding = "LIBRETV_PROXY_KV"
+id = "2c83fb3ae9214837b21f9d84d4cdd821"
+
+# 账号系统数据库（D1）。首次部署：
+#   npx wrangler d1 create wdtv-users
+#   npx wrangler d1 execute wdtv-users --file=./schema.sql --remote
+# 将返回的 database_id 填到下面
+[[d1_databases]]
+binding = "WDTV_DB"
+database_name = "wdtv-users"
+database_id = "TODO_REPLACE_WITH_D1_DATABASE_ID"

@@ -1,0 +1,34 @@
+# Cloudflare Pages 静态资产排除清单（语法同 .gitignore）
+# 这些文件不上传为静态资源：开发/测试文件、其他平台的部署配置
+
+# 依赖与本地数据
+node_modules
+.trae
+.git
+.wrangler
+
+# 其他平台的函数与配置（避免源码公开 + 减小上传体积）
+api
+netlify
+netlify.toml
+vercel.json
+render.yaml
+
+# Node/Docker 开发文件
+*.mjs
+Dockerfile
+.dockerignore
+docker-compose.yml
+nodemon.json
+package.json
+package-lock.json
+.env.example
+.gitignore
+
+# 本地测试产物
+tmp-test-stream
+tmp-*
+test-*.png
+
+# 本文件自身
+.assetsignore

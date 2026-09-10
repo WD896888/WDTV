@@ -1,0 +1,21 @@
+# Cloudflare Pages 静态资源缓存策略（与 vercel.json 的 headers 配置对齐）
+# 注意：_headers 仅对静态资源生效，/proxy/* 由 Functions 返回自己的缓存头
+
+/js/*
+  Cache-Control: public, max-age=86400
+
+/css/*
+  Cache-Control: public, max-age=86400
+
+/image/*
+  Cache-Control: public, max-age=86400
+
+/libs/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 根目录背景图（index.html / player.html 引用的 bg-canvas.jpg/png，506KB 大图）
+/bg-canvas.jpg
+  Cache-Control: public, max-age=86400
+
+/bg-canvas.png
+  Cache-Control: public, max-age=86400

@@ -1,0 +1,112 @@
+// 页面加载后显示弹窗脚本
+document.addEventListener('DOMContentLoaded', function() {
+    // 弹窗显示脚本
+    // 检查用户是否已经看过声明
+    const hasSeenDisclaimer = localStorage.getItem('hasSeenDisclaimer');
+
+    if (!hasSeenDisclaimer) {
+        // 显示弹窗
+        const disclaimerModal = document.getElementById('disclaimerModal');
+        disclaimerModal.style.display = 'flex';
+
+        // 添加接受按钮事件
+        document.getElementById('acceptDisclaimerBtn').addEventListener('click', function() {
+            // 保存用户已看过声明的状态
+            localStorage.setItem('hasSeenDisclaimer', 'true');
+            // 隐藏弹窗
+            disclaimerModal.style.display = 'none';
+        });
+    }
+
+    // 搜索源 DNS 预解析：读取 API_SITES 批量预热各源域名，直连首包时间直接缩短
+    try {
+        const prefetched = new Set();
+        Object.values(API_SITES).forEach(site => {
+            if (!site || !site.api) return;
+            try {
+                const origin = new URL(site.api).origin;
+                if (prefetched.has(origin)) return;
+                prefetched.add(origin);
+                const link = document.createElement('link');
+                link.rel = 'dns-prefetch';
+                link.href = origin;
+                document.head.appendChild(link);
+            } catch (e) { /* 无效地址跳过 */ }
+        });
+    } catch (e) { /* API_SITES 不可用时跳过 */ }
+
+    // URL搜索参数处理脚本
+    // 首先检查是否是播放URL格式 (/player.html 开头的路径)
+    if (window.location.pathname.startsWith('/player.html')) {
+        // 播放URL，不做额外处理（播放页的缓存巡检由 player.js 负责）
+        return;
+    }
+
+    // 下载管理菜单项（位于右上角账号菜单内）：JS 绑定（不用 inline onclick——splash 水波层环境下 inline 求值时序不稳）
+    // 关闭账号菜单的逻辑由 cloud-sync-ui.js 的元素级监听处理，与本绑定互不影响
+    const downloadsBtn = document.getElementById('downloads-btn');
+    if (downloadsBtn && !downloadsBtn.dataset.dlBound) {
+        downloadsBtn.dataset.dlBound = '1';
+        downloadsBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof WDTDownloader === 'undefined') {
+                if (typeof showToast === 'function') showToast('下载功能加载失败，请刷新页面重试', 'error');
+                return;
+            }
+            WDTDownloader.openManager();
+        });
+    }
+
+    // 惰性缓存巡检：页面加载即对账 + 淘汰 + 重试失败删除（不依赖播放行为），
+    // 保证用户开启"缓存自动清理"后即使从不播放视频，超标缓存也会在打开首页时被清理
+    try { if (window.VideoCache) VideoCache.housekeep(); } catch (e) { }
+
+    // 检查页面路径中的搜索参数 (格式: /s=keyword)
+    const path = window.location.pathname;
+    const searchPrefix = '/s=';
+
+    if (path.startsWith(searchPrefix)) {
+        // 提取搜索关键词
+        const keyword = decodeURIComponent(path.substring(searchPrefix.length));
+        if (keyword) {
+            // 设置搜索框的值
+            document.getElementById('searchInput').value = keyword;
+            // 显示清空按钮
+            toggleClearButton();
+            // 执行搜索（本逻辑运行于 DOMContentLoaded 之后，无需额外延迟等待）
+            search();
+            // 更新浏览器历史，不改变URL (保持搜索参数在地址栏)
+            try {
+                window.history.replaceState(
+                    { search: keyword },
+                    `搜索: ${keyword} - WDTV`,
+                    window.location.href
+                );
+            } catch (e) {
+                console.error('更新浏览器历史失败:', e);
+            }
+        }
+    }
+
+    // 也检查查询字符串中的搜索参数 (格式: ?s=keyword)
+    const urlParams = new URLSearchParams(window.location.search);
+    const searchQuery = urlParams.get('s');
+
+    if (searchQuery) {
+        // 设置搜索框的值
+        document.getElementById('searchInput').value = searchQuery;
+        // 执行搜索（同上，无需延迟）
+        search();
+        // 更新URL为规范格式
+        try {
+            window.history.replaceState(
+                { search: searchQuery },
+                `搜索: ${searchQuery} - WDTV`,
+                `/s=${encodeURIComponent(searchQuery)}`
+            );
+        } catch (e) {
+            console.error('更新浏览器历史失败:', e);
+        }
+    }
+});

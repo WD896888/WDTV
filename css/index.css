@@ -1,0 +1,1488 @@
+/* 主页特定样式 - Apple iOS 26 液态玻璃风格 */
+
+/* 顶部角落按钮 - 浅色玻璃圆形按钮 */
+.top-corner-button {
+    position: fixed;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 9999px;
+    padding: 0.5rem 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    color: #1d1d1f;
+}
+
+.top-corner-button:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(0, 122, 255, 0.4);
+    transform: scale(1.05);
+    box-shadow:
+        0 12px 32px rgba(0, 0, 0, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    color: #007aff;
+}
+
+.top-corner-button:active {
+    transform: scale(0.95);
+}
+
+/* 搜索区域 - 浅色液态玻璃容器 */
+.search-box {
+    height: 4rem;
+    box-shadow:
+        0 16px 48px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.03);
+    border-radius: 9999px;
+    overflow: hidden;
+    display: flex;
+    align-items: stretch;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(40px) saturate(200%);
+    -webkit-backdrop-filter: blur(40px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+/* 搜索按钮 - iOS 风格蓝色按钮 */
+.search-button {
+    width: 5.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0a84ff, #007aff);
+    color: #ffffff;
+    font-weight: 600;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 9999px;
+    margin: 4px;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 4px 12px rgba(0, 122, 255, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.search-button:hover {
+    background: linear-gradient(135deg, #007aff, #0066d6);
+    transform: scale(1.02);
+    box-shadow:
+        0 8px 20px rgba(0, 122, 255, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.search-button:active {
+    transform: scale(0.98);
+}
+
+/* 搜索输入框 */
+.search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #1d1d1f;
+    padding: 0 1.5rem;
+    font-size: 1rem;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.search-input::placeholder {
+    color: rgba(0, 0, 0, 0.4);
+}
+
+.search-input:focus {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* 最近搜索记录 - 浅色玻璃药丸 */
+.recent-search-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.4rem 0.9rem;
+    margin: 0.25rem;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 9999px;
+    color: #1d1d1f;
+    font-size: 0.875rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.recent-search-tag:hover {
+    background: rgba(0, 122, 255, 0.15);
+    border-color: rgba(0, 122, 255, 0.4);
+    transform: translateY(-1px);
+    box-shadow:
+        0 6px 16px rgba(0, 122, 255, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    color: #007aff;
+}
+
+/* 豆瓣区域 */
+.douban-container {
+    margin: 2rem auto;
+    max-width: 1280px;
+    padding: 0 0.5rem;
+}
+
+.douban-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+/* 电影/电视剧切换 - iOS 分段控制 */
+.douban-toggle {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 9999px;
+    padding: 0.25rem;
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.douban-toggle-button {
+    padding: 0.4rem 1rem;
+    font-size: 0.875rem;
+    border-radius: 9999px;
+    font-weight: 500;
+    color: #6e6e73;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.douban-toggle-button.active {
+    background: linear-gradient(135deg, #FFD60A, #FFCC02);
+    color: #1d1d1f;
+    box-shadow:
+        0 4px 12px rgba(255, 214, 10, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.douban-toggle-button:not(.active):hover {
+    color: #FFB800;
+    background: rgba(255, 214, 10, 0.1);
+}
+
+/* 换一批按钮 */
+.douban-refresh-button {
+    font-size: 0.875rem;
+    padding: 0.4rem 1rem;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    color: #1d1d1f;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 500;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.douban-refresh-button:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(0, 122, 255, 0.4);
+    color: #007aff;
+    transform: translateY(-1px);
+    box-shadow:
+        0 6px 16px rgba(0, 122, 255, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.douban-tags-container {
+    overflow-x: auto;
+    padding: 0.75rem 0.5rem;
+    scrollbar-width: none;
+}
+
+.douban-tags-container::-webkit-scrollbar {
+    display: none;
+}
+
+.douban-tags {
+    display: flex;
+    gap: 0.5rem;
+    min-width: max-content;
+    padding: 0.5rem 0;
+}
+
+/* 豆瓣标签 - 与电影/电视剧切换按钮统一风格 */
+.douban-tag {
+    padding: 6px 16px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    border: 1px solid var(--glass-border);
+    background: rgba(155, 180, 218, 0.06);
+    color: var(--text-secondary);
+    font-family: 'Noto Sans SC', sans-serif;
+    transition: all 0.2s;
+    font-weight: 500;
+    position: relative;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+}
+
+.douban-tag:hover,
+.douban-tag.active {
+    background: rgba(80, 128, 176, 0.2);
+    color: var(--white);
+    border-color: var(--accent);
+}
+
+/* 搜索结果容器 */
+.search-results-container {
+    width: 100%;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 0.5rem;
+}
+
+.search-result-stats {
+    text-align: right;
+    font-size: 0.875rem;
+    color: #6e6e73;
+    margin-bottom: 1rem;
+}
+
+/* 响应式网格布局 */
+.search-results-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+@media (max-width: 640px) {
+    .search-results-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (min-width: 641px) and (max-width: 768px) {
+    .search-results-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+    .search-results-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (min-width: 1025px) {
+    .search-results-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* 豆瓣卡片 - 与豆瓣标签分类组件统一风格 */
+.douban-card {
+    background: rgba(155, 180, 218, 0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: all 0.3s var(--transition);
+    position: relative;
+}
+
+.douban-card:hover {
+    transform: translateY(-2px);
+    background: rgba(80, 128, 176, 0.2);
+    border-color: var(--accent);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+/* 顶部按钮 - 玻璃圆形 */
+.glass-icon-button {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 9999px;
+    padding: 0.5rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    color: #1d1d1f;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.glass-icon-button:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(0, 122, 255, 0.4);
+    transform: scale(1.05);
+    color: #007aff;
+    box-shadow:
+        0 12px 32px rgba(0, 122, 255, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.glass-icon-button:active {
+    transform: scale(0.95);
+}
+
+/* 标题区域 - 玻璃质感 */
+.hero-title {
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+/* 搜索框容器 - 增强玻璃效果 */
+.search-container-glass {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(40px) saturate(200%);
+    -webkit-backdrop-filter: blur(40px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 9999px;
+    box-shadow:
+        0 24px 64px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.03);
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.search-container-glass:focus-within {
+    background: rgba(255, 255, 255, 0.7);
+    border-color: rgba(0, 122, 255, 0.4);
+    box-shadow:
+        0 32px 80px rgba(0, 122, 255, 0.12),
+        0 0 0 4px rgba(0, 122, 255, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* 首页按钮（搜索框内） */
+.home-button-in-search {
+    background: rgba(255, 255, 255, 0.6);
+    color: #1d1d1f;
+    font-weight: 500;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 9999px;
+    margin: 4px;
+    position: relative;
+    overflow: hidden;
+}
+
+.home-button-in-search:hover {
+    background: rgba(0, 122, 255, 0.12);
+    color: #007aff;
+}
+
+/* 搜索放大镜按钮 */
+.search-icon-button {
+    background: transparent;
+    color: #6e6e73;
+    transition: all 0.3s ease;
+    padding: 0 1.25rem;
+    position: relative;
+    overflow: hidden;
+    border-radius: 9999px;
+}
+
+.search-icon-button:hover {
+    color: #007aff;
+    background: rgba(0, 122, 255, 0.08);
+}
+
+.search-icon-button:active {
+    transform: scale(0.95);
+}
+
+/* 清空按钮 */
+.clear-button-in-search {
+    background: transparent;
+    color: #6e6e73;
+    transition: all 0.3s ease;
+    padding: 0 1rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.clear-button-in-search:hover {
+    color: #ff453a;
+    background: rgba(255, 69, 58, 0.1);
+    border-radius: 9999px;
+}
+
+/* 豆瓣卡片图片容器 */
+.douban-card-image {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 2/3;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.douban-card-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.douban-card:hover .douban-card-image img {
+    transform: scale(1.08);
+}
+
+/* 豆瓣卡片评分徽章 */
+.douban-rate-badge {
+    background: rgba(155, 180, 218, 0.12);
+    border: 1px solid var(--glass-border);
+    color: #ff9f0a;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 9999px;
+    font-weight: 600;
+}
+
+/* 豆瓣卡片标题区 */
+.douban-card-title-area {
+    padding: 0.6rem;
+    text-align: center;
+    background: rgba(155, 180, 218, 0.06);
+    border-top: 1px solid var(--glass-border);
+}
+
+.douban-card-title-area button {
+    color: var(--pale) !important;
+}
+
+/* 搜索结果卡片备注/清晰度徽章（来自源方 vod_remarks） */
+.wdtv-remarks-badge {
+    display: inline-block;
+    margin-top: 0.3rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    color: #6a9ae0;
+    background: rgba(155, 180, 218, 0.12);
+    border: 1px solid var(--glass-border);
+}
+
+/* 搜索结果卡片画质标签（从备注/标题提取，如 4K、1080P、蓝光、HD） */
+.wdtv-quality-badge {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 2;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1.2;
+    padding: 0.15rem 0.5rem;
+    border-radius: 0.375rem;
+    color: #ffd60a;
+    background: rgba(0, 0, 0, 0.65);
+    border: 1px solid rgba(255, 214, 10, 0.35);
+    pointer-events: none;
+}
+
+/* 设置面板内的玻璃区块 */
+.settings-glass-block {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    border-radius: 16px;
+    padding: 1rem;
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* 设置面板内的小按钮 */
+.settings-mini-button {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    color: #1d1d1f;
+    padding: 0.3rem 0.7rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.settings-mini-button:hover {
+    background: rgba(0, 122, 255, 0.1);
+    border-color: rgba(0, 122, 255, 0.4);
+    color: #007aff;
+}
+
+/* iOS 风格主操作按钮 */
+.ios-primary-button {
+    background: linear-gradient(135deg, #0a84ff, #007aff);
+    color: #ffffff;
+    font-weight: 600;
+    padding: 0.6rem 1.2rem;
+    border-radius: 9999px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 8px 20px rgba(10, 132, 255, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    border: none;
+}
+
+.ios-primary-button:hover {
+    transform: translateY(-1px);
+    box-shadow:
+        0 12px 28px rgba(10, 132, 255, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.ios-primary-button:active {
+    transform: translateY(0) scale(0.98);
+}
+
+/* iOS 风格次要按钮 */
+.ios-secondary-button {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    color: #1d1d1f;
+    font-weight: 500;
+    padding: 0.6rem 1.2rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.ios-secondary-button:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(0, 122, 255, 0.4);
+    color: #007aff;
+    transform: translateY(-1px);
+    box-shadow:
+        0 6px 16px rgba(0, 122, 255, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* 搜索结果来源标签 - 玻璃风格 */
+.source-tag-glass {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    color: #1d1d1f;
+    font-size: 0.7rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    box-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* 类型标签 - 玻璃风格 */
+.type-tag-glass {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    font-size: 0.7rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-weight: 600;
+    box-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.type-tag-blue {
+    background: rgba(0, 122, 255, 0.15);
+    color: #007aff;
+}
+
+.type-tag-purple {
+    background: rgba(191, 90, 242, 0.15);
+    color: #af52de;
+}
+
+/* 空状态 - 玻璃风格 */
+.empty-state-glass {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    border-radius: 24px;
+    padding: 3rem;
+    text-align: center;
+    box-shadow:
+        0 12px 40px rgba(0, 0, 0, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* 加载动画 - 玻璃风格 */
+.loading-glass {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 24px;
+    padding: 2rem 3rem;
+    color: #1d1d1f;
+    box-shadow:
+        0 24px 64px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* 响应式调整 - 小屏幕优化 */
+@media (max-width: 640px) {
+    .search-box {
+        height: 3.5rem;
+    }
+
+    .search-button {
+        width: 4rem;
+        font-size: 0.875rem;
+    }
+
+    .douban-toggle-button {
+        padding: 0.3rem 0.75rem;
+        font-size: 0.8rem;
+    }
+
+    .douban-refresh-button {
+        padding: 0.3rem 0.75rem;
+        font-size: 0.8rem;
+    }
+}
+
+/* ===== 豆瓣推荐骨架屏（请求期间灰底占位，脉动动画） ===== */
+.wdtv-skeleton{background:rgba(155,180,218,0.08);border-radius:12px;animation:wdtvSkeletonPulse 1.4s ease-in-out infinite}
+.wdtv-skeleton-text{height:14px;margin:8px 6px;border-radius:7px;width:70%}
+@keyframes wdtvSkeletonPulse{0%,100%{opacity:.55}50%{opacity:1}}
+
+/* ============================================================
+   底部导航栏（圆角矩形 Dock）+ 三页面切换（我的影院/影视搜索/观影空间）
+   页面切换动画：方向感知滑动 + 淡入淡出 + 轻微缩放（仅 transform/opacity，走合成器）
+   ============================================================ */
+
+/* 页面容器：非活动页绝对定位叠放，活动页撑起文档流高度 */
+.wdtv-pages{position:relative}
+.wdtv-page{
+    position:relative;
+    z-index:2;
+    opacity:1;
+    transform:none;
+    will-change:transform,opacity;
+    transition:
+        opacity .38s ease,
+        transform .55s cubic-bezier(0.32, 0.72, 0.24, 1),
+        visibility 0s linear 0s;
+}
+/* 非活动页：绝对定位 + 隐藏；visibility 延迟到动画结束后再切，保证离场动画可见 */
+.wdtv-page:not(.is-active){
+    position:absolute;
+    top:0;left:0;
+    width:100%;
+    z-index:1;
+    opacity:0;
+    visibility:hidden;
+    pointer-events:none;
+    transition:
+        opacity .34s ease,
+        transform .55s cubic-bezier(0.32, 0.72, 0.24, 1),
+        visibility 0s linear .55s;
+}
+/* 方向感知位置：目标页左侧的页面停在其左边、右侧的停在其右边（切换时自动滑入/滑出） */
+.wdtv-page.pos-left{transform:translateX(-7%) scale(.985)}
+.wdtv-page.pos-right{transform:translateX(7%) scale(.985)}
+/* 初始化/恢复标签时禁用动画，避免加载闪跳 */
+.wdtv-pages.no-anim .wdtv-page,
+.wdtv-pages.no-anim .wdtv-dock-indicator{transition:none!important}
+
+/* ---- Dock 主体：亮白磨砂玻璃条（视觉上呈现"原选中态的白色感"） ---- */
+.wdtv-dock{
+    position:fixed;
+    left:50%;
+    bottom:24px;
+    transform:translateX(-50%);
+    z-index:50;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:8px;
+    border-radius:28px;
+    background:rgba(224,235,249,0.42);
+    backdrop-filter:blur(24px) saturate(1.3);
+    -webkit-backdrop-filter:blur(24px) saturate(1.3);
+    border:none;
+    box-shadow:0 8px 28px rgba(0,0,0,0.14);
+    animation:dockIn .9s cubic-bezier(0.32, 0.72, 0.24, 1) .25s both;
+    -webkit-tap-highlight-color:transparent;
+}
+@keyframes dockIn{
+    from{opacity:0;transform:translateX(-50%) translateY(26px) scale(.95)}
+    to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+}
+
+/* 滑动指示器：加深蓝灰玻璃药丸（视觉上呈现"原底栏的蓝色感"，与亮白底栏形成互换对比） */
+.wdtv-dock-indicator{
+    position:absolute;
+    top:8px;bottom:8px;left:0;
+    width:0;
+    z-index:1;
+    border-radius:20px;
+    background:rgba(150,178,215,0.45);
+    border:1px solid rgba(140,170,210,0.42);
+    transition:
+        transform .5s cubic-bezier(0.3, 1.25, 0.35, 1),
+        width .5s cubic-bezier(0.3, 1.25, 0.35, 1);
+    will-change:transform,width;
+    pointer-events:none;
+}
+
+/* Dock 按钮：纯图标，深色图标配通透玻璃（与搜索框文字/图标同色系） */
+.wdtv-dock-btn{
+    position:relative;
+    z-index:2;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:120px;
+    height:46px;
+    border:none;
+    background:transparent;
+    border-radius:20px;
+    color:rgba(42,58,92,0.45);
+    cursor:pointer;
+    transition:color .25s ease,transform .18s ease,background-color .25s ease;
+    touch-action:manipulation;
+    -webkit-tap-highlight-color:transparent;
+    outline:none;
+}
+.wdtv-dock-btn svg{
+    width:21px;height:21px;
+    stroke:currentColor;
+    fill:none;
+    stroke-width:1.7;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+    transition:transform .35s cubic-bezier(0.3, 1.4, 0.4, 1);
+}
+/* 悬浮（未点击）：极淡提示色，无描边——与选中态（0.45 蓝灰药丸+描边）观感明显区分；
+   活动项自身已有指示药丸，排除避免同色叠加加深 */
+.wdtv-dock-btn:not(.is-active):hover{
+    color:rgba(42,58,92,0.62);
+    background:rgba(150,178,215,0.16);
+}
+.wdtv-dock-btn:active{transform:scale(.9)}
+.wdtv-dock-btn.is-active{color:rgba(42,58,92,0.92)}
+.wdtv-dock-btn.is-active svg{transform:translateY(-0.5px) scale(1.06)}
+/* 影院页激活时心形随按钮同色填充 */
+.wdtv-dock-btn[data-page="cinema"].is-active svg{fill:currentColor}
+
+/* ---- 页面：我的影院 空态 ---- */
+.wdtv-cinema-empty{margin-top:8px}
+.wdtv-cinema-empty-card{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:10px;
+    padding:56px 24px;
+    border-radius:20px;
+    border:1px dashed rgba(255,255,255,0.2);
+    background:rgba(255,255,255,0.035);
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+}
+.wdtv-cinema-empty-card svg{
+    width:40px;height:40px;
+    color:rgba(236,244,255,0.4);
+}
+.wdtv-cinema-empty-card h3{
+    font-family:'Cormorant Garamond',serif;
+    font-size:1.25rem;
+    font-weight:400;
+    letter-spacing:.12em;
+    color:var(--pale);
+}
+.wdtv-cinema-empty-card p{
+    font-size:.8rem;
+    line-height:1.8;
+    color:var(--text-muted);
+    max-width:320px;
+}
+.wdtv-cinema-empty-btn{
+    margin-top:6px;
+    padding:9px 26px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,0.2);
+    background:rgba(255,255,255,0.07);
+    color:rgba(238,244,252,0.88);
+    font-size:.85rem;
+    letter-spacing:.08em;
+    cursor:pointer;
+    font-family:'Noto Sans SC',sans-serif;
+    transition:all .25s;
+    -webkit-tap-highlight-color:transparent;
+}
+.wdtv-cinema-empty-btn:hover{background:rgba(255,255,255,0.14);border-color:rgba(255,255,255,0.32);transform:translateY(-1px)}
+.wdtv-cinema-empty-btn:active{transform:translateY(0) scale(.97)}
+
+/* ---- 页面：观影空间（预留占位，极简玻璃） ---- */
+.wdtv-space{
+    min-height:52vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px 0 8px;
+}
+.wdtv-space-card{
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:14px;
+    padding:56px 64px;
+    border-radius:24px;
+    border:1px solid rgba(255,255,255,0.12);
+    background:rgba(255,255,255,0.04);
+    backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);
+    overflow:hidden;
+}
+.wdtv-space-icon{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:68px;height:68px;
+    border-radius:22px;
+    border:1px solid rgba(255,255,255,0.16);
+    background:rgba(255,255,255,0.06);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.wdtv-space-icon svg{
+    width:32px;height:32px;
+    stroke:rgba(236,244,255,0.72);
+    fill:none;
+    stroke-width:1.5;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+}
+.wdtv-space-title{
+    font-family:'Cormorant Garamond',serif;
+    font-size:1.5rem;
+    font-weight:400;
+    letter-spacing:.2em;
+    color:var(--pale);
+}
+.wdtv-space-badge{
+    padding:5px 18px;
+    border-radius:9999px;
+    border:1px solid rgba(255,255,255,0.18);
+    background:rgba(255,255,255,0.06);
+    color:rgba(222,234,250,0.66);
+    font-size:.72rem;
+    letter-spacing:.16em;
+}
+
+/* ---- 三端响应式：平板 / 手机缩小 Dock 尺寸 ---- */
+/* 平板（≤1024px）：中等尺寸 */
+@media (max-width:1024px){
+    .wdtv-dock{bottom:20px;padding:7px;gap:10px;border-radius:25px}
+    .wdtv-dock-indicator{top:7px;bottom:7px;border-radius:18px}
+    .wdtv-dock-btn{width:100px;height:42px;border-radius:18px}
+    .wdtv-dock-btn svg{width:20px;height:20px}
+}
+/* 手机（≤640px）：紧凑尺寸 */
+@media (max-width:640px){
+    .wdtv-dock{
+        bottom:14px;
+        padding:6px;
+        gap:7px;
+        border-radius:22px;
+        box-shadow:0 8px 24px rgba(0,0,0,0.16);
+    }
+    .wdtv-dock-indicator{top:6px;bottom:6px;border-radius:16px}
+    .wdtv-dock-btn{width:78px;height:39px;border-radius:16px}
+    .wdtv-dock-btn svg{width:19px;height:19px}
+    .wdtv-space-card{padding:44px 40px}
+    .wdtv-space{min-height:46vh}
+}
+
+/* 减弱动态效果偏好：关闭页面与指示器过渡 */
+@media (prefers-reduced-motion:reduce){
+    .wdtv-page,.wdtv-page:not(.is-active),.wdtv-dock,.wdtv-dock-indicator{transition:none;animation:none}
+}
+
+/* ================================================================
+   右上角账号区：账号药丸 + 下拉菜单（与底栏 Dock 同一套亮白磨砂玻璃语言）
+   结构：#account-btn（常驻药丸）→ #accountMenu（下拉菜单：
+         账号卡片 #accountCardBody + 下载管理/设置/退出登录 菜单项）
+   ================================================================= */
+
+/* ---- 账号入口：与左上角观看历史按钮（.wdtv-nav-btn）同款"无感融入"样式 ----
+   透明底、无玻璃无阴影，浅色内容平铺在背景上，悬浮/展开时才浮现极淡蓝灰提示 */
+#account-btn{
+    position:fixed;
+    top:24px;
+    right:24px;
+    z-index:10;
+    display:flex;
+    align-items:center;
+    gap:9px;
+    height:44px;
+    padding:0 10px 0 12px;
+    border:none;
+    border-radius:12px;
+    background:transparent;
+    color:rgba(236,244,255,0.72);
+    cursor:pointer;
+    font-family:'Noto Serif SC','Source Han Serif SC',serif;
+    -webkit-tap-highlight-color:transparent;
+    transition:background-color .3s ease,color .3s ease,transform .18s ease;
+}
+/* 悬浮 / 菜单展开：极淡蓝灰玻璃提示（与 .wdtv-nav-btn:hover 同语言） */
+#account-btn:hover,
+#account-btn[aria-expanded="true"]{
+    background:rgba(200,220,245,0.12);
+    color:rgba(236,244,255,0.96);
+}
+#account-btn:active{transform:scale(.96)}
+
+/* 按钮内头像：圆形，占位为首字/人形图标（内容由 cloud-sync-ui.js 渲染）；
+   无底色无边框——占位图标直接平铺在背景上，保持"无感融入" */
+.wdtv-ab-avatar{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:32px;height:32px;
+    flex-shrink:0;
+    border-radius:50%;
+    overflow:hidden;
+    border:none;
+    background:transparent;
+}
+.wdtv-ab-avatar img{
+    width:100%;height:100%;
+    object-fit:cover;
+    display:block;
+}
+.wdtv-ab-avatar .wdtv-ab-ph{
+    font-family:'Noto Serif SC',serif;
+    font-size:.92rem;
+    font-weight:500;
+    color:rgba(200,220,245,0.85);
+    line-height:1;
+}
+.wdtv-ab-avatar svg{
+    width:16px;height:16px;
+    stroke:rgba(200,220,245,0.8);
+    fill:none;
+    stroke-width:1.8;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+}
+
+/* 按钮内昵称文字：超长省略，颜色跟随按钮状态（默认浅色、悬浮/展开提亮） */
+.wdtv-ab-name{
+    max-width:110px;
+    font-size:.85rem;
+    font-weight:400;
+    letter-spacing:.04em;
+    color:inherit;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    line-height:1;
+}
+
+/* ---- 账号下拉菜单：玻璃卡片，右上角锚定展开 ---- */
+#accountMenu{
+    position:fixed;
+    top:78px;
+    right:24px;
+    z-index:10000;
+    width:300px;
+    max-width:calc(100vw - 24px);
+    padding:8px;
+    border-radius:20px;
+    background:rgba(222,234,248,0.6);
+    backdrop-filter:blur(32px) saturate(1.4);
+    -webkit-backdrop-filter:blur(32px) saturate(1.4);
+    border:1px solid rgba(255,255,255,0.55);
+    box-shadow:0 24px 60px rgba(0,0,0,0.18);
+    transform-origin:top right;
+    opacity:0;
+    visibility:hidden;
+    transform:translateY(-10px) scale(.96);
+    pointer-events:none;
+    transition:opacity .28s ease,transform .28s cubic-bezier(0.3, 1.2, 0.35, 1),visibility .28s;
+}
+#accountMenu.open{
+    opacity:1;
+    visibility:visible;
+    transform:translateY(0) scale(1);
+    pointer-events:auto;
+}
+/* splash 水波层 pointer-events 白名单保险：药丸与展开后的菜单必须可命中（隐藏菜单保持不可命中） */
+#account-btn,#account-btn *{pointer-events:auto}
+#accountMenu.open,#accountMenu.open *{pointer-events:auto}
+
+/* 菜单分隔线 */
+.wdtv-am-divider{
+    height:1px;
+    margin:6px 10px;
+    background:rgba(140,170,210,0.28);
+}
+
+/* 菜单项：图标 + 文字，悬浮淡蓝灰玻璃药丸（与 Dock 悬浮态一致） */
+.wdtv-am-item{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    width:100%;
+    height:42px;
+    padding:0 12px;
+    border:none;
+    border-radius:12px;
+    background:transparent;
+    cursor:pointer;
+    font-family:'Noto Serif SC','Source Han Serif SC',serif;
+    color:rgba(42,58,92,0.82);
+    text-align:left;
+    -webkit-tap-highlight-color:transparent;
+    transition:background-color .2s ease,color .2s ease,transform .15s ease;
+}
+.wdtv-am-item:hover{
+    background:rgba(150,178,215,0.38);
+    color:rgba(30,45,75,0.95);
+}
+.wdtv-am-item:active{transform:scale(.98)}
+.wdtv-am-item svg{
+    width:17px;height:17px;
+    flex-shrink:0;
+    stroke:currentColor;
+    fill:none;
+    stroke-width:1.8;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+}
+.wdtv-am-item-text{
+    flex:1;
+    font-size:.85rem;
+    font-weight:500;
+    letter-spacing:.05em;
+    line-height:1;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+/* 危险项（退出登录） */
+.wdtv-am-item.wdtv-am-danger{color:rgba(178,59,59,0.85)}
+.wdtv-am-item.wdtv-am-danger:hover{
+    background:rgba(178,59,59,0.18);
+    color:#b23b3b;
+}
+/* 下载管理角标（活跃任务数） */
+.wdtv-am-badge{
+    min-width:17px;
+    height:17px;
+    padding:0 5px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-shrink:0;
+    border-radius:9px;
+    background:linear-gradient(135deg, #4a78bd, #6a9ae0);
+    color:#fff;
+    font-family:'Noto Sans SC',sans-serif;
+    font-size:10px;
+    font-weight:700;
+    box-shadow:0 2px 8px rgba(10, 18, 32, 0.3);
+}
+.wdtv-am-badge.hidden{display:none!important}
+/* 工具类：动态渲染区块的显隐 */
+.wdtv-acct-hidden{display:none!important}
+
+/* ================================================================
+   账号卡片与登录表单（#accountCardBody 内动态渲染，类名前缀 wdtv-am-）
+   ================================================================= */
+
+/* ---- 卡片主体 ---- */
+.wdtv-am-card{
+    padding:12px 12px 10px;
+    border-radius:14px;
+    background:rgba(255,255,255,0.32);
+}
+.wdtv-am-card-top{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    min-width:0;
+}
+
+/* 卡片头像：可点击换头像（登录态），悬浮出现相机提示角标；
+   白色圆底 + 白描边（菜单玻璃本身很浅，白圈需足够不透明度才可见） */
+.wdtv-am-avatar-btn{
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:54px;height:54px;
+    flex-shrink:0;
+    padding:0;
+    border-radius:50%;
+    border:1px solid rgba(255,255,255,0.85);
+    background:rgba(255,255,255,0.65);
+    cursor:pointer;
+    overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
+    transition:box-shadow .2s ease,transform .18s ease;
+}
+.wdtv-am-avatar-btn:hover{box-shadow:0 4px 14px rgba(42,90,160,0.22);transform:translateY(-1px)}
+.wdtv-am-avatar-btn:active{transform:scale(.95)}
+/* 访客态静态头像：无手型与悬浮效果 */
+.wdtv-am-avatar-btn.wdtv-am-static{cursor:default;pointer-events:none}
+.wdtv-am-avatar-btn img{
+    width:100%;height:100%;
+    object-fit:cover;
+    display:block;
+}
+.wdtv-am-avatar-btn .wdtv-am-ph{
+    font-family:'Noto Serif SC',serif;
+    font-size:1.4rem;
+    font-weight:500;
+    color:rgba(42,58,92,0.78);
+    line-height:1;
+}
+.wdtv-am-avatar-btn svg.wdtv-am-ph-icon{
+    width:24px;height:24px;
+    stroke:rgba(42,58,92,0.55);
+    fill:none;
+    stroke-width:1.6;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+}
+/* 换头像相机角标：悬浮时淡入 */
+.wdtv-am-cam{
+    position:absolute;
+    right:-2px;bottom:-2px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:20px;height:20px;
+    border-radius:50%;
+    border:none;
+    background:linear-gradient(135deg,#4a78bd,#6a9ae0);
+    box-shadow:0 2px 8px rgba(10,18,32,0.3);
+    opacity:.88;
+    transition:opacity .2s ease,transform .2s ease;
+    transform:scale(.86);
+}
+.wdtv-am-avatar-btn:hover .wdtv-am-cam{opacity:1;transform:scale(1)}
+.wdtv-am-cam svg{
+    width:11px;height:11px;
+    stroke:#fff;
+    fill:none;
+    stroke-width:2;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+}
+
+/* 卡片文字区：昵称 + @用户名 */
+.wdtv-am-userinfo{
+    flex:1;
+    min-width:0;
+}
+.wdtv-am-nick-row{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    min-width:0;
+}
+.wdtv-am-nick{
+    font-family:'Noto Serif SC','Source Han Serif SC',serif;
+    font-size:.98rem;
+    font-weight:600;
+    letter-spacing:.03em;
+    color:rgba(30,45,75,0.92);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    min-width:0;
+}
+.wdtv-am-nick-edit-btn{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:22px;height:22px;
+    flex-shrink:0;
+    padding:0;
+    border:none;
+    border-radius:6px;
+    background:transparent;
+    color:rgba(42,58,92,0.45);
+    cursor:pointer;
+    transition:all .2s ease;
+}
+.wdtv-am-nick-edit-btn:hover{
+    background:rgba(150,178,215,0.22);
+    color:rgba(42,58,92,0.85);
+}
+.wdtv-am-nick-edit-btn svg{
+    width:12px;height:12px;
+    stroke:currentColor;
+    fill:none;
+    stroke-width:1.8;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+}
+.wdtv-am-username{
+    margin-top:3px;
+    font-size:.72rem;
+    letter-spacing:.03em;
+    color:rgba(42,58,92,0.52);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+/* 同步状态行 */
+.wdtv-am-status{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin-top:10px;
+    padding-top:9px;
+    border-top:1px solid rgba(140,170,210,0.22);
+    font-size:.72rem;
+    letter-spacing:.03em;
+    line-height:1.5;
+    color:rgba(42,58,92,0.58);
+    word-break:break-all;
+}
+.wdtv-am-status.err{color:#b23b3b}
+.wdtv-am-status .wdtv-am-status-dot{
+    width:6px;height:6px;
+    flex-shrink:0;
+    border-radius:50%;
+    background:rgba(106,154,224,0.85);
+}
+.wdtv-am-status.err .wdtv-am-status-dot{background:#c05555}
+.wdtv-am-status.wdtv-am-syncing .wdtv-am-status-dot{
+    background:rgba(106,154,224,0.85);
+    animation:wdtvAmPulse 1.2s ease-in-out infinite;
+}
+@keyframes wdtvAmPulse{
+    0%,100%{opacity:1;transform:scale(1)}
+    50%{opacity:.45;transform:scale(.78)}
+}
+
+/* 昵称行内编辑 */
+.wdtv-am-nick-edit{
+    display:flex;
+    gap:6px;
+    margin-top:10px;
+}
+.wdtv-am-nick-edit input{
+    flex:1;
+    min-width:0;
+    padding:7px 10px;
+    border-radius:9px;
+    border:1px solid rgba(140,170,210,0.4);
+    background:rgba(255,255,255,0.6);
+    color:#2a3a5c;
+    font-size:16px;
+    font-family:'Noto Serif SC',serif;
+    outline:none;
+    transition:border-color .25s ease;
+}
+.wdtv-am-nick-edit input:focus{border-color:rgba(42,90,160,0.55)}
+.wdtv-am-mini-btn{
+    padding:0 12px;
+    height:34px;
+    flex-shrink:0;
+    border-radius:9px;
+    border:none;
+    background:rgba(255,255,255,0.45);
+    color:#2a3a5c;
+    font-family:'Noto Serif SC',serif;
+    font-size:.76rem;
+    letter-spacing:.04em;
+    cursor:pointer;
+    transition:all .2s ease;
+}
+.wdtv-am-mini-btn:hover{background:rgba(255,255,255,0.65)}
+.wdtv-am-mini-btn:disabled{opacity:.55;cursor:default}
+.wdtv-am-mini-btn.ghost{background:rgba(255,255,255,0.2);color:rgba(42,58,92,0.6)}
+
+/* ---- 登录 / 注册表单（未登录态） ---- */
+.wdtv-am-form{padding:6px 4px 4px}
+.wdtv-am-tabs{
+    display:flex;
+    gap:6px;
+    margin-bottom:10px;
+    padding:3px;
+    border-radius:11px;
+    background:rgba(255,255,255,0.28);
+}
+.wdtv-am-tab{
+    flex:1;
+    height:30px;
+    border:none;
+    border-radius:8px;
+    background:transparent;
+    color:rgba(42,58,92,0.55);
+    font-family:'Noto Serif SC',serif;
+    font-size:.78rem;
+    letter-spacing:.08em;
+    cursor:pointer;
+    transition:all .2s ease;
+}
+.wdtv-am-tab:hover{color:rgba(42,58,92,0.8)}
+.wdtv-am-tab.active{
+    background:rgba(150,178,215,0.4);
+    border:1px solid rgba(140,170,210,0.42);
+    color:rgba(30,45,75,0.92);
+    font-weight:500;
+}
+.wdtv-am-input{
+    width:100%;
+    box-sizing:border-box;
+    padding:8px 12px;
+    border-radius:10px;
+    border:1px solid rgba(140,170,210,0.35);
+    background:rgba(255,255,255,0.55);
+    color:#2a3a5c;
+    font-size:16px;
+    font-family:'Noto Serif SC',serif;
+    margin-bottom:8px;
+    outline:none;
+    transition:border-color .25s ease;
+    -webkit-appearance:none;
+    appearance:none;
+}
+.wdtv-am-input:focus{border-color:rgba(42,90,160,0.55)}
+.wdtv-am-input::placeholder{color:rgba(42,58,92,0.38)}
+.wdtv-am-passwrap{position:relative}
+.wdtv-am-passwrap .wdtv-am-input{padding-right:40px}
+.wdtv-am-eye{
+    position:absolute;
+    right:5px;top:4px;
+    width:30px;height:30px;
+    border:none;
+    background:transparent;
+    cursor:pointer;
+    padding:5px;
+    box-sizing:border-box;
+    color:rgba(42,58,92,0.5);
+    border-radius:6px;
+    transition:color .2s,background .2s;
+}
+.wdtv-am-eye:hover{color:rgba(42,58,92,0.85);background:rgba(255,255,255,0.5)}
+.wdtv-am-eye svg{width:100%;height:100%;display:block;pointer-events:none}
+.wdtv-am-pass-hint{
+    font-size:.66rem;
+    color:rgba(42,58,92,0.45);
+    line-height:1.5;
+    margin:-3px 0 8px;
+}
+.wdtv-am-submit{
+    width:100%;
+    padding:9px;
+    border-radius:10px;
+    border:none;
+    background:linear-gradient(135deg,rgba(74,120,189,0.75),rgba(106,154,224,0.75));
+    color:#fff;
+    font-family:'Noto Serif SC',serif;
+    font-size:.85rem;
+    font-weight:500;
+    letter-spacing:.14em;
+    cursor:pointer;
+    transition:all .2s ease;
+    box-shadow:0 4px 14px rgba(58,105,170,0.28);
+}
+.wdtv-am-submit:hover{
+    background:linear-gradient(135deg,rgba(64,108,176,0.85),rgba(92,142,214,0.85));
+    box-shadow:0 6px 18px rgba(58,105,170,0.36);
+}
+.wdtv-am-submit:active{transform:scale(.98)}
+.wdtv-am-submit:disabled{opacity:.6;cursor:default}
+.wdtv-am-error{
+    color:#b23b3b;
+    font-size:.72rem;
+    margin:2px 2px 8px;
+    line-height:1.5;
+    word-break:break-all;
+}
+.wdtv-am-tip{
+    font-size:.68rem;
+    color:rgba(42,58,92,0.5);
+    line-height:1.6;
+    margin-top:9px;
+    padding:0 2px;
+}
+
+/* ---- 账号区响应式 ---- */
+/* 平板（≤768px）：菜单保持右上角锚定，宽度收窄 */
+@media (max-width:768px){
+    #account-btn{gap:8px;height:40px;padding:0 8px 0 10px}
+    .wdtv-ab-avatar{width:30px;height:30px}
+    .wdtv-ab-name{max-width:84px;font-size:.8rem}
+    #accountMenu{width:280px;top:66px;right:16px}
+}
+/* 手机（≤640px，与 Dock 手机断点一致）：菜单改为屏幕居中弹出（横竖双向居中） */
+@media (max-width:640px){
+    #accountMenu{
+        top:50%;
+        right:auto;
+        left:50%;
+        width:min(320px,calc(100vw - 32px));
+        transform:translate(-50%,-50%) scale(.94);
+        transform-origin:center center;
+    }
+    #accountMenu.open{
+        transform:translate(-50%,-50%) scale(1);
+    }
+}

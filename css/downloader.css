@@ -1,0 +1,609 @@
+/* ===== WDTV 下载功能样式（下载管理器 / 批量下载弹窗 / 播放器下载面板） ===== */
+
+/* ----- 通用遮罩 ----- */
+.wdtv-dl-overlay {
+  position: fixed;
+  inset: 0;
+  /* 必须 > #splash 的 z-index:9999（首页水波背景层），否则管理器打开后被其盖住——
+     症状恰好是"点击只有水波、管理器不出现" */
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(10, 16, 28, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: wdtvDlFadeIn 0.18s ease;
+}
+
+.wdtv-dl-overlay.hidden {
+  display: none !important;
+}
+
+@keyframes wdtvDlFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes wdtvDlPopIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ----- 管理器主体（界面同款透明模糊玻璃） ----- */
+.wdtv-dl-manager {
+  width: min(640px, 100%);
+  max-height: min(78vh, 640px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  border: 1px solid rgba(200, 220, 245, 0.4);
+  background: linear-gradient(155deg, rgba(117, 145, 189, 0.32) 0%, rgba(50, 66, 94, 0.62) 100%);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow: 0 18px 50px rgba(6, 12, 24, 0.5);
+  color: var(--pale, #e2e9f5);
+  animation: wdtvDlPopIn 0.2s ease;
+  overflow: hidden;
+}
+
+.wdtv-dl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid rgba(200, 220, 245, 0.18);
+}
+
+.wdtv-dl-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--pale, #e2e9f5);
+  text-shadow: 0 1px 2px rgba(15, 25, 42, 0.4);
+}
+
+.wdtv-dl-title svg {
+  width: 18px;
+  height: 18px;
+}
+
+.wdtv-dl-close {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: rgba(200, 220, 245, 0.12);
+  color: var(--pale, #e2e9f5);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.wdtv-dl-close svg {
+  width: 15px;
+  height: 15px;
+}
+
+.wdtv-dl-close:hover {
+  background: rgba(200, 220, 245, 0.24);
+}
+
+/* ----- 任务列表 ----- */
+.wdtv-dl-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wdtv-dl-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.wdtv-dl-list::-webkit-scrollbar-thumb {
+  background: rgba(200, 220, 245, 0.25);
+  border-radius: 3px;
+}
+
+.wdtv-dl-empty {
+  padding: 42px 20px;
+  text-align: center;
+  font-size: 13.5px;
+  color: rgba(226, 233, 245, 0.75);
+  line-height: 2;
+}
+
+.wdtv-dl-empty span {
+  font-size: 12px;
+  color: rgba(226, 233, 245, 0.5);
+}
+
+.wdtv-dl-task {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(200, 220, 245, 0.22);
+  background: rgba(155, 180, 218, 0.1);
+  transition: background 0.15s ease;
+}
+
+.wdtv-dl-task:hover {
+  background: rgba(155, 180, 218, 0.16);
+}
+
+.wdtv-dl-task-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.wdtv-dl-task-name {
+  font-size: 13px;
+  color: var(--pale, #e2e9f5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wdtv-dl-task-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.wdtv-dl-tag {
+  font-style: normal;
+  font-size: 10.5px;
+  padding: 1.5px 7px;
+  border-radius: 20px;
+  border: 1px solid rgba(200, 220, 245, 0.35);
+  background: rgba(200, 220, 245, 0.12);
+  color: rgba(226, 233, 245, 0.9);
+  white-space: nowrap;
+}
+
+.wdtv-dl-tag.dim {
+  opacity: 0.7;
+}
+
+.wdtv-dl-task-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(10, 18, 32, 0.55);
+  overflow: hidden;
+  margin-bottom: 7px;
+}
+
+.wdtv-dl-task-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #4a78bd, #8fb4e8);
+  transition: width 0.3s ease;
+}
+
+.wdtv-dl-task-fill.state-done {
+  background: linear-gradient(90deg, #3d8a63, #6fc79c);
+}
+
+.wdtv-dl-task-fill.state-error {
+  background: linear-gradient(90deg, #a04a68, #d87f9c);
+}
+
+.wdtv-dl-task-fill.state-merging {
+  background: linear-gradient(90deg, #8a6dbd, #b79ce0);
+  animation: wdtvDlPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes wdtvDlPulse {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+
+.wdtv-dl-task-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wdtv-dl-task-status {
+  font-size: 11.5px;
+  color: rgba(226, 233, 245, 0.78);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wdtv-dl-task-status.state-error {
+  color: #e08aab;
+}
+
+.wdtv-dl-task-status.state-done {
+  color: #8fd4ae;
+}
+
+.wdtv-dl-task-actions {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.wdtv-dl-act {
+  padding: 4px 12px;
+  font-size: 11.5px;
+  border-radius: 8px;
+  border: 1px solid rgba(200, 220, 245, 0.3);
+  background: rgba(200, 220, 245, 0.12);
+  color: var(--pale, #e2e9f5);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.wdtv-dl-act:hover {
+  background: rgba(200, 220, 245, 0.24);
+}
+
+.wdtv-dl-act:active {
+  transform: scale(0.94);
+}
+
+.wdtv-dl-act.danger {
+  border-color: rgba(224, 138, 171, 0.45);
+  background: rgba(224, 138, 171, 0.12);
+  color: #e08aab;
+}
+
+.wdtv-dl-act.danger:hover {
+  background: rgba(224, 138, 171, 0.24);
+}
+
+/* ----- 底栏 ----- */
+.wdtv-dl-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px 12px;
+  border-top: 1px solid rgba(200, 220, 245, 0.18);
+}
+
+.wdtv-dl-hint {
+  font-size: 11px;
+  color: rgba(226, 233, 245, 0.55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wdtv-dl-footer-btn,
+.wdtv-dl-mini {
+  padding: 5px 12px;
+  font-size: 11.5px;
+  border-radius: 8px;
+  border: 1px solid rgba(200, 220, 245, 0.3);
+  background: rgba(200, 220, 245, 0.12);
+  color: var(--pale, #e2e9f5);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+}
+
+.wdtv-dl-footer-btn:hover,
+.wdtv-dl-mini:hover {
+  background: rgba(200, 220, 245, 0.24);
+}
+
+.wdtv-dl-confirm {
+  padding: 7px 18px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 9px;
+  border: none;
+  background: linear-gradient(135deg, #4a78bd, #6a9ae0);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(74, 120, 189, 0.4);
+  transition: filter 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.wdtv-dl-confirm:hover {
+  filter: brightness(1.1);
+}
+
+.wdtv-dl-confirm:active {
+  transform: scale(0.96);
+}
+
+/* ----- 批量下载弹窗 ----- */
+.wdtv-dl-batch {
+  width: min(560px, 100%);
+}
+
+.wdtv-dl-batch-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.wdtv-dl-batch-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.wdtv-dl-batch-body::-webkit-scrollbar-thumb {
+  background: rgba(200, 220, 245, 0.25);
+  border-radius: 3px;
+}
+
+.wdtv-dl-opt-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  min-height: 28px;
+}
+
+.wdtv-dl-opt-label {
+  font-size: 12px;
+  color: rgba(226, 233, 245, 0.6);
+  flex-shrink: 0;
+  width: 42px;
+}
+
+.wdtv-dl-opt-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wdtv-dl-chip {
+  padding: 4.5px 13px;
+  font-size: 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(200, 220, 245, 0.3);
+  background: rgba(200, 220, 245, 0.1);
+  color: rgba(226, 233, 245, 0.9);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.wdtv-dl-chip:hover {
+  background: rgba(200, 220, 245, 0.2);
+}
+
+.wdtv-dl-chip.active {
+  border-color: rgba(143, 180, 232, 0.75);
+  background: rgba(117, 145, 189, 0.38);
+  color: #fff;
+  font-weight: 600;
+}
+
+.wdtv-dl-chip.static {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.wdtv-dl-batch-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 4px 0 10px;
+}
+
+.wdtv-dl-batch-tools .wdtv-dl-opt-label {
+  width: auto;
+}
+
+.wdtv-dl-batch-tools-btns {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.wdtv-dl-ep-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 7px;
+}
+
+.wdtv-dl-ep {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 9px 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(200, 220, 245, 0.28);
+  background: rgba(200, 220, 245, 0.08);
+  color: rgba(226, 233, 245, 0.9);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.wdtv-dl-ep:hover {
+  background: rgba(200, 220, 245, 0.18);
+}
+
+.wdtv-dl-ep:active {
+  transform: scale(0.94);
+}
+
+.wdtv-dl-ep.selected {
+  border-color: rgba(143, 180, 232, 0.8);
+  background: rgba(117, 145, 189, 0.4);
+  color: #fff;
+  font-weight: 600;
+}
+
+.wdtv-dl-ep.current::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6fc79c;
+}
+
+.wdtv-dl-ep-cur {
+  font-style: normal;
+  font-size: 9.5px;
+  opacity: 0.75;
+  font-weight: 400;
+}
+
+/* 综艺排序双显模式：括号内的原集数小字 */
+.wdtv-dl-ep-sub {
+  font-style: normal;
+  font-size: 9.5px;
+  opacity: 0.65;
+  font-weight: 400;
+  margin-left: 1px;
+}
+
+/* 综艺排序分组间隔行：独占整行的组标题，隔开两组集数 */
+.wdtv-dl-ep-break {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(200, 220, 245, 0.18);
+  font-size: 12px;
+  color: rgba(226, 233, 245, 0.65);
+  letter-spacing: 0.04em;
+}
+
+.wdtv-dl-ep-break:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* ----- 播放器控制栏下载面板（复用 art-speed-panel 体系） ----- */
+.art-speed-panel.download-panel {
+  display: block;
+  min-width: 250px;
+  max-width: 320px;
+}
+
+.download-panel .wdtv-dl-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 8px;
+}
+
+.download-panel .wdtv-dl-panel-label {
+  font-size: 12px;
+  color: rgba(234, 240, 248, 0.72);
+  text-shadow: 0 1px 2px rgba(15, 25, 42, 0.4);
+  flex-shrink: 0;
+  width: 36px;
+}
+
+.download-panel .wdtv-dl-panel-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.download-panel .wdtv-dl-pchip {
+  padding: 4px 11px;
+  font-size: 11.5px;
+  border-radius: 20px;
+  border: 1px solid rgba(200, 220, 245, 0.3);
+  background: rgba(200, 220, 245, 0.1);
+  color: rgba(234, 240, 248, 0.92);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.download-panel .wdtv-dl-pchip:hover {
+  background: rgba(200, 220, 245, 0.2);
+}
+
+.download-panel .wdtv-dl-pchip.active {
+  border-color: rgba(143, 180, 232, 0.8);
+  background: rgba(117, 145, 189, 0.4);
+  color: #fff;
+  font-weight: 600;
+}
+
+.download-panel .wdtv-dl-panel-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.download-panel .wdtv-dl-panel-btn {
+  flex: 1;
+  padding: 7px 4px;
+  text-align: center;
+  font-size: 12px;
+  border-radius: 9px;
+  background: rgba(117, 145, 189, 0.28);
+  color: rgba(234, 240, 248, 0.95);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.download-panel .wdtv-dl-panel-btn:hover {
+  background: rgba(117, 145, 189, 0.45);
+}
+
+.download-panel .wdtv-dl-panel-btn:active {
+  transform: scale(0.95);
+}
+
+.download-panel .wdtv-dl-panel-btn.primary {
+  background: linear-gradient(135deg, rgba(74, 120, 189, 0.65), rgba(106, 154, 224, 0.65));
+}
+
+/* 控制栏下载按钮悬停态（与缓存按钮一致） */
+.art-control-downloadQuickButton:hover .dl-btn-text {
+  color: #8fb4e8;
+}
+
+/* ----- 下载管理入口徽标 -----
+   下载管理入口已重构进右上角账号菜单（#accountMenu，见 css/index.css），
+   旧 #downloads-btn 固定定位与 .wdtv-nav-badge 徽标样式随之移除；
+   活跃任务数角标现使用账号菜单内的 .wdtv-am-badge（样式在 css/index.css）。 */
+
+/* ----- 小屏适配 ----- */
+@media (max-width: 480px) {
+  .wdtv-dl-overlay {
+    padding: 10px;
+  }
+
+  .wdtv-dl-manager {
+    max-height: 86vh;
+  }
+
+  .wdtv-dl-ep-grid {
+    grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  }
+}

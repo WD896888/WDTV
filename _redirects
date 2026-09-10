@@ -1,0 +1,6 @@
+# Cloudflare Pages 重写规则（与 vercel.json 的 rewrites 对齐）
+# /s=xxx 搜索短链 → 首页（200 表示重写而非跳转）
+# 注意目标必须写 / 而不是 /index.html：平台会把 /index.html 规范化 308 到 /，
+# 以 /index.html 为目标会把这个 308 泄露给客户端，丢失搜索词
+# /proxy/* 由 functions/proxy/[[path]].js 自动接管路由，这里不要配置
+/s=* / 200

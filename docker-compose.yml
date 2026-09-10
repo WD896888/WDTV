@@ -1,0 +1,7 @@
+services:
+  wdtv:
+    build: . # 使用本项目 Dockerfile 构建镜像（原为 bestzwei/libretv:latest，会错误运行 LibreTV 官方 nginx+lua 而非本项目 server.mjs）
+    container_name: wdtv
+    ports:
+      - "8899:8080" # 将内部 8080 端口映射到主机的 8899 端口
+    restart: unless-stopped
