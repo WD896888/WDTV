@@ -1314,3 +1314,46 @@ html .art-video-player.art-backdrop .art-info{
   width:17px!important;
   height:17px!important;
 }
+
+/* ===== 弹幕手动匹配弹窗（复用 #modal 玻璃容器，仅补充搜索栏/两级列表样式） ===== */
+.wdtv-danmu-match{display:flex;flex-direction:column;gap:12px;padding:4px 2px 10px}
+.wdtv-danmu-searchbar{display:flex;gap:10px}
+.wdtv-danmu-input{
+  flex:1;min-width:0;padding:10px 14px;border-radius:12px;
+  border:1px solid rgba(200,220,245,0.42);background:rgba(255,255,255,0.08);
+  color:rgba(236,244,255,0.96);font-size:14px;outline:none;
+  transition:border-color .2s ease,background .2s ease;
+}
+.wdtv-danmu-input::placeholder{color:rgba(222,234,250,0.45)}
+.wdtv-danmu-input:focus{border-color:rgba(143,180,232,0.8);background:rgba(255,255,255,0.12)}
+.wdtv-danmu-btn{
+  flex-shrink:0;padding:10px 22px;border-radius:12px;cursor:pointer;
+  border:1px solid rgba(151,173,208,0.35);color:rgba(236,244,255,0.96);font-size:14px;
+  background:linear-gradient(155deg,rgba(117,145,189,0.4) 0%,rgba(50,66,94,0.55) 100%);
+  transition:border-color .2s ease,transform .12s ease;
+}
+.wdtv-danmu-btn:hover{border-color:rgba(143,180,232,0.8)}
+.wdtv-danmu-btn:active{transform:scale(.96)}
+.wdtv-danmu-status{font-size:12px;color:rgba(222,234,250,0.6);min-height:18px}
+.wdtv-danmu-list{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+@media (max-width:640px){.wdtv-danmu-list{grid-template-columns:1fr}}
+.wdtv-danmu-item{
+  padding:10px 14px;border-radius:12px;cursor:pointer;
+  border:1px solid rgba(200,220,245,0.28);background:rgba(255,255,255,0.06);
+  transition:border-color .18s ease,background .18s ease,transform .18s ease;
+}
+.wdtv-danmu-item:hover{border-color:rgba(143,180,232,0.75);background:rgba(255,255,255,0.12);transform:translateY(-1px)}
+.wdtv-danmu-item-title{font-size:14px;font-weight:500;color:rgba(236,244,255,0.96);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wdtv-danmu-item-sub{margin-top:2px;font-size:11px;color:rgba(222,234,250,0.55);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wdtv-danmu-back{grid-column:1/-1;font-size:12px;color:#8fb4e8;cursor:pointer;user-select:none;padding:2px 0}
+.wdtv-danmu-back:hover{color:#aecbf2}
+
+/* 弹幕控制栏开关按钮关闭态：图标整体降透明度提示（关闭态本身已切换为带斜线图标） */
+.art-control-danmuToggle{color:rgba(236,244,255,0.92)}
+.art-control-danmuToggle:hover{color:#fff}
+
+/* 隐藏 artplayer-plugin-danmuku 自带控制栏小面板（控制栏中央的 apd-toggle 开关/apd-config 齿轮）：
+   其功能与播放器设置菜单"弹幕"子菜单完全重复，且自带开关状态与实际显隐可能不同步，
+   用户常把它误认为弹幕功能开关——统一入口到我们自己的 UI */
+.art-video-player .art-controls-center .apd-toggle,
+.art-video-player .art-controls-center .apd-config{display:none!important}

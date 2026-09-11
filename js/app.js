@@ -89,6 +89,18 @@ document.addEventListener('DOMContentLoaded', function () {
         cacheEvictToggle.checked = localStorage.getItem('cacheEvictMode') !== 'never';
     }
 
+    // 设置弹幕功能开关初始状态（默认开启：与 danmu.js 读取约定一致，仅 'false' 视为关闭）
+    const danmuToggle = document.getElementById('danmuToggle');
+    if (danmuToggle) {
+        danmuToggle.checked = localStorage.getItem('danmuEnabled') !== 'false';
+    }
+
+    // 设置弹幕 API 地址输入框初始值（空字符串 = 走默认端点）
+    const danmuCustomApiInput = document.getElementById('danmuCustomApiInput');
+    if (danmuCustomApiInput) {
+        danmuCustomApiInput.value = localStorage.getItem('danmuCustomApi') || '';
+    }
+
     // 设置事件监听器
     setupEventListeners();
 });
@@ -255,6 +267,36 @@ function setupEventListeners() {
         cacheEvictToggle.addEventListener('change', function () {
             localStorage.setItem('cacheEvictMode', cacheEvictToggle.checked ? 'lru' : 'never');
         });
+    }
+
+    // 弹幕功能开关事件绑定（写入 'true'/'false'，与 danmu.js「!== 'false' 视为开启」的读取约定一致）
+    const danmuToggle = document.getElementById('danmuToggle');
+    if (danmuToggle) {
+        danmuToggle.addEventListener('change', function (e) {
+            localStorage.setItem('danmuEnabled', e.target.checked ? 'true' : 'false');
+            showToast(e.target.checked ? '已开启弹幕功能' : '已关闭弹幕功能', 'success');
+        });
+    }
+
+    // 弹幕 API 地址输入框：change/blur 时 trim 后写入（danmu.js getCustomApi 亦会自行 trim 与去尾斜杠），
+    // 值有变化才保存；清空则移除键走默认端点
+    const danmuCustomApiInput = document.getElementById('danmuCustomApiInput');
+    if (danmuCustomApiInput) {
+        let lastSavedDanmuApi = (localStorage.getItem('danmuCustomApi') || '').trim();
+        const saveDanmuCustomApi = function () {
+            const val = danmuCustomApiInput.value.trim();
+            if (val === lastSavedDanmuApi) return;
+            lastSavedDanmuApi = val;
+            if (val) {
+                localStorage.setItem('danmuCustomApi', val);
+                showToast('弹幕 API 地址已保存', 'success');
+            } else {
+                localStorage.removeItem('danmuCustomApi');
+                showToast('已清空弹幕 API 地址，将走默认端点', 'success');
+            }
+        };
+        danmuCustomApiInput.addEventListener('change', saveDanmuCustomApi);
+        danmuCustomApiInput.addEventListener('blur', saveDanmuCustomApi);
     }
 }
 

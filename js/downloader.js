@@ -856,10 +856,11 @@
     let rec;
     try { rec = await idbGet(STORE_FILES, task.id); } catch (e) { }
     if (!rec || !rec.blob) { toast('文件数据缺失，无法导出（任务可能被系统清理）', 'error'); return; }
-    const fname = task.fileName + (task.format === 'ts' ? '.ts' : '.mp4');
+    const fname = task.fileName + (task.format === 'ts' ? '.ts' : task.format === 'webm' ? '.webm' : '.mp4');
     if (useShare && SHARE_FILES_OK) {
       try {
-        const file = new File([rec.blob], fname, { type: task.format === 'ts' ? 'video/MP2T' : 'video/mp4' });
+        const ftype = task.format === 'ts' ? 'video/MP2T' : (task.format === 'webm' ? 'video/webm' : 'video/mp4');
+        const file = new File([rec.blob], fname, { type: ftype });
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file], title: fname });
           task.fileSaved = true;
@@ -872,7 +873,10 @@
         // 其它异常（如低版本不支持文件分享）继续走 a[download] 兜底
       }
     }
-    const url = URL.createObjectURL(rec.blob);
+    // a[download] 下载的是 blob: 资源本身，Content-Type 取 Blob 内部类型——重新包装为
+    // 干净 base MIME，防止带 codecs 参数等非常规类型让安卓内核下载管理器报 bad base-64
+    // （Blob 包装不复制数据，无额外开销）
+    const url = URL.createObjectURL(new Blob([rec.blob], { type: task.format === 'ts' ? 'video/MP2T' : (task.format === 'webm' ? 'video/webm' : 'video/mp4') }));
     const a = document.createElement('a');
     a.href = url;
     a.download = fname;
@@ -895,6 +899,51 @@
       return;
     }
     exportTaskFile(task, false);
+  }
+
+  // 本地生成文件入库（播放器录屏等）：注册为"已完成"任务，复用管理器现成的
+  // 「保存/分享」导出链路（exportTaskFile：iOS 保存=系统分享面板 / 安卓桌面=直接下载），
+  // 与剧集下载完全同一套可靠实现
+  // opts.autoExport=true：入库后立即自动导出（对齐剧集合并完成的 triggerSave——
+  // 安卓/桌面无手势 a[download] 可靠，MIME 已是干净类型；iOS 仍走手动提示）
+  // 返回任务对象；失败（空间不足等）返回 null
+  async function addLocalFile(blob, title, opts) {
+    opts = opts || {};
+    if (!blob || !blob.size) { toast('文件内容为空，未保存', 'error'); return null; }
+    const format = opts.format === 'ts' ? 'ts' : opts.format === 'webm' ? 'webm' : 'mp4';
+    const t = sanitizeName(title || '录制');
+    if (!t) { toast('文件名无效，未保存', 'error'); return null; }
+    const id = 'local-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const task = {
+      id,
+      title: t,
+      episodeLabel: opts.episodeLabel || '',
+      fileName: sanitizeName(t),
+      url: '',
+      quality: opts.quality || '本机录制',
+      qualityHint: null,
+      format,
+      state: 'done',
+      totalFrags: 0, doneFrags: 0, bytes: blob.size,
+      durationSec: 0, fileSize: blob.size, fileSaved: false,
+      error: '',
+      createdAt: Date.now(), updatedAt: Date.now(),
+      speed: 0, _plan: null
+    };
+    try {
+      await idbPut(STORE_FILES, {
+        id: task.id, blob, size: blob.size,
+        name: task.fileName + (format === 'ts' ? '.ts' : format === 'webm' ? '.webm' : '.mp4'),
+        ts: Date.now()
+      });
+    } catch (e) {
+      toast('存储失败（设备空间不足？），录制文件未保存', 'error');
+      return null;
+    }
+    tasks.push(task);
+    persistTask(task, true); emit(true);
+    if (opts.autoExport) triggerSave(task);
+    return task;
   }
 
   // ===== 任务操作 =====
@@ -1219,7 +1268,7 @@
           <span class="wdtv-dl-task-name" title="${escapeHtml(t.title)} ${escapeHtml(t.episodeLabel)}">${escapeHtml(t.title)}${t.episodeLabel ? ' · ' + escapeHtml(t.episodeLabel) : ''}</span>
           <span class="wdtv-dl-task-tags">
             ${t.quality && t.quality !== '默认' ? `<em class="wdtv-dl-tag">${escapeHtml(t.quality)}</em>` : ''}
-            <em class="wdtv-dl-tag">${t.format === 'ts' ? 'TS' : 'MP4'}</em>
+            <em class="wdtv-dl-tag">${t.format === 'ts' ? 'TS' : t.format === 'webm' ? 'WEBM' : 'MP4'}</em>
             ${dur ? `<em class="wdtv-dl-tag dim">${dur}</em>` : ''}
           </span>
         </div>
@@ -1429,6 +1478,7 @@
     retryTask,
     deleteTask,
     saveTask,
+    addLocalFile,
     getActiveCount() { return getPublicStats().active; },
     getStats: getPublicStats,
     // 调试口：读取任务运行时状态（速度/网络字节等，不在持久化字段里）

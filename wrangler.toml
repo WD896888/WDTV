@@ -15,6 +15,13 @@ CACHE_TTL = "86400"
 M3U8_CACHE_TTL = "120"
 # 是否开放注册（设为 "false" 关闭；缺省或其它值均视为开放）
 ALLOW_REGISTER = "true"
+# 弹幕转发层（已启用）：数据源②——自部署 danmu_api（fork: WD896888/danmu_api，含防滥用口令路径）
+# 部署地址：https://danmu-api.1936371568.workers.dev  TOKEN=zrt1ym8hlfq6
+# 转发层将 /danmu/api/v2/* 透传至 {DANMU_BASE}/api/v2/*（Cloudflare 边缘内部回源，规避 workers.dev 直连阻断）
+DANMU_BASE = "https://danmu-api.1936371568.workers.dev/zrt1ym8hlfq6"
+# 数据源③弹弹play 官方 AppId 模式（配置后自动优先于 DANMU_BASE 生效，AppId 可放 vars，AppSecret 必须用 secret）：
+#   npx wrangler pages secret put DANMU_APP_ID --project-name=wdtv
+#   npx wrangler pages secret put DANMU_APP_SECRET --project-name=wdtv
 
 # M3U8 代理缓存（已创建并绑定）
 # 命名空间: npx wrangler kv namespace create LIBRETV_PROXY_KV

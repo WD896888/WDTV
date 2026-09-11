@@ -8,7 +8,9 @@
 
 ## 📺 项目简介
 
-WDTV 是一个轻量级、免费的在线视频搜索与观看平台，提供来自多个视频源的内容搜索与播放服务。无需注册，即开即用，支持多种设备访问。项目结合了前端技术和后端代理功能，可部署在支持服务端功能的各类网站托管服务上。**项目门户**： [libretv.is-an.org](https://libretv.is-an.org)
+WDTV 是一个轻量级、免费的在线视频搜索与观看平台，提供来自多个视频源的内容搜索与播放服务，并内置基于弹弹play 开放生态的**第三方弹幕（仅观看、不发送）**。无需注册，即开即用，支持多种设备访问。项目结合了前端技术和后端代理功能，可部署在支持服务端功能的各类网站托管服务上。
+
+> 本项目基于 [LibreTV](https://github.com/bestzwei/LibreTV) 深度定制，播放器由 DPlayer 迁移至 ArtPlayer，并新增弹幕观看、账号云同步等增强功能。
 
 ## 🚨 重要声明
 
@@ -20,6 +22,29 @@ WDTV 是一个轻量级、免费的在线视频搜索与观看平台，提供来
 ## ⚠️ 同步与升级
 
 对于更新可能会出现的错误和异常，在设置中备份配置后，首先清除页面Cookie，然后 Ctrl + F5 刷新页面。再次访问网页检查是否解决问题。
+
+## 📺 弹幕（仅观看，免费）
+
+播放器内置弹幕功能，数据来自第三方弹弹play 兼容开放生态（聚合 B站、腾讯视频等平台的弹幕），仅提供观看、不支持发送：
+
+- **渲染层**：ArtPlayer 官方插件 `artplayer-plugin-danmuku`（本地化于 `libs/`，无 CDN 运行时依赖）
+- **自动匹配**：标题规范化去噪（去 HD/1080P/国语等噪声词）→ bigram 相似度打分 → 集数对齐 → 单集时长校验，支持手动搜索选集；匹配结果本地记忆 30 天，弹幕按剧集缓存于浏览器
+- **数据源热切换**（前端实现一份弹弹play v2 协议客户端，三种免费数据源任选，失败自动降级）：
+  1. 同源转发层 `/danmu/`（Cloudflare Pages Function，探测可用时优先）
+  2. 设置面板自定义端点：支持自部署 [danmu_api](https://github.com/huangxd-/danmu_api)（CF Workers 免费一键部署），格式 `地址|口令`
+  3. 内置默认公共端点兜底；全部不可用则静默关闭弹幕，绝不影响播放
+- **无弹幕不显示**：确定无弹幕数据时控制栏弹幕按钮自动隐藏；弹幕任何环节失败均静默处理
+
+### 弹幕数据源配置（Cloudflare 转发层，可选）
+
+`functions/danmu/[[path]].js` 为纯透传转发层（不解析 body，规避 Functions 10ms CPU 限制），在 `wrangler.toml` 中按优先级配置：
+
+| 变量 | 说明 |
+| --- | --- |
+| `DANMU_BASE` | 自部署 danmu_api 地址（可含防滥用口令路径），如 `https://xxx.workers.dev/token` |
+| `DANMU_APP_ID` / `DANMU_APP_SECRET` | 弹弹play 官方 AppId 模式（Secret 用 `npx wrangler pages secret put DANMU_APP_SECRET --project-name=wdtv` 设置），配置后自动优先于 `DANMU_BASE` |
+
+转发层自带边缘缓存（`/search/episodes` 30 分钟、其余 6 小时，Cache API 无配额限制）与同源 Referer 校验（防被当开放代理滥用）。
 
 
 ## 📋 详细部署指南
@@ -44,8 +69,8 @@ WDTV 是一个轻量级、免费的在线视频搜索与观看平台，提供来
 | --- | --- |
 | `_headers` | 静态资源缓存：`/js/` `/css/` `/image/` 缓存 1 天，`/libs/` 长缓存 1 年（immutable） |
 | `_redirects` | `/s=xxx` 搜索短链重写到首页（200 重写，非跳转） |
-| `_routes.json` | 仅 `/proxy/*` 走 Pages Function，其余请求纯静态直出（更低延迟、不消耗 Functions 配额） |
-| `wrangler.toml` | Pages 项目配置：环境变量（`CACHE_TTL`/`M3U8_CACHE_TTL`/`DEBUG`）与 KV 绑定 |
+| `_routes.json` | 仅 `/proxy/*`、`/api/*`、`/danmu/*` 走 Pages Function，其余请求纯静态直出（更低延迟、不消耗 Functions 配额） |
+| `wrangler.toml` | Pages 项目配置：环境变量（`CACHE_TTL`/`M3U8_CACHE_TTL`/`ALLOW_REGISTER`/弹幕转发层 `DANMU_BASE` 等）与 KV、D1 绑定 |
 
 代理函数 `functions/proxy/[[path]].js` 与 Vercel 版行为一致：m3u8 短缓存（120s）与 ts 分片长缓存（24h）分离、KV 缓存处理后的 m3u8、上游 30s 超时保护、豆瓣 Referer 防盗链、二进制透传响应头过滤。
 
@@ -57,12 +82,16 @@ WDTV 是一个轻量级、免费的在线视频搜索与观看平台，提供来
 
 
 ### Docker
+
+仓库自带 Dockerfile（Node 服务端，含代理功能），构建运行：
+
 ```
+docker build -t wdtv .
 docker run -d \
-  --name libretv \
+  --name wdtv \
   --restart unless-stopped \
   -p 8899:8080 \
-  bestzwei/libretv:latest
+  wdtv
 ```
 
 ### Docker Compose
@@ -71,9 +100,9 @@ docker run -d \
 
 ```yaml
 services:
-  libretv:
-    image: bestzwei/libretv:latest
-    container_name: libretv
+  wdtv:
+    build: .
+    container_name: wdtv
     ports:
       - "8899:8080" # 将内部 8080 端口映射到主机的 8899 端口
     restart: unless-stopped
@@ -141,6 +170,7 @@ WDTV 支持标准的苹果 CMS V10 API 格式。添加自定义 API 时需遵循
 
 - **空格键**: 播放/暂停
 - **左右箭头**: 快退/快进
+- **Alt + 左右箭头**: 上一集/下一集
 - **上下箭头**: 音量增加/减小
 - **M 键**: 静音/取消静音
 - **F 键**: 全屏/退出全屏
@@ -151,10 +181,11 @@ WDTV 支持标准的苹果 CMS V10 API 格式。添加自定义 API 时需遵循
 - HTML5 + CSS3 + JavaScript (ES6+)
 - Tailwind CSS
 - HLS.js 用于 HLS 流处理
-- DPlayer 视频播放器核心
-- Cloudflare/Vercel/Netlify Serverless Functions
+- ArtPlayer 5.x 视频播放器 + artplayer-plugin-danmuku 弹幕插件（均本地化）
+- Cloudflare Pages Functions / Vercel / Netlify Serverless Functions
 - 服务端 HLS 代理和处理技术
-- localStorage 本地存储
+- Cloudflare D1（账号数据）与 KV（代理缓存）
+- localStorage 本地存储（弹幕缓存、匹配记忆、播放进度等）
 
 ## ⚠️ 免责声明
 

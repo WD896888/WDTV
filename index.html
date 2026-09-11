@@ -278,6 +278,10 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-custom-api-form input[type=text]{width:100%;padding:8px 12px;border-radius:8px;border:1px solid rgba(200,220,245,0.3);background:rgba(255,255,255,0.45);color:#2a3a5c;font-size:0.82rem;margin-bottom:8px;font-family:'Noto Serif SC',serif;outline:none;transition:border-color 0.3s}
 .wdtv-custom-api-form input[type=text]:focus{border-color:rgba(42,90,160,0.5)}
 .wdtv-custom-api-form input[type=text]::placeholder{color:rgba(42,58,92,0.4)}
+/* Danmu settings */
+.wdtv-danmu-input{width:100%;box-sizing:border-box;margin-top:8px;padding:8px 12px;border-radius:8px;border:1px solid rgba(200,220,245,0.3);background:rgba(255,255,255,0.45);color:#2a3a5c;font-size:0.78rem;font-family:'Noto Serif SC',serif;outline:none;transition:border-color 0.3s}
+.wdtv-danmu-input:focus{border-color:rgba(42,90,160,0.5)}
+.wdtv-danmu-input::placeholder{color:rgba(42,58,92,0.4)}
 .wdtv-form-btns{display:flex;gap:8px}
 .wdtv-form-btns button{flex:1;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);font-size:0.78rem;cursor:pointer;font-family:'Noto Serif SC',serif;transition:all 0.2s;letter-spacing:0.04em}
 .wdtv-form-btns .wdtv-primary-btn{background:rgba(255,255,255,0.3);color:#2a3a5c;text-shadow:none}
@@ -764,6 +768,19 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <label class="wdtv-toggle"><input type="checkbox" id="raceHedgeToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
   </div>
+  <!-- 弹幕设置 -->
+  <div class="wdtv-settings-block">
+    <label class="block-label">弹幕设置</label>
+    <div class="wdtv-settings-row">
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">弹幕功能</div><div class="wdtv-sr-desc">关闭后播放器不加载与渲染弹幕</div></div>
+      <label class="wdtv-toggle"><input type="checkbox" id="danmuToggle" checked><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
+    </div>
+    <div class="wdtv-settings-row" style="display:block">
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">弹幕 API 地址</div></div>
+      <input type="text" id="danmuCustomApiInput" class="wdtv-danmu-input" placeholder="留空使用内置公共弹幕源；可填自部署/其他兼容端点" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="wdtv-api-info"><span>弹幕数据来自弹弹play 开放网络（经公共代理，仅观看不发送）。内置公共源失效或想替换时，可填自部署 danmu_api 或其他弹弹play 兼容端点，支持「地址|口令」格式</span></div>
+  </div>
   <!-- 一般功能 -->
   <div class="wdtv-settings-block">
     <label class="block-label">一般功能</label>
@@ -836,14 +853,14 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 <script src="libs/tailwindcss.min.js"></script>
 <script src="js/config.js?v=11"></script>
 <script src="js/video-cache.js?v=91"></script>
-<script src="js/downloader.js?v=15"></script>
+<script src="js/downloader.js?v=20"></script>
 <script src="js/connection-test.js?v=9"></script>
 <script src="js/customer_site.js?v=8"></script>
 <script src="js/ui.js?v=13"></script>
 <script src="js/api.js?v=13"></script>
 <script src="js/douban.js?v=9"></script>
 <script src="js/search.js?v=10"></script>
-<script src="js/app.js?v=21"></script>
+<script src="js/app.js?v=22"></script>
 <script src="js/cinema.js?v=17"></script>
 <script src="js/pwa-register.js?v=8"></script>
 <script src="js/index-page.js?v=11"></script>
