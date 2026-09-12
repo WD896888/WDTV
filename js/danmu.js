@@ -13,12 +13,15 @@
 (function () {
     'use strict';
 
-    // 内置默认公共端点：弹弹play v2 兼容公共代理（AppId/签名在代理端，浏览器免注册直连，实测 CORS 开放）。
-    // 格式 'URL|TOKEN'：TOKEN 为代理的防滥用口令（非密钥，可公开，请求时以 X-Proxy-Token 头携带）。
-    // 注意：公共代理为个人维护，高峰期可能限流；若失效，可在首页设置面板填入自部署
+    // 内置默认端点：Cloudflare Workers 自定义域自建弹幕源（danmu_api，2026-09 自阿里云 FC 回迁——
+    // FC 按量付费欠费停服；workers.dev 域名国内被阻断，故绑定主站同 Zone 自定义域，国内直连无跨国风控；
+    // TOKEN 为 URL 路径首段的防滥用口令，非密钥可公开）。
+    // 注意：若自建源失效，可在首页设置面板填入自部署
     // danmu_api（https://github.com/huangxd-/danmu_api，CF Workers 免费一键部署）或其他兼容端点替换，
-    // 同样支持「地址|口令」格式；留空则回退本默认值。
-    const DEFAULT_DANMU_API = 'https://ddplay.retr0.xyz|8TUf1AYTwQFjGv';
+    // 同样支持「地址|口令」格式（TOKEN 经 X-Proxy-Token 头携带）；留空则回退本默认值。
+    const DEFAULT_DANMU_API = 'https://danmu.wdmatch1.dpdns.org/zrt1ym8hlfq6';
+    // 旧公共代理兜底（个人维护，高峰期限流；仅当自建源与转发层全部不可达时使用）
+    const LEGACY_PUBLIC_PROXY = 'https://ddplay.retr0.xyz|8TUf1AYTwQFjGv';
 
     const FETCH_TIMEOUT = 12000;            // 单次请求超时（毫秒）
     const MAP_TTL = 30 * 24 * 60 * 60 * 1000; // 记忆映射有效期：30 天
@@ -38,6 +41,10 @@
     let endpointListPromise = null;
     let endpointUsedCustom = null;
     let activeEndpoint = null; // 当前实际使用的端点 {base, token}
+    // 手动切换锁定的源（switchSource 设置，base 字符串）。用户显式选择的源优先于
+    // 一切自动故障转移：不锁定的话，apiGet 的单请求级降级与 getForPlayer 的整链
+    // 轮换都会在锁定源失败时悄悄转回其他源，"切换数据源"等于永远不生效
+    let pinnedBase = null;
 
     // 解析端点配置串：'URL' 或 'URL|TOKEN'（TOKEN 为可选防滥用口令，请求时以 X-Proxy-Token 头携带）
     function parseEndpoint(raw) {
@@ -225,14 +232,22 @@
 
     function getCustomApi() {
         try {
-            return (localStorage.getItem('danmuCustomApi') || '').trim().replace(/\/+$/, '');
+            let v = (localStorage.getItem('danmuCustomApi') || '').trim();
+            // 一次性迁移：指向历史默认源的自定义端点静默清除（workers.dev 域名国内被阻断、
+            // 阿里云 FC 已欠费停服，残留会以最高优先级挡在新源前，每次请求都先超时 12s 才降级）
+            if (v && (v.includes('danmu-api.1936371568.workers.dev') || v.includes('fcapp.run'))) {
+                v = '';
+                try { localStorage.removeItem('danmuCustomApi'); } catch (e) { /* 静默 */ }
+            }
+            return v.replace(/\/+$/, '');
         } catch (e) {
             return '';
         }
     }
 
     // 端点解析（lazy：首次用到弹幕时才发起探测，不在页面加载即发）
-    // 返回候选端点列表（按优先级）：同源转发层 /danmu/ → 设置面板自定义端点 → 内置默认端点
+    // 返回候选端点列表（按优先级）：设置面板自定义端点 → 内置自建源 →
+    // 同源转发层 /danmu/（探测可用才列入，自建源不可达时的回退）→ 旧公共代理
     // 全部不可用返回 []（弹幕静默禁用）
     function resolveEndpoints() {
         const custom = getCustomApi();
@@ -241,15 +256,19 @@
         endpointUsedCustom = custom;
         endpointListPromise = (async () => {
             const list = [];
-            // 1. 同源转发层探测：Cloudflare Pages Functions 配置 DANMU_BASE/官方凭据时返回 {configured:true}
-            const probe = await fetchJSON('/danmu/');
-            if (probe && probe.configured === true) list.push({ base: '/danmu', token: null, mode: probe.mode || 'custom' });
-            // 2. 设置面板自定义端点（支持「地址|口令」格式）
+            // 1. 设置面板自定义端点（支持「地址|口令」格式）
             const customEp = parseEndpoint(custom);
             if (customEp) list.push(customEp);
-            // 3. 内置默认公共端点（支持「地址|口令」格式）
-            const defaultEp = parseEndpoint(DEFAULT_DANMU_API);
-            if (defaultEp) list.push(defaultEp);
+            // 2. 内置默认端点：自建源（CF Workers 自定义域，国内直连，无跨国风控）
+            const cfEp = parseEndpoint(DEFAULT_DANMU_API);
+            if (cfEp) list.push(cfEp);
+            // 3. 同源转发层探测：Cloudflare Pages Functions 配置 DANMU_BASE/官方凭据时返回 {configured:true}
+            //    （自建源直连失败时经 CF Pages Function 回源兜底）
+            const probe = await fetchJSON('/danmu/');
+            if (probe && probe.configured === true) list.push({ base: '/danmu', token: null, mode: probe.mode || 'custom' });
+            // 4. 旧公共代理兜底
+            const legacyEp = parseEndpoint(LEGACY_PUBLIC_PROXY);
+            if (legacyEp) list.push(legacyEp);
             return list;
         })();
         return endpointListPromise;
@@ -269,21 +288,54 @@
         activeEndpoint = eps[(idx + 1) % eps.length];
     }
 
-    // 当前活跃源的可读标签（供 UI 展示数据来源：自建源/公共代理/官方API/自定义源）
-    function getActiveSourceLabel() {
-        if (!activeEndpoint) return '未加载';
-        if (activeEndpoint.base === '/danmu') {
-            return activeEndpoint.mode === 'official' ? '弹弹play官方API' : '自建源';
+    // 端点的可读标签（供 UI 展示数据来源：自建源/官方API/自定义源/公共代理）
+    function labelOfEndpoint(ep) {
+        if (!ep) return '未加载';
+        if (ep.base === '/danmu') {
+            return ep.mode === 'official' ? '弹弹play官方API' : '自建源';
         }
         const def = parseEndpoint(DEFAULT_DANMU_API);
-        if (def && activeEndpoint.base === def.base) return '公共代理';
+        if (def && ep.base === def.base) return '自建源';
+        const legacy = parseEndpoint(LEGACY_PUBLIC_PROXY);
+        if (legacy && ep.base === legacy.base) return '公共代理';
         return '自定义源';
     }
 
-    // 手动切换到下一个候选源（UI"切换源"入口）：轮换 + 清空当前数据与该标题的记忆映射
-    //（旧映射指向旧源的 episodeId，不清会导致切源后第 1 轮仍命中旧 ID），返回新源标签
+    function getActiveSourceLabel() {
+        return labelOfEndpoint(activeEndpoint);
+    }
+
+    // 候选源清单（弹幕设置浮层的下拉框选项）：[{base, label}]，按解析优先级排序
+    async function getSourceList() {
+        const eps = await resolveEndpoints();
+        return eps.map(ep => ({ base: ep.base, label: labelOfEndpoint(ep) }));
+    }
+
+    // 当前活跃源 base（下拉框回显选中项）
+    function getActiveSourceBase() {
+        return activeEndpoint ? activeEndpoint.base : null;
+    }
+
+    // 手动切换源（浮层下拉框选择/轮换入口共用的落地逻辑）：指定目标端点 + 锁定 + 清空当前
+    // 数据与该标题的记忆映射（旧映射指向旧源的 episodeId，不清会导致切源后第 1 轮仍命中旧 ID）。
+    // 锁定语义：此后所有请求（自动匹配/预热/手动匹配）只走该源，直到再次切换或
+    // 该源从候选列表消失（自定义端点变更等，在 apiGet/getForPlayer 中惰性解除）
     async function switchSource() {
         await rotateEndpoint();
+        return applySourceEndpoint(activeEndpoint);
+    }
+
+    // 直接选定目标源（下拉框选择）：base 必须在候选列表中，返回新源标签；不合法返回 null
+    async function selectSource(base) {
+        const eps = await resolveEndpoints();
+        const target = eps.find(ep => ep.base === base);
+        if (!target) return null;
+        return applySourceEndpoint(target);
+    }
+
+    function applySourceEndpoint(ep) {
+        activeEndpoint = ep;
+        pinnedBase = ep ? ep.base : null;
         lastDanmuku = [];
         try {
             if (lastCtx && lastCtx.title) {
@@ -297,14 +349,23 @@
 
     // 带故障转移的端点请求：从当前活跃端点起按优先级轮询候选列表；
     // 业务层错误（success:false，如官方源 errorCode）同样视为该源失败降级；
-    // 全部失败返回 null（活跃端点保持不变，下次仍从主端点重试）
+    // 全部失败返回 null（活跃端点保持不变，下次仍从主端点重试）。
+    // 手动锁定源（pinnedBase）时只请求锁定端点，绝不静默降级到其他源——
+    // 否则切换数据源会被这里的降级悄悄改回原源；锁定源已不在候选列表
+    // （被移除/自定义端点变更）时解除锁定，恢复完整候选轮询
     async function apiGet(pathAndQuery) {
         const eps = await resolveEndpoints();
         if (!eps.length) return null;
-        let start = activeEndpoint ? eps.indexOf(activeEndpoint) : 0;
+        let list = eps;
+        if (pinnedBase) {
+            const pinned = eps.find(e => e.base === pinnedBase);
+            if (pinned) list = [pinned];
+            else pinnedBase = null;
+        }
+        let start = activeEndpoint ? list.indexOf(activeEndpoint) : 0;
         if (start < 0) start = 0;
-        for (let i = 0; i < eps.length; i++) {
-            const ep = eps[(start + i) % eps.length];
+        for (let i = 0; i < list.length; i++) {
+            const ep = list[(start + i) % list.length];
             const data = await fetchJSON(ep.base + pathAndQuery, ep.token);
             if (data && data.success !== false) { activeEndpoint = ep; return data; }
         }
@@ -393,11 +454,13 @@
     // ------------------------------------------------------------
     async function autoMatch(ctx, skipMemo) {
         // 1. 记忆映射命中（30 天内）直接复用，省去检索；换源重匹配时跳过（旧映射指向失败源）。
-        //    命中时恢复其来源端点为活跃端点（跨源 ID 不兼容）；来源已下线则忽略记忆重新匹配
+        //    命中时恢复其来源端点为活跃端点（跨源 ID 不兼容）；来源已下线则忽略记忆重新匹配。
+        //    手动锁定源期间：指向其他源的记忆一律忽略——旧源 ID 在锁定源查询必然失败，
+        //    必须按锁定源重新检索匹配（命中后写回的新记忆自然带锁定源的 sourceBase）
         const titleKey = normalizeTitle(ctx.title) + '#' + ctx.episodeIndex;
         if (!skipMemo) {
             const memo = lookupMap(titleKey);
-            if (memo) {
+            if (memo && (!pinnedBase || memo.sourceBase === pinnedBase)) {
                 const restored = restoreEndpointByBase(memo.sourceBase);
                 if (restored === false) {
                     return { episodeId: memo.episodeId, animeTitle: memo.animeTitle || '', episodeTitle: memo.episodeTitle || '' };
@@ -544,8 +607,13 @@
             if (token !== matchToken) return [];
             if (r.list.length) return r.list;
 
-            // 第 2 轮：轮换到下一个候选源整链重匹配（跳过指向失败源的记忆映射）
+            // 第 2 轮：轮换到下一个候选源整链重匹配（跳过指向失败源的记忆映射）。
+            // 手动选择的源失败时解除锁定再轮换兜底："有弹幕"优先级最高——所选源对该集
+            // 无数据（公共代理抓不到/自定义源未配好）时若锁死不轮换，切源即成永久空屏；
+            // 解除后自动故障转移生效，下拉框回显将跟随实际生效源（refreshDanmuPanel 同步）
             const eps = await resolveEndpoints();
+            if (pinnedBase && !eps.some(e => e.base === pinnedBase)) pinnedBase = null;
+            pinnedBase = null; // 锁定源已失败，交还自动多源转移
             if (eps.length > 1) {
                 await rotateEndpoint();
                 r = await tryMatchAndLoad(ctx, token, true);
@@ -582,13 +650,24 @@
         }
     }
 
-    // 手动匹配选择：写入记忆映射（基于最近一次 getForPlayer 的上下文）+ 拉取弹幕 + 存缓存 + 派发事件
+    // 手动匹配选择：写入记忆映射（基于最近一次 getForPlayer 的上下文）+ 拉取弹幕 + 存缓存 + 派发事件。
+    // 自建源冷启动特性：该集弹幕库后台异步构建，首次 comment 请求可能 404/空（自动匹配链路
+    // 有两段退避重试，这里对齐）——否则表现为"搜索列表能出，点击选集即失败"。
+    // 重试期间被更新请求作废（重新搜索/换集/重新自动匹配）则直接放弃
     async function manualSelect(sel) {
         const token = ++matchToken; // 作废在途的自动匹配请求
         try {
             if (!sel || sel.episodeId === undefined || sel.episodeId === null) return [];
             if (!isEnabled()) return [];
-            const raw = await getComments(sel.episodeId);
+            let raw = await getComments(sel.episodeId);
+            const retryDelays = [4000, 12000];
+            for (const delay of retryDelays) {
+                if (raw && Array.isArray(raw.comments) && raw.comments.length) break;
+                if (token !== matchToken) return [];
+                await new Promise(res => setTimeout(res, delay));
+                if (token !== matchToken) return [];
+                raw = await getComments(sel.episodeId);
+            }
             if (!raw) return [];
             const list = sampleToMax(convertComments(raw));
             if (!list.length) return [];
@@ -642,6 +721,9 @@
         isEnabled,
         resolveEndpoint,
         getActiveSourceLabel,
+        getSourceList,
+        getActiveSourceBase,
+        selectSource,
         switchSource,
         preloadEpisode,
         searchAnime,

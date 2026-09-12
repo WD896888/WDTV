@@ -25,7 +25,9 @@
 //                   仅在视频正在播放且解码帧更新时才产帧，暂停/缓冲区间不再产生任何帧
 // v10（2026-09-10）：修复画面选项面板打开时先坠到下方再跳回居中的问题——speedPanelIn 动画的 to{transform:none}
 //                    覆盖了定位用的 translateY(-50%)，改为专属入场动画（全程保持 -50% 偏移）
-const CACHE_VERSION = 'wdtv-sw-v10';
+// v11（2026-09-12）：弹幕按钮拆分（控制栏复合按钮 → 右上角开关+详情幽灵按钮）+ 弹幕浮层改右上角下拉，
+//                    升级缓存版本清空旧缓存，确保 player.html/css/js 新版本即时到达
+const CACHE_VERSION = 'wdtv-sw-v11';
 const ASSET_CACHE = `wdtv-assets-${CACHE_VERSION}`;
 const PAGE_CACHE = `wdtv-pages-${CACHE_VERSION}`;
 

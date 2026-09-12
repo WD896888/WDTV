@@ -606,6 +606,17 @@ input:checked + .slider:before {
     color: #8fb4e8;
 }
 
+/* 控制栏选集按钮：字体/颜色与倍速按钮完全一致 */
+.art-control-episodeQuickButton {
+    font-weight: 500;
+    letter-spacing: 0.2px;
+    transition: color 0.2s ease;
+}
+
+.art-control-episodeQuickButton:hover .ep-btn-text {
+    color: #8fb4e8;
+}
+
 /* 倍速按钮：进度保护中状态（卡顿/seek 降速后未恢复原倍速期间）
    主题蓝文字 + 呼吸闪烁提醒；!important 覆盖 JS 内联的按钮颜色 */
 .art-control-rateQuickButton.rate-guarding .rate-btn-text {
@@ -635,7 +646,7 @@ input:checked + .slider:before {
     left: 0;
     right: auto;
     bottom: 80px;
-    z-index: 150;
+    z-index: 320; /* 高于右侧拍照钮/锁定钮(310)：面板展开覆盖其上，避免误触拍照 */
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
@@ -686,10 +697,45 @@ input:checked + .slider:before {
     text-shadow: 0 1px 2px rgba(40, 56, 84, 0.35);
 }
 
-/* ===== 缓存快捷按钮与面板 ===== */
-.art-control-cacheQuickButton:hover .cache-btn-text {
-    color: #8fb4e8;
+/* ===== 缓存快捷面板 ===== */
+
+/* ===== 选集快捷面板（控制栏选集按钮）：集数网格，与底部剧集列表同序 ===== */
+.art-speed-panel.episode-panel {
+    grid-template-columns: 1fr; /* 覆盖倍速面板的 4 列网格，内部自建集数网格 */
+    width: 300px;
+    padding: 12px;
 }
+
+.wdtv-ep-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 5px;
+    max-height: 264px;
+    overflow-y: auto;
+}
+
+.wdtv-ep-chip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    min-width: 0;
+    padding: 9px 2px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    font-family: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    overflow: hidden;
+    transition: color 0.12s ease;
+}
+
+/* 与播放界面按钮同语言：悬停仅文字变界面主蓝（激活态复用 .art-speed-item.active 玻璃底） */
+.wdtv-ep-chip:hover {
+    color: #6fa8e8;
+}
+
 
 /* ===== 控制栏防溢出：右侧按钮较多（倍速/下载/缓存/设置/全屏）时，
    压缩整体间距与时间字号，保证最右侧的全屏按钮始终留在屏幕内 ===== */
@@ -820,17 +866,35 @@ input:checked + .slider:before {
     flex-shrink: 0;
 }
 
-/* 移动端：面板改为 3 列，防止横向溢出 */
-@media (max-width: 480px) {
+/* 移动端/窄视口（≤600px，与控制栏 .art-bottom 同阈值）：面板紧凑内容宽度（不再全宽拉伸留大片空白），
+   默认贴右侧、钳制在视口内；精确位置由 JS 对齐函数内联（居中于控制栏按钮 / 贴右上角按钮下沿）。
+   注意断点必须 600 而非 480——手机 CSS 视口普遍 430~560px，480 挡不住。
+   bottom 48px=贴近矮控制栏（桌面 80px 在手机上留大空隙）；max-height 钳在播放器内防顶部被裁 */
+@media (max-width: 600px) {
     .art-speed-panel {
+        width: max-content;
+        max-width: calc(100vw - 16px);
+        max-height: calc(100% - 60px);
+        overflow-y: auto;
+        bottom: 48px;
+        left: auto;
         right: 8px;
-        left: 8px;
-        grid-template-columns: repeat(3, 1fr);
-        justify-items: center;
     }
 
     .art-speed-item {
-        min-width: 64px;
+        min-width: 0;
+    }
+
+    /* 顶部下挂面板（缓存/下载/弹幕）：顶部偏移更大，max-height 相应多留 */
+    .art-speed-panel.cache-panel,
+    .art-speed-panel.download-panel,
+    .art-speed-panel.wdtv-danmu-panel {
+        max-height: calc(100% - 110px);
+    }
+
+    /* 选集面板：滚动交给面板自身（内层网格不再单独限高） */
+    .art-speed-panel.episode-panel .wdtv-ep-grid {
+        max-height: none;
     }
 }
 
@@ -1289,21 +1353,24 @@ html .art-video-player.art-backdrop .art-info{
 .wdtv-photo-item.recording{color:#ffb0b0}
 .wdtv-photo-item.recording svg{color:#ff6b6b}
 
-/* 小屏：面板改为底部贴边单列，避免右侧被裁切（须位于上方主规则之后，否则同特异性会被压掉） */
+/* 小屏：不做全宽拉伸（全宽会让两个短菜单项两侧大片空白）——保持紧凑内容宽度，
+   贴拍照钮左侧垂直居中（right:46px = 钮宽30 + 间距16；left:auto 抵消基础小屏规则的 left:8px） */
 @keyframes wdtvPhotoPanelInFlat{
-  from{opacity:0;transform:translateY(6px) scale(0.96)}
-  to{opacity:1;transform:none}
+  from{opacity:0;transform:translateY(calc(-50% + 6px)) scale(0.96)}
+  to{opacity:1;transform:translateY(-50%)}
 }
-@media (max-width: 480px) {
+@media (max-width: 600px) {
   .wdtv-photo-panel{
-    left:8px;
-    right:8px;
-    top:auto;
-    bottom:80px;
-    transform:none;
-    transform-origin:bottom center;
-    grid-template-columns:1fr;
-    animation-name:wdtvPhotoPanelInFlat;
+    left:auto;
+    right:46px;
+    top:50%;
+    bottom:auto;
+    width:max-content;
+    min-width:0;
+    max-width:calc(100vw - 60px);
+    transform:translateY(-50%);
+    transform-origin:right center;
+    animation-name:wdtvPhotoPanelIn;
   }
 }
 
@@ -1348,12 +1415,568 @@ html .art-video-player.art-backdrop .art-info{
 .wdtv-danmu-back{grid-column:1/-1;font-size:12px;color:#8fb4e8;cursor:pointer;user-select:none;padding:2px 0}
 .wdtv-danmu-back:hover{color:#aecbf2}
 
-/* 弹幕控制栏开关按钮关闭态：图标整体降透明度提示（关闭态本身已切换为带斜线图标） */
-.art-control-danmuToggle{color:rgba(236,244,255,0.92)}
-.art-control-danmuToggle:hover{color:#fff}
+/* ===== 弹幕右上角按钮组：开关 + 详情（极简幽灵按钮：无框无底，阴影保可读，悬停浮现柔和底色）===== */
+.wdtv-dm-topbtns {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 120;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+/* art-control-show = 控制栏可见；art-hover = 桌面悬停（与锁定钮同一套显隐标志） */
+.art-video-player.art-control-show .wdtv-dm-topbtns,
+.art-video-player.art-hover .wdtv-dm-topbtns {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.wdtv-dm-topbtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: rgba(238, 245, 255, 0.95);
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+    filter: drop-shadow(0 1px 2px rgba(10, 20, 38, 0.6));
+    transition: color 0.15s ease, opacity 0.15s ease, transform 0.12s ease;
+}
+
+/* 缓存按钮的进行中状态文字（"xx%"/"缓存完"，空闲隐藏） */
+.wdtv-dm-topbtn .cache-btn-text {
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+    color: inherit;
+}
+
+/* 图标禁止 flex 压缩（缓存按钮带状态文字时会把 16px 图标挤瘪） */
+.wdtv-dm-topbtn svg {
+    flex: none;
+}
+
+/* 缓存按钮带状态文字时允许加宽（空闲仍是无文字的 32px 方形纯图标） */
+.wdtv-dm-cachebtn {
+    width: auto;
+    min-width: 32px;
+    padding: 0 8px;
+}
+
+/* 与播放界面按钮同语言：悬停无底色，仅图标浮现界面主蓝 */
+.wdtv-dm-topbtn:hover {
+    color: #6fa8e8;
+}
+
+.wdtv-dm-topbtn:active {
+    transform: scale(0.92);
+}
+
+/* 开关关闭态：整钮降透明度示意（斜线图标 + 变暗，悬停恢复） */
+.wdtv-dm-togglesw[data-dm-state="off"] {
+    opacity: 0.5;
+}
+
+.wdtv-dm-togglesw[data-dm-state="off"]:hover {
+    opacity: 1;
+}
 
 /* 隐藏 artplayer-plugin-danmuku 自带控制栏小面板（控制栏中央的 apd-toggle 开关/apd-config 齿轮）：
    其功能与播放器设置菜单"弹幕"子菜单完全重复，且自带开关状态与实际显隐可能不同步，
    用户常把它误认为弹幕功能开关——统一入口到我们自己的 UI */
 .art-video-player .art-controls-center .apd-toggle,
 .art-video-player .art-controls-center .apd-config{display:none!important}
+
+/* 弹幕开关入口 = 右上角「弹幕」按钮 + 浮层头行拨杆（两处共用 applyDanmuVisible） */
+
+/* 头行拨杆：扩大触控命中区（视觉不变） */
+.wdtv-dm-head .wdtv-dm-sw::after {
+    content: '';
+    position: absolute;
+    inset: -9px -12px;
+}
+
+/* ===== 弹幕设置浮层（行式紧凑布局：每行 = 标签 + 控件）===== */
+.art-speed-panel.wdtv-danmu-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 260px;
+    padding: 12px 13px 10px;
+    /* 贴右上角「详情」按钮下沿下拉（JS alignDanmuPanel 打开时精确定位，此处为兜底默认值） */
+    top: 56px;
+    right: 10px;
+    bottom: auto;
+    left: auto;
+    transform-origin: top right;
+    animation: dmPanelIn 0.16s ease;
+}
+
+@keyframes dmPanelIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* 头行：品牌 + 显隐拨杆 */
+.wdtv-dm-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(151, 173, 208, 0.18);
+}
+
+.wdtv-dm-brand {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    color: rgba(234, 240, 248, 0.95);
+}
+
+.wdtv-dm-brand b {
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+.wdtv-dm-brand svg {
+    color: #6fa8e8;
+}
+
+/* 行：标签 + 控件 */
+.wdtv-dm-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 30px;
+}
+
+.wdtv-dm-lb {
+    flex: 0 0 56px;
+    font-size: 12px;
+    color: rgba(196, 212, 236, 0.78);
+}
+
+.wdtv-dm-rv {
+    flex: 0 0 34px;
+    text-align: right;
+    font-size: 11px;
+    color: rgba(222, 234, 250, 0.85);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 透明度滑杆（min-width:0 必须：input 固有宽 ~129px，否则把右侧数值顶出窗口） */
+.wdtv-dm-range {
+    flex: 1;
+    min-width: 0;
+    height: 3px;
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #6fa8e8 var(--dm-fill, 100%), rgba(151, 173, 208, 0.28) var(--dm-fill, 100%));
+    outline: none;
+    cursor: pointer;
+}
+
+.wdtv-dm-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #eaf3ff;
+    border: 2px solid #6fa8e8;
+    box-shadow: 0 1px 4px rgba(15, 30, 55, 0.45);
+    transition: transform 0.12s ease;
+}
+
+.wdtv-dm-range::-webkit-slider-thumb:active {
+    transform: scale(1.25);
+}
+
+.wdtv-dm-range::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: #eaf3ff;
+    border: 2px solid #6fa8e8;
+}
+
+.wdtv-dm-range::-moz-range-track {
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(151, 173, 208, 0.28);
+}
+
+/* 显示区域：三块迷你屏 */
+.wdtv-dm-areas {
+    flex: 1;
+    display: flex;
+    gap: 7px;
+}
+
+.wdtv-dm-area {
+    flex: 1;
+    position: relative;
+    height: 28px;
+    border: 1px solid rgba(151, 173, 208, 0.4);
+    border-radius: 6px;
+    background: linear-gradient(155deg, rgba(117, 145, 189, 0.26) 0%, rgba(50, 66, 94, 0.45) 100%);
+    overflow: hidden;
+    cursor: pointer;
+    padding: 0;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+
+.wdtv-dm-area i {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(180deg, rgba(117, 145, 189, 0.5), rgba(90, 120, 165, 0.65));
+}
+
+.wdtv-dm-area.active {
+    border-color: rgba(125, 200, 255, 0.85);
+    box-shadow: 0 0 0 1px rgba(125, 200, 255, 0.35), 0 0 10px rgba(90, 160, 240, 0.22);
+}
+
+.wdtv-dm-area.active i {
+    background: linear-gradient(180deg, rgba(96, 175, 255, 0.55), rgba(70, 130, 220, 0.75));
+}
+
+.wdtv-dm-area:active {
+    transform: scale(0.94);
+}
+
+/* 行内分段 */
+.wdtv-dm-seg {
+    flex: 1;
+    display: flex;
+    padding: 2.5px;
+    gap: 2px;
+    border-radius: 8px;
+    background: linear-gradient(155deg, rgba(117, 145, 189, 0.26) 0%, rgba(50, 66, 94, 0.45) 100%);
+    border: 1px solid rgba(151, 173, 208, 0.28);
+}
+
+.wdtv-dm-seg button {
+    flex: 1;
+    padding: 4.5px 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: rgba(222, 234, 250, 0.8);
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.wdtv-dm-seg button.active {
+    background: linear-gradient(135deg, rgba(117, 145, 189, 0.55), rgba(90, 120, 170, 0.5));
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 1px 4px rgba(20, 35, 60, 0.4);
+}
+
+/* 拨杆（头行显隐 / 防重叠 共用造型）*/
+.wdtv-dm-sw {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    border: 1px solid rgba(151, 173, 208, 0.4);
+    background: rgba(12, 20, 36, 0.55);
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.wdtv-dm-sw i {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(200, 214, 235, 0.9);
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.wdtv-dm-sw.on {
+    background: rgba(111, 168, 232, 0.4);
+    border-color: rgba(111, 168, 232, 0.6);
+}
+
+.wdtv-dm-sw.on i {
+    transform: translateX(16px);
+    background: #6fa8e8;
+    box-shadow: 0 0 6px rgba(111, 168, 232, 0.8);
+}
+
+.wdtv-dm-sw:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* 底部：数据源下拉框 + 手动匹配 */
+.wdtv-dm-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(151, 173, 208, 0.18);
+}
+
+/* 下拉框容器：相对定位承载展开选项列表 */
+.wdtv-dm-selwrap {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+}
+
+/* 数据源下拉按钮：与浮层行控件同风格（暗底/8px 圆角/自绘箭头）；原生 select 展开菜单无法换肤故弃用 */
+.wdtv-dm-srcsel {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    padding: 0 26px 0 12px;
+    border: 1px solid rgba(151, 173, 208, 0.4);
+    border-radius: 8px;
+    background-color: rgba(74, 96, 132, 0.3);
+    color: rgba(222, 234, 250, 0.88);
+    font-size: 12px;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    /* 多重背景：自绘箭头 + 窗口同款玻璃渐变（hover/open 提亮走 background-color，经渐变 alpha 透出） */
+    background-image:
+        url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a9bcd8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"),
+        linear-gradient(155deg, rgba(117, 145, 189, 0.32) 0%, rgba(50, 66, 94, 0.55) 100%);
+    background-repeat: no-repeat, no-repeat;
+    background-position: right 9px center, center;
+    background-size: 11px, 100% 100%;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.wdtv-dm-srcsel:hover,
+.wdtv-dm-selwrap.open .wdtv-dm-srcsel {
+    border-color: rgba(125, 200, 255, 0.7);
+    background-color: rgba(96, 120, 158, 0.45);
+}
+
+/* 展开态箭头翻转（chevron-up），玻璃渐变保持不变 */
+.wdtv-dm-selwrap.open .wdtv-dm-srcsel {
+    background-image:
+        url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a9bcd8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m18 15-6-6-6 6'/%3E%3C/svg%3E"),
+        linear-gradient(155deg, rgba(117, 145, 189, 0.32) 0%, rgba(50, 66, 94, 0.55) 100%);
+}
+
+/* 按钮内的当前源文字 */
+.wdtv-dm-srcval {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 展开选项列表：与浮层同源的玻璃面板（向下弹出，覆盖视频区） */
+.wdtv-dm-srcpop {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 5px;
+    max-height: 172px;
+    overflow-y: auto;
+    background: linear-gradient(155deg, rgba(84, 108, 146, 0.9) 0%, rgba(42, 57, 87, 0.95) 100%);
+    -webkit-backdrop-filter: blur(22px) saturate(1.35);
+    backdrop-filter: blur(22px) saturate(1.35);
+    border: 1px solid rgba(151, 173, 208, 0.35);
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(5, 10, 22, 0.55);
+    transform-origin: top center;
+    animation: dmSrcPopIn 0.14s ease;
+}
+
+/* 选项列表随 selwrap.open 显隐（仅 wrap 加 open，避免两处状态不同步） */
+.wdtv-dm-selwrap:not(.open) .wdtv-dm-srcpop {
+    display: none;
+}
+
+@keyframes dmSrcPopIn {
+    from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 选项行：源点 + 名称 + 当前源对勾 */
+.wdtv-dm-srcopt {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 7px 9px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: rgba(222, 234, 250, 0.85);
+    font-size: 12px;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+
+.wdtv-dm-srcopt:hover {
+    background: rgba(117, 145, 189, 0.28);
+    color: rgba(240, 246, 255, 0.98);
+}
+
+.wdtv-dm-srcopt.active {
+    color: #eaf3ff;
+}
+
+.wdtv-dm-optlb {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wdtv-dm-optck {
+    flex: none;
+    width: 13px;
+    height: 13px;
+    color: #6fa8e8;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+.wdtv-dm-srcopt.active .wdtv-dm-optck {
+    opacity: 1;
+}
+
+/* 空列表占位（非按钮，不可点） */
+.wdtv-dm-srcopt-none,
+.wdtv-dm-srcopt-none:hover {
+    background: transparent;
+    color: rgba(222, 234, 250, 0.45);
+    cursor: default;
+}
+
+.wdtv-dm-matchbtn {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4.5px 10px;
+    border: 1px solid rgba(151, 173, 208, 0.35);
+    border-radius: 999px;
+    background: transparent;
+    color: rgba(222, 234, 250, 0.85);
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.wdtv-dm-matchbtn:hover {
+    background: rgba(117, 145, 189, 0.25);
+}
+
+/* ===== 小屏/窄视口（≤600px，与控制栏 .art-bottom 同阈值）统一缩放：弹出面板/悬浮钮收紧尺寸 ===== */
+@media (max-width: 600px) {
+    /* 弹出面板通用：内边距与选项行收紧 */
+    .art-speed-panel {
+        padding: 10px;
+    }
+
+    .art-speed-item {
+        padding: 7px 8px;
+        font-size: 12.5px;
+    }
+
+    /* 集数 chip 保持专属内边距（上方通用 art-speed-item 规则会覆盖它） */
+    .wdtv-ep-chip {
+        padding: 8px 2px;
+        font-size: 12px;
+    }
+
+    /* 选集面板：进一步收紧（300px 桌面尺寸在手机上仍偏大） */
+    .art-speed-panel.episode-panel {
+        width: 264px;
+        padding: 10px;
+    }
+
+    .wdtv-ep-grid {
+        gap: 4px;
+    }
+
+    /* 弹幕浮层内边距收紧 */
+    .art-speed-panel.wdtv-danmu-panel {
+        padding: 10px 11px 9px;
+    }
+
+    /* 拍照面板选项行 */
+    .wdtv-photo-item {
+        padding: 8px 10px;
+        gap: 8px;
+        font-size: 12.5px;
+    }
+
+    .wdtv-photo-item svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* 侧边悬浮钮（拍照/锁定/解锁）：34→30px，图标同步缩小 */
+    .wdtv-photo-btn,
+    .wdtv-lock-btn,
+    .wdtv-unlock-btn {
+        width: 30px;
+        height: 30px;
+    }
+
+    .wdtv-photo-btn svg {
+        width: 18px !important;
+        height: 18px !important;
+    }
+
+    .wdtv-lock-btn svg,
+    .wdtv-unlock-btn svg {
+        width: 19px !important;
+        height: 19px !important;
+    }
+
+    /* 右上角工具按钮组贴边更近 */
+    .wdtv-dm-topbtns {
+        top: 8px;
+        right: 8px;
+    }
+}

@@ -135,7 +135,6 @@ let tierProbeToken = 0; // 探测竞态令牌：换集/换源后旧探测结果�
 let tierSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加探测档位清晰度菜单
 let bitrateSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加画质模式菜单
 let speedSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加长按倍速/区域菜单
-let danmuSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加弹幕子菜单
 let tierProbeInfo = null; // 最近一次探测结果摘要 { host, probed, trials, real }（面板透出探测透明度）
 const tierZeroToastHosts = new Set(); // 本页会话内已弹过"0 档可用"提示的源主机（避免每集重复打扰）
 let longPressBoostActive = false; // 长按临时倍速进行中（临时速度不写入全局记忆）
@@ -1030,16 +1029,11 @@ function setupBitrateSettingsMenu() {
 
 let danmuLastLoadKey = ''; // 插件最近一次发起弹幕加载的集键（判断换集后是否需要重载）
 
-// 弹幕设置可选值（读取统一走 getDanmuChoice，异常时给默认值）
-const DANMU_OPACITY_CHOICES = [0.5, 0.75, 1];                     // 透明度（默认 1）
+// 弹幕设置可选值（分段/迷你屏控件读取统一走 getDanmuChoice，异常时给默认值；
+// 透明度为连续滑杆，走 getDanmuOpacity 不受白名单限制）
 const DANMU_FONT_SIZE_CHOICES = [18, 25, 32];                     // 字号（默认 25）
 const DANMU_SPEED_CHOICES = [8, 5, 3];                            // 速度：慢 8 / 标准 5 / 快 3
 const DANMU_MARGIN_CHOICES = [[0, '0%'], [0, '25%'], [0, '50%']]; // 显示区域：全屏 / 3/4 屏 / 半屏
-const DANMU_MARGIN_OPTIONS = [
-    { html: '全屏', value: [0, '0%'] },
-    { html: '3/4 屏', value: [0, '25%'] },
-    { html: '半屏', value: [0, '50%'] }
-];
 
 // 读取弹幕设置原始值：兼容 JSON 序列化值与裸字符串，读不到/异常返回 fallback
 function getDanmuRawSetting(key, fallback) {
@@ -1062,6 +1056,16 @@ function getDanmuChoice(key, choices, defaultValue) {
         }
     }
     return defaultValue;
+}
+
+// 弹幕透明度（连续滑杆值，0.35~1）：不入 getDanmuChoice 白名单，异常/越界回退默认
+function getDanmuOpacity() {
+    try {
+        const raw = JSON.parse(localStorage.getItem('danmuOpacity') || 'null');
+        const v = parseFloat(raw);
+        if (isFinite(v) && v >= 0.35 && v <= 1) return v;
+    } catch (e) { /* 静默 */ }
+    return 1;
 }
 
 // 弹幕显隐状态（danmuVisible：'false' 为关，默认开）
@@ -1110,7 +1114,7 @@ function buildDanmuPlugins() {
             emitter: false,            // 只观看不发送（隐藏插件内置发送输入框）
             visible: isDanmuVisible(), // 初始显隐（用户上次选择，默认开）
             antiOverlap: isDanmuAntiOverlap(),
-            opacity: getDanmuChoice('danmuOpacity', DANMU_OPACITY_CHOICES, 1),
+            opacity: getDanmuOpacity(),
             fontSize: getDanmuChoice('danmuFontSize', DANMU_FONT_SIZE_CHOICES, 25),
             speed: getDanmuChoice('danmuSpeed', DANMU_SPEED_CHOICES, 5),
             margin: getDanmuChoice('danmuMargin', DANMU_MARGIN_CHOICES, [0, '25%'])
@@ -1121,39 +1125,74 @@ function buildDanmuPlugins() {
     }
 }
 
-// 弹幕开关按钮图标（与 initPlayer 内 playerIcons 同款 24 视窗 1.6 描边线性风格；关闭态带斜线）
-const DANMU_ICON_ATTRS = 'viewBox="0 0 24 24" style="width:22px;height:22px;display:block" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
-const DANMU_ICON_ON = '<svg ' + DANMU_ICON_ATTRS + '><rect x="3" y="5.2" width="18" height="13.6" rx="2.4"/><path d="M7 9.2h6.4M7 12.4h9.8M7 15.6h4.6"/></svg>';
-const DANMU_ICON_OFF = '<svg ' + DANMU_ICON_ATTRS + '><rect x="3" y="5.2" width="18" height="13.6" rx="2.4"/><path d="M7 9.2h6.4M7 12.4h9.8M7 15.6h4.6"/><path d="m4.6 4.4 14.8 15.2"/></svg>';
+// ===== 弹幕右上角按钮组（开关 + 详情）=====
+// 开关按钮：点击=开启/关闭弹幕，显隐状态仅由图标斜线表达（沿用 v=121 约定）；
+// 详情按钮：点击=打开/收起弹幕详情浮层（setupDanmuQuickPanel），浮层贴其下沿右对齐下拉。
+// 按钮组浮于播放器右上角，与控制栏同步显隐（.art-control-show / .art-hover）；
+// 手势系统 inInteractiveArea 两处过滤列表已豁免 .wdtv-dm-topbtns。
+// 状态刷新直接重绘 innerHTML，不走 controls.update——其内部 remove+add 会丢失自绑监听
+const DANMU_ICON_ATTRS_SM = 'viewBox="0 0 24 24" style="width:16px;height:16px;display:block" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+const DANMU_ICON_SM = '<svg ' + DANMU_ICON_ATTRS_SM + '><rect x="3" y="5.2" width="18" height="13.6" rx="2.4"/><path d="M7 9.2h6.4M7 12.4h9.8M7 15.6h4.6"/></svg>';
+const DANMU_ICON_SM_SLASH = '<svg ' + DANMU_ICON_ATTRS_SM + '><rect x="3" y="5.2" width="18" height="13.6" rx="2.4"/><path d="M7 9.2h6.4M7 12.4h9.8M7 15.6h4.6"/><path d="m4.6 4.4 14.8 15.2"/></svg>';
+// 详情按钮图标：弹幕屏幕内嵌调节滑杆（旋钮），表达"弹幕调节/设置"，
+// 与播放器原设置齿轮区分，也与开关按钮的弹幕屏幕图标区分
+const DANMU_SETTINGS_ICON = '<svg ' + DANMU_ICON_ATTRS_SM + '><rect x="3" y="5.2" width="18" height="13.6" rx="2.4"/><path d="M6.8 9.6h10.4M6.8 14.4h10.4"/><circle cx="13.8" cy="9.6" r="1.8"/><circle cx="9.6" cy="14.4" r="1.8"/></svg>';
+// 下载图标：向下箭头 + 底部托盘线
+const DL_ICON_SM = '<svg ' + DANMU_ICON_ATTRS_SM + '><path d="M12 4.2v9.3"/><path d="m8.2 10.2 3.8 3.8 3.8-3.8"/><path d="M5.2 19.2h13.6"/></svg>';
+// 缓存图标：归档盒（整集存入本地，与下载箭头区分）
+const CACHE_ICON_SM = '<svg ' + DANMU_ICON_ATTRS_SM + '><rect x="4" y="4.2" width="16" height="4.6" rx="1"/><path d="M5.6 8.8V18a1.4 1.4 0 0 0 1.4 1.4h10a1.4 1.4 0 0 0 1.4-1.4V8.8"/><path d="M9.8 12.4h4.4"/></svg>';
 
-// 控制栏弹幕开关按钮（常驻）：有弹幕数据时点击=开关显隐；无数据时点击=打开手动匹配。
-// 匹配失败不移除按钮（旧设计"失败隐藏"会让用户失去入口），仅切换图标/提示状态
-function ensureDanmuControls() {
+// 开关按钮内容：visible = 弹幕当前是否显示（斜线图标=关闭）
+function danmuTopSwitchHtml(visible) {
+    return visible ? DANMU_ICON_SM : DANMU_ICON_SM_SLASH;
+}
+
+// 右上角工具按钮容器（弹幕开关/详情 + 下载/缓存 共用）：懒创建，同一播放器实例复用
+function ensureTopToolContainer(playerRoot) {
+    let wrap = playerRoot.querySelector('.wdtv-dm-topbtns');
+    if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.className = 'wdtv-dm-topbtns';
+        playerRoot.appendChild(wrap);
+    }
+    return wrap;
+}
+
+// 右上角按钮组（常驻，随播放器实例重建）：弹幕开关 + 弹幕详情
+function ensureDanmuTopButtons() {
     if (!art) return;
+    const playerRoot = art.template.$player || document.querySelector('#player .art-video-player');
+    if (!playerRoot || playerRoot.__wdtvDmTopBtns) return;
+    playerRoot.__wdtvDmTopBtns = true;
     try {
-        try { art.controls.remove('danmuToggle'); } catch (e) { } // 幂等：先移除旧按钮再重建
-        art.controls.add({
-            name: 'danmuToggle',
-            position: 'right',
-            index: 4,
-            html: hasDanmuData() ? (isDanmuVisible() ? DANMU_ICON_ON : DANMU_ICON_OFF) : DANMU_ICON_OFF,
-            tooltip: danmuToggleTooltip(),
-            style: { width: 'auto', cursor: 'pointer', userSelect: 'none', opacity: hasDanmuData() ? '' : '0.55' },
-            click: function () {
-                try {
-                    if (hasDanmuData()) {
-                        applyDanmuVisible(!isDanmuVisible());
-                    } else if (typeof openDanmuMatchModal === 'function') {
-                        // 尚无弹幕数据：按钮作为手动匹配入口（搜索并选择弹幕库）
-                        openDanmuMatchModal();
-                    } else if (typeof showShortcutHint === 'function') {
-                        showShortcutHint('弹幕数据加载中…');
-                    }
-                } catch (e) { /* 静默 */ }
-            }
+        try { art.controls.remove('danmuToggle'); } catch (e) { } // 兼容清理：旧控制栏复合按钮
+        const wrap = ensureTopToolContainer(playerRoot);
+        const swBtn = document.createElement('button');
+        swBtn.className = 'wdtv-dm-topbtn wdtv-dm-togglesw';
+        swBtn.type = 'button';
+        swBtn.title = '开启 / 关闭弹幕';
+        swBtn.innerHTML = danmuTopSwitchHtml(isDanmuVisible());
+        const detailBtn = document.createElement('button');
+        detailBtn.className = 'wdtv-dm-topbtn wdtv-dm-detailbtn';
+        detailBtn.type = 'button';
+        detailBtn.title = '弹幕详情（显隐 / 数据源 / 透明度 / 字号等）';
+        detailBtn.innerHTML = DANMU_SETTINGS_ICON;
+        // 顺序（左→右）：弹幕开关、弹幕设置、下载、缓存——缓存/下载的 setup 先行把按钮
+        // 追加进容器，弹幕两钮插到最前即得目标顺序
+        wrap.insertBefore(detailBtn, wrap.firstChild);
+        wrap.insertBefore(swBtn, wrap.firstChild);
+        swBtn.addEventListener('click', function () {
+            applyDanmuVisible(!isDanmuVisible());
         });
+        detailBtn.addEventListener('click', function () {
+            try {
+                if (danmuPanelEntry) toggleQuickPanel(danmuPanelEntry);
+                else if (typeof openDanmuMatchModal === 'function') openDanmuMatchModal(); // 浮层不可用时兜底
+            } catch (err) { /* 静默 */ }
+        });
+        if (danmuPanelEntry) danmuPanelEntry.btn = detailBtn; // 浮层对齐锚点（alignDanmuPanel 用）
     } catch (e) {
-        console.warn('弹幕开关按钮挂载失败：', e);
+        console.warn('弹幕右上角按钮挂载失败：', e);
     }
 }
 
@@ -1162,33 +1201,20 @@ function hasDanmuData() {
     return !!(window.Danmu && window.Danmu.getLastDanmuku() && window.Danmu.getLastDanmuku().length);
 }
 
-// 按钮提示文案：带当前数据源；无数据时引导手动匹配
-function danmuToggleTooltip() {
-    if (!hasDanmuData()) return '弹幕未匹配，点击手动搜索';
-    const srcLabel = window.Danmu ? window.Danmu.getActiveSourceLabel() : '';
-    return (isDanmuVisible() ? '关闭弹幕' : '开启弹幕') + (srcLabel && srcLabel !== '未加载' ? '（' + srcLabel + '）' : '');
-}
-
-// 移除控制栏弹幕按钮（仅插件不可用等致命场景；匹配失败只更新状态不移除）
-function removeDanmuControls() {
+// 右上角按钮状态刷新：状态变化才重绘 innerHTML（避免频繁替换造成悬停/动画闪烁）；
+// 浮层打开时同步浮层内容（数据源下拉/开关/分段选中态随事件实时变化）
+function refreshDanmuControl() {
     try {
-        if (art) art.controls.remove('danmuToggle');
-    } catch (e) { /* 按钮本就不存在，静默 */ }
-}
-
-// 同步按钮图标与提示为当前显隐状态（controls.update 对不存在的按钮会新建无事件空按钮，须先判存在）
-function updateDanmuToggleIcon() {
-    try {
-        if (!art || !art.controls || typeof art.controls.update !== 'function') return;
-        if (!art.controls.danmuToggle) return; // art.controls.<name> 即按钮 DOM 节点
-        const visible = isDanmuVisible();
-        art.controls.update({
-            name: 'danmuToggle',
-            html: hasDanmuData() ? (visible ? DANMU_ICON_ON : DANMU_ICON_OFF) : DANMU_ICON_OFF,
-            tooltip: danmuToggleTooltip()
-        });
-        // 无数据态按钮降透明度提示（同 ensure 时的初始样式）
-        try { art.controls.danmuToggle.style.opacity = hasDanmuData() ? '' : '0.55'; } catch (e) { }
+        const root = (art && art.template && art.template.$player) || document.querySelector('#player .art-video-player');
+        const swBtn = root && root.querySelector('.wdtv-dm-togglesw');
+        if (swBtn) {
+            const state = isDanmuVisible() ? 'on' : 'off';
+            if (swBtn.dataset.dmState !== state) {
+                swBtn.dataset.dmState = state;
+                swBtn.innerHTML = danmuTopSwitchHtml(isDanmuVisible());
+            }
+        }
+        syncDanmuPanel();
     } catch (e) { /* 静默 */ }
 }
 
@@ -1201,7 +1227,7 @@ function applyDanmuVisible(visible) {
             if (visible) plugin.show(); else plugin.hide();
         }
     } catch (e) { /* 静默 */ }
-    updateDanmuToggleIcon();
+    refreshDanmuControl();
     // 用户反馈：弹幕开关点击时控制栏可能处于隐藏态（图标不可见但按钮可点中），
     // 必须给出屏幕短提示让用户知道切换结果，否则表现为"点了没反应"
     try {
@@ -1218,12 +1244,12 @@ function applyDanmuVisible(visible) {
 
 // 把全部弹幕设置实时应用到当前插件实例（透明度/字号/速度/显示区域/防重叠/显隐）
 function applyDanmuConfig() {
-    updateDanmuToggleIcon();
+    refreshDanmuControl();
     try {
         const plugin = art && art.plugins && art.plugins.artplayerPluginDanmuku;
         if (!plugin) return;
         plugin.config({
-            opacity: getDanmuChoice('danmuOpacity', DANMU_OPACITY_CHOICES, 1),
+            opacity: getDanmuOpacity(),
             fontSize: getDanmuChoice('danmuFontSize', DANMU_FONT_SIZE_CHOICES, 25),
             speed: getDanmuChoice('danmuSpeed', DANMU_SPEED_CHOICES, 5),
             margin: getDanmuChoice('danmuMargin', DANMU_MARGIN_CHOICES, [0, '25%']),
@@ -1243,6 +1269,33 @@ function applyDanmuConfig() {
     }
 }
 
+// ===== 零重建实时应用（浮层调节专用）=====
+// applyDanmuConfig 的 config()+reset()+load() 会清空画面并整队列重建——弹幕"消失重出"。
+// 调节场景改走轻量路径：同步插件内部 option（新弹幕/seek/resize/换集自然使用新值），
+// 并对运行中弹幕做一次性 style 直改（纯合成写入，无重排无重建，画面全程连续）。
+// 关键：运行中弹幕的真身挂在播放器主库弹幕层 .art-danmuku（发射模块 constructor 里
+// this.$danmuku = art.template.$danmuku），不是插件自己的 .artplayer-plugin-danmuku
+// 设置面板容器（那里只有 apd-* 面板元素，直改它等于什么都没做）！
+// 速度/显示区域/防重叠不回溯运行中弹幕（它们继续按旧参数飞完，新弹幕立即按新参数生成）；
+// 透明度/字号同时直改运行中弹幕，调节即刻可见。
+function applyDanmuSettingLive(key, value) {
+    try {
+        const plugin = art && art.plugins && art.plugins.artplayerPluginDanmuku;
+        const root = art && art.template && art.template.$player;
+        if (!plugin || !plugin.option || !root) return;
+        plugin.option[key] = value;
+        if (key !== 'opacity' && key !== 'fontSize') return;
+        const layer = root.querySelector('.art-danmuku') ||
+            (art.template && art.template.$danmuku);
+        if (!layer) return;
+        for (const el of layer.children) {
+            if (el.className) continue; // 运行中弹幕元素 className 为空（$ref 复用时被显式清空）
+            if (key === 'opacity') el.style.opacity = String(value);
+            else el.style.fontSize = value + 'px';
+        }
+    } catch (e) { /* 静默 */ }
+}
+
 // 换集跟随重载：非 WebKit 浏览器换集走 art.switch（不重建实例，插件不会自动重新匹配），
 // 元数据到达时检查集键，仍停留在旧集则重载数据源；重建实例路径集键一致，此处为空操作
 function reloadDanmukuIfEpisodeChanged() {
@@ -1257,144 +1310,272 @@ function reloadDanmukuIfEpisodeChanged() {
     } catch (e) { /* 静默 */ }
 }
 
-// 设置面板（齿轮）"弹幕"子菜单：显隐/透明度/字号/速度/显示区域/防重叠 + 手动匹配入口
-function setupDanmuSettingsMenu() {
-    if (!art || danmuSettingsMenuAdded) return;
-    const settingApi = art.setting || art.settings; // 兼容不同版本 ArtPlayer 的设置API命名
-    if (!settingApi || typeof settingApi.add !== 'function') return;
-    danmuSettingsMenuAdded = true;
-    try {
-        // 数据源展示与切换：点击轮换到下一个候选源并整链重载当前集弹幕
-        settingApi.add({
-            name: 'danmuSourceInfo',
-            html: '数据源：' + (window.Danmu ? window.Danmu.getActiveSourceLabel() : '未知'),
-            width: 200,
-            tooltip: '点击切换数据源',
-            selector: [{ html: '切换到下一个源', default: true }],
-            onSelect() {
-                try {
-                    if (!window.Danmu || !window.Danmu.switchSource) return '切换源';
-                    window.Danmu.switchSource().then((label) => {
-                        // 更新菜单项文案为切换后的源
-                        try {
-                            const settingApi2 = art.setting || art.settings;
-                            if (settingApi2 && typeof settingApi2.update === 'function') {
-                                settingApi2.update({ name: 'danmuSourceInfo', html: '数据源：' + label, tooltip: '点击切换数据源' });
-                            }
-                        } catch (e) { /* 静默 */ }
-                        // 无参 load 重新执行数据源函数（switchSource 已清空旧数据与记忆映射，整链按新源重搜）
-                        const plugin = art && art.plugins && art.plugins.artplayerPluginDanmuku;
-                        if (plugin && typeof plugin.load === 'function') {
-                            const reload = plugin.load();
-                            if (reload && typeof reload.catch === 'function') reload.catch(function () { });
-                        }
-                        if (typeof showShortcutHint === 'function') showShortcutHint('已切换弹幕源：' + label);
-                    }).catch(function () { /* 静默 */ });
-                } catch (e) { /* 静默 */ }
-                return '切换源';
-            }
+// ===== 弹幕设置浮层（毛玻璃快捷面板体系：数据源胶囊 / 大开关 / 可视化显示区域 / 分段控件 / 拨杆）=====
+// 入口为控制栏复合弹幕按钮的齿轮分区；原设置面板"弹幕"子菜单（列表叠加式）已由本浮层整体替代
+
+let danmuPanelEntry = null; // { key, panel, btn, playerRoot, refresh }：quickPanels 体系注册项
+
+const DANMU_SEG_DEFS = [
+    { key: 'danmuFontSize', choices: DANMU_FONT_SIZE_CHOICES, def: 25, labels: { 18: '小', 25: '标准', 32: '大' } },
+    { key: 'danmuSpeed', choices: DANMU_SPEED_CHOICES, def: 5, labels: { 8: '慢', 5: '标准', 3: '快' } }
+];
+
+function setupDanmuQuickPanel() {
+    if (!art) return;
+    const playerRoot = art.template.$player || document.querySelector('#player .art-video-player');
+    if (!playerRoot || playerRoot.__wdtvDanmuPanel) return;
+    playerRoot.__wdtvDanmuPanel = true;
+
+    const panel = document.createElement('div');
+    panel.className = 'art-speed-panel wdtv-danmu-panel hidden';
+    // 行式紧凑布局（与 player.css 弹幕浮层段落一一对应）：
+    // 头行 = 品牌 + 显隐拨杆；行 = 标签 + 控件；底部 = 数据源下拉 + 手动匹配
+    panel.innerHTML =
+        '<div class="wdtv-dm-head">' +
+            '<span class="wdtv-dm-brand">' + DANMU_ICON_SM + '<b>弹幕</b>' +
+            '</span>' +
+            '<button class="wdtv-dm-sw" data-act="toggle" type="button" title="显示 / 隐藏弹幕"><i></i></button>' +
+        '</div>' +
+        // 显示区域：三块迷你屏可视化（半屏 / 3/4 屏 / 全屏，data-idx 对应 DANMU_MARGIN_CHOICES 下标）
+        '<div class="wdtv-dm-line">' +
+            '<span class="wdtv-dm-lb">显示区域</span>' +
+            '<div class="wdtv-dm-areas">' +
+                '<button class="wdtv-dm-area" data-act="area" data-idx="2" type="button" title="半屏"><i style="height:50%"></i></button>' +
+                '<button class="wdtv-dm-area" data-act="area" data-idx="1" type="button" title="3/4 屏"><i style="height:75%"></i></button>' +
+                '<button class="wdtv-dm-area" data-act="area" data-idx="0" type="button" title="全屏"><i style="height:100%"></i></button>' +
+            '</div>' +
+        '</div>' +
+        '<div class="wdtv-dm-line">' +
+            '<span class="wdtv-dm-lb">字号</span>' +
+            '<div class="wdtv-dm-seg" data-key="danmuFontSize"></div>' +
+        '</div>' +
+        '<div class="wdtv-dm-line">' +
+            '<span class="wdtv-dm-lb">速度</span>' +
+            '<div class="wdtv-dm-seg" data-key="danmuSpeed"></div>' +
+        '</div>' +
+        // 透明度：连续滑杆（拖动实时预览）+ 右侧当前值
+        '<div class="wdtv-dm-line">' +
+            '<span class="wdtv-dm-lb">透明度</span>' +
+            '<input class="wdtv-dm-range" id="wdtvDmOpacity" type="range" min="0.35" max="1" step="0.05" value="1">' +
+            '<span class="wdtv-dm-rv">100%</span>' +
+        '</div>' +
+        '<div class="wdtv-dm-line">' +
+            '<span class="wdtv-dm-lb">防重叠</span>' +
+            '<button class="wdtv-dm-sw" data-act="anti" type="button" style="margin-left:auto" title="同屏弹幕防重叠"><i></i></button>' +
+        '</div>' +
+        '<div class="wdtv-dm-foot">' +
+            // 数据源自定义下拉（原生 select 展开菜单无法换肤，改为与浮层同风格的玻璃面板下拉）：
+            // 当前源按钮 + 展开选项列表（data-act 经面板委托分发）
+            '<span class="wdtv-dm-selwrap">' +
+                '<button class="wdtv-dm-srcsel" data-act="srcpop" type="button" title="选择弹幕数据源">' +
+                    '<span class="wdtv-dm-srcval">--</span>' +
+                '</button>' +
+                '<div class="wdtv-dm-srcpop"></div>' +
+            '</span>' +
+            '<button class="wdtv-dm-matchbtn" data-act="match" type="button">' +
+                '<svg viewBox="0 0 24 24" style="width:14px;height:14px" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.2"/><path d="m20 20-4.4-4.4"/></svg>' +
+                '<span>手动匹配</span>' +
+            '</button>' +
+        '</div>';
+    playerRoot.appendChild(panel);
+
+    // 构建两个分段控件（data-val 存 JSON 串，点击时还原比较；data-act/data-key 供委托分发）
+    const segEls = [];
+    panel.querySelectorAll('.wdtv-dm-seg').forEach(function (segEl) {
+        const def = DANMU_SEG_DEFS.find(function (d) { return d.key === segEl.dataset.key; });
+        if (!def) return;
+        segEl.innerHTML = def.choices.map(function (v) {
+            const label = (def.labels[v] !== undefined) ? def.labels[v] : String(v);
+            return '<button type="button" data-act="seg" data-key="' + def.key + '" data-val="' + JSON.stringify(v) + '">' + label + '</button>';
+        }).join('');
+        segEls.push({ el: segEl, def: def });
+    });
+
+    // 透明度滑杆：拖动全程零重建实时生效——input 经 rAF 节流调 applyDanmuSettingLive
+    //（同步插件 option + 运行中弹幕逐条 style.opacity 直改，纯合成路径无重排），
+    // change（松手）落库 + 兜底应用一次 + 刷新面板。不调 plugin.update/reset/load（那会清空画面重建）
+    const range = panel.querySelector('.wdtv-dm-range');
+    if (range) {
+        let rangeRaf = 0;
+        const liveApply = function (v) {
+            applyDanmuSettingLive('opacity', v);
+            const pct = Math.round((v - 0.35) / (1 - 0.35) * 100);
+            range.style.setProperty('--dm-fill', pct + '%');
+            const rv = panel.querySelector('.wdtv-dm-rv');
+            if (rv) rv.textContent = Math.round(v * 100) + '%';
+        };
+        range.addEventListener('input', function () {
+            const v = parseFloat(range.value);
+            if (!isFinite(v)) return;
+            if (rangeRaf) cancelAnimationFrame(rangeRaf);
+            rangeRaf = requestAnimationFrame(function () { rangeRaf = 0; liveApply(v); });
         });
-        // 显示开关（与控制栏按钮共用 applyDanmuVisible）
-        settingApi.add({
-            name: 'danmuSettings',
-            html: '弹幕',
-            width: 200,
-            tooltip: isDanmuVisible() ? '开' : '关',
-            selector: [
-                { html: '开', default: isDanmuVisible() },
-                { html: '关', default: !isDanmuVisible() }
-            ],
-            onSelect(item) {
-                applyDanmuVisible(item.html === '开');
-                return item.html;
-            }
+        range.addEventListener('change', function () {
+            if (rangeRaf) { cancelAnimationFrame(rangeRaf); rangeRaf = 0; }
+            const v = parseFloat(range.value);
+            if (!isFinite(v)) return;
+            try { localStorage.setItem('danmuOpacity', JSON.stringify(Math.round(v * 100) / 100)); } catch (e) { /* 静默 */ }
+            liveApply(v); // 兜底：最后一次 input 的 rAF 可能未及执行
+            refreshDanmuControl();
         });
-        // 透明度
-        const curOpacity = getDanmuChoice('danmuOpacity', DANMU_OPACITY_CHOICES, 1);
-        settingApi.add({
-            html: '透明度',
-            width: 200,
-            tooltip: String(curOpacity),
-            selector: DANMU_OPACITY_CHOICES.map(v => ({ html: String(v), value: v, default: v === curOpacity })),
-            onSelect(item) {
-                try { localStorage.setItem('danmuOpacity', JSON.stringify(item.value)); } catch (e) { }
-                applyDanmuConfig();
-                return item.html;
-            }
-        });
-        // 字号
-        const curFontSize = getDanmuChoice('danmuFontSize', DANMU_FONT_SIZE_CHOICES, 25);
-        settingApi.add({
-            html: '字号',
-            width: 200,
-            tooltip: String(curFontSize),
-            selector: DANMU_FONT_SIZE_CHOICES.map(v => ({ html: String(v), value: v, default: v === curFontSize })),
-            onSelect(item) {
-                try { localStorage.setItem('danmuFontSize', JSON.stringify(item.value)); } catch (e) { }
-                applyDanmuConfig();
-                return item.html;
-            }
-        });
-        // 速度（慢 8 / 标准 5 / 快 3）
-        const SPEED_LABELS = { 8: '慢', 5: '标准', 3: '快' };
-        const curSpeed = getDanmuChoice('danmuSpeed', DANMU_SPEED_CHOICES, 5);
-        settingApi.add({
-            html: '速度',
-            width: 200,
-            tooltip: SPEED_LABELS[curSpeed] || String(curSpeed),
-            selector: DANMU_SPEED_CHOICES.map(v => ({ html: SPEED_LABELS[v], value: v, default: v === curSpeed })),
-            onSelect(item) {
-                try { localStorage.setItem('danmuSpeed', JSON.stringify(item.value)); } catch (e) { }
-                applyDanmuConfig();
-                return item.html;
-            }
-        });
-        // 显示区域（全屏 / 3/4 屏 / 半屏）
-        const curMargin = getDanmuChoice('danmuMargin', DANMU_MARGIN_CHOICES, [0, '25%']);
-        const curMarginSnap = JSON.stringify(curMargin);
-        const curMarginItem = DANMU_MARGIN_OPTIONS.find(o => JSON.stringify(o.value) === curMarginSnap);
-        settingApi.add({
-            html: '显示区域',
-            width: 200,
-            tooltip: (curMarginItem && curMarginItem.html) || '3/4 屏',
-            selector: DANMU_MARGIN_OPTIONS.map(o => ({ html: o.html, value: o.value, default: JSON.stringify(o.value) === curMarginSnap })),
-            onSelect(item) {
-                try { localStorage.setItem('danmuMargin', JSON.stringify(item.value)); } catch (e) { }
-                applyDanmuConfig();
-                return item.html;
-            }
-        });
-        // 防重叠
-        const curAnti = isDanmuAntiOverlap();
-        settingApi.add({
-            html: '防重叠',
-            width: 200,
-            tooltip: curAnti ? '开' : '关',
-            selector: [
-                { html: '开', value: true, default: curAnti },
-                { html: '关', value: false, default: !curAnti }
-            ],
-            onSelect(item) {
-                try { localStorage.setItem('danmuAntiOverlap', JSON.stringify(item.value)); } catch (e) { }
-                applyDanmuConfig();
-                return item.html;
-            }
-        });
-        // 手动匹配入口（无论弹幕是否已加载都可用）
-        settingApi.add({
-            html: '手动匹配弹幕…',
-            width: 200,
-            tooltip: '搜索弹幕库',
-            selector: [{ html: '搜索弹幕库', default: true }],
-            onSelect() {
-                try { openDanmuMatchModal(); } catch (e) { /* 静默 */ }
-                return '搜索弹幕库';
-            }
-        });
-    } catch (e) {
-        danmuSettingsMenuAdded = false;
-        console.warn('弹幕设置菜单添加失败：', e);
     }
+
+    // 面板动态状态刷新（打开时/设置变化后/danmu:loaded 时调用）
+    function refreshDanmuPanel() {
+        try {
+            const has = hasDanmuData();
+            const on = has && isDanmuVisible();
+            // 头行：显隐拨杆（未匹配时拨杆禁用，点击主按钮走手动匹配）
+            const visSw = panel.querySelector('.wdtv-dm-head .wdtv-dm-sw');
+            if (visSw) {
+                visSw.classList.toggle('on', on);
+                visSw.disabled = !has;
+            }
+            // 透明度滑杆 + 填充进度 + 当前值
+            if (range) {
+                const cur = getDanmuOpacity();
+                range.value = String(cur);
+                const pct = Math.round((cur - 0.35) / (1 - 0.35) * 100);
+                range.style.setProperty('--dm-fill', pct + '%');
+                const rv = panel.querySelector('.wdtv-dm-rv');
+                if (rv) rv.textContent = Math.round(cur * 100) + '%';
+            }
+            // 数据源自定义下拉：候选变化时重建选项列表 + 按钮回显当前源
+            const selwrap = panel.querySelector('.wdtv-dm-selwrap');
+            if (selwrap && window.Danmu && window.Danmu.getSourceList) {
+                const srcLabel = (window.Danmu.getActiveSourceLabel) ? window.Danmu.getActiveSourceLabel() : '';
+                const valEl = selwrap.querySelector('.wdtv-dm-srcval');
+                if (valEl) valEl.textContent = srcLabel || '--';
+                window.Danmu.getSourceList().then(function (list) {
+                    const arr = list || [];
+                    const snap = arr.map(function (s) { return s.base; }).join('|');
+                    const pop = selwrap.querySelector('.wdtv-dm-srcpop');
+                    if (!pop) return;
+                    if (pop.dataset.srcSnap !== snap) {
+                        pop.dataset.srcSnap = snap;
+                        pop.innerHTML = arr.length ? arr.map(function (s) {
+                            return '<button class="wdtv-dm-srcopt" data-act="srcpick" type="button" data-base="' + s.base + '">' +
+                                '<span class="wdtv-dm-optlb">' + s.label + '</span>' +
+                                '<svg class="wdtv-dm-optck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg>' +
+                                '</button>';
+                        }).join('') : '<span class="wdtv-dm-srcopt wdtv-dm-srcopt-none">暂无可用数据源</span>';
+                    }
+                    // 兜底轮换可能切换实际生效源：每次刷新都按 base 同步选中态
+                    const curBase = (window.Danmu.getActiveSourceBase) ? window.Danmu.getActiveSourceBase() : '';
+                    pop.querySelectorAll('.wdtv-dm-srcopt').forEach(function (o) {
+                        o.classList.toggle('active', o.dataset.base === curBase);
+                    });
+                }).catch(function () { /* 静默 */ });
+            }
+            // 分段选中态
+            segEls.forEach(function (s) {
+                const cur = getDanmuChoice(s.def.key, s.def.choices, s.def.def);
+                s.el.querySelectorAll('button').forEach(function (b) {
+                    b.classList.toggle('active', b.dataset.val === JSON.stringify(cur));
+                });
+            });
+            // 显示区域选中态
+            const curMargin = getDanmuChoice('danmuMargin', DANMU_MARGIN_CHOICES, [0, '25%']);
+            const marginSnap = JSON.stringify(curMargin);
+            panel.querySelectorAll('.wdtv-dm-area').forEach(function (b) {
+                const idx = parseInt(b.dataset.idx, 10);
+                b.classList.toggle('active', JSON.stringify(DANMU_MARGIN_CHOICES[idx]) === marginSnap);
+            });
+            // 防重叠拨杆
+            const antiSw = panel.querySelector('.wdtv-dm-line .wdtv-dm-sw');
+            if (antiSw) antiSw.classList.toggle('on', isDanmuAntiOverlap());
+        } catch (e) { /* 静默 */ }
+    }
+
+    // 事件委托：所有 data-act 分发（点击后 refreshDanmuControl 会级联同步按钮与面板）
+    panel.addEventListener('click', function (e) {
+        const actEl = e.target.closest('[data-act]');
+        if (!actEl) return;
+        e.stopPropagation();
+        const act = actEl.dataset.act;
+        try {
+            if (act === 'toggle') {
+                applyDanmuVisible(!isDanmuVisible());
+            } else if (act === 'match') {
+                closeAllQuickPanels();
+                openDanmuMatchModal();
+            } else if (act === 'area') {
+                const idx = parseInt(actEl.dataset.idx, 10);
+                if (DANMU_MARGIN_CHOICES[idx]) {
+                    const val = DANMU_MARGIN_CHOICES[idx];
+                    try { localStorage.setItem('danmuMargin', JSON.stringify(val)); } catch (err) { }
+                    // 零重建：新弹幕立即按新区域排布，运行中的不回溯（避免 reset 清空画面）
+                    applyDanmuSettingLive('margin', val);
+                }
+            } else if (act === 'anti') {
+                const val = !isDanmuAntiOverlap();
+                try { localStorage.setItem('danmuAntiOverlap', JSON.stringify(val)); } catch (err) { }
+                applyDanmuSettingLive('antiOverlap', val);
+            } else if (act === 'seg') {
+                // 字号/速度分段：字号同时直改运行中弹幕；速度仅作用新弹幕（运行中的飞完为止）
+                const key = actEl.dataset.key;
+                let val = null;
+                try { val = JSON.parse(actEl.dataset.val); } catch (err) { }
+                if (val !== null && (key === 'danmuFontSize' || key === 'danmuSpeed')) {
+                    try { localStorage.setItem(key, JSON.stringify(val)); } catch (err) { }
+                    applyDanmuSettingLive(key === 'danmuFontSize' ? 'fontSize' : 'speed', val);
+                }
+            } else if (act === 'srcpop') {
+                // 数据源下拉：展开/收起选项列表
+                const wrap = actEl.closest('.wdtv-dm-selwrap');
+                if (wrap) wrap.classList.toggle('open');
+            } else if (act === 'srcpick') {
+                // 选定目标源（selectSource 内部锁定 + 清空旧数据与记忆映射），整链无参 load 重搜当前集。
+                // 锁定源对该集无数据时 getForPlayer 会解除锁定轮换兜底（"有弹幕"优先），
+                // 因此提示与下拉回显都在重载完成后取实际生效源
+                const wrap = actEl.closest('.wdtv-dm-selwrap');
+                if (wrap) wrap.classList.remove('open');
+                const base = actEl.dataset.base;
+                if (base && window.Danmu && window.Danmu.selectSource) {
+                    window.Danmu.selectSource(base).then(function (label) {
+                        if (typeof showShortcutHint === 'function') showShortcutHint('已选择弹幕源：' + label);
+                    }).catch(function () { /* 静默 */ }).finally(function () {
+                        (async function () {
+                            try {
+                                const plugin = art && art.plugins && art.plugins.artplayerPluginDanmuku;
+                                if (plugin && typeof plugin.load === 'function') {
+                                    const reload = plugin.load();
+                                    if (reload && typeof reload.then === 'function') await reload;
+                                }
+                            } catch (err) { /* 静默 */ }
+                            refreshDanmuControl(); // 重载完成后刷新：下拉回显实际生效源（可能已兜底轮换）
+                        })();
+                    });
+                }
+            }
+        } catch (err) { /* 静默 */ }
+        // live 路径不级联刷新（applyDanmuSettingLive 只动插件与弹幕 DOM），这里统一同步按钮与面板
+        refreshDanmuControl();
+    });
+
+    // 点击面板外任意处收起源选择下拉（面板本体收起由 registerQuickPanel 统一处理）；
+    // 仅移除 class 不 preventDefault，不干扰任何点击合成
+    const dmSrcWrap = panel.querySelector('.wdtv-dm-selwrap');
+    if (dmSrcWrap) {
+        document.addEventListener('pointerdown', function (e) {
+            if (!dmSrcWrap.classList.contains('open')) return;
+            if (dmSrcWrap.contains(e.target)) return;
+            dmSrcWrap.classList.remove('open');
+        }, true);
+    }
+
+    danmuPanelEntry = { key: 'danmu', panel: panel, btn: null, playerRoot: playerRoot, refresh: refreshDanmuPanel, align: alignDanmuPanel };
+    registerQuickPanel(danmuPanelEntry); // 点击外部收起/打开其他面板互斥/控制栏隐藏自动收起
+    observeControlsHide(playerRoot);
+}
+
+// 面板打开状态下实时同步其内容（refreshDanmuControl 级联调用）
+function syncDanmuPanel() {
+    try {
+        if (danmuPanelEntry && danmuPanelEntry.panel && !danmuPanelEntry.panel.classList.contains('hidden')) {
+            danmuPanelEntry.refresh();
+        }
+    } catch (e) { /* 静默 */ }
 }
 
 // ===== 手动匹配弹幕弹窗（复用换源 #modal 玻璃容器：番剧列表 → 剧集列表 两级结构） =====
@@ -1464,7 +1645,11 @@ async function renderDanmuAnimeList(keyword) {
         curStatus.textContent = '无匹配结果';
         return;
     }
-    curStatus.textContent = `共 ${animes.length} 条结果，点击选择作品`;
+    // 源标注：手动匹配的三步（搜索/剧集/弹幕）都走当前活跃源，列表来自哪个源要让用户可见，
+    // 否则点击失败时无从判断是否该换源重搜
+    const srcLabel = (window.Danmu && typeof window.Danmu.getActiveSourceLabel === 'function')
+        ? window.Danmu.getActiveSourceLabel() : '';
+    curStatus.textContent = `共 ${animes.length} 条结果（数据源：${srcLabel || '未知'}），点击选择作品`;
     curList.innerHTML = animes.map((a, i) => `
         <div class="wdtv-danmu-item" data-anime-index="${i}">
             <div class="wdtv-danmu-item-title">${escapeHtml((a && a.animeTitle) || '未知作品')}</div>
@@ -1534,7 +1719,11 @@ async function renderDanmuEpisodeList(anime) {
             if (typeof closeModal === 'function') closeModal();
             applyDanmuConfig();
         } else if (statusAfter) {
-            statusAfter.textContent = '该集弹幕加载失败，请重试其他结果';
+            // 失败含源名与指引：重试需覆盖自建源冷启动（内部已自动退避重试两轮），
+            // 仍失败说明该源确实无此集数据——换源后需整链重搜（跨源 ID 不兼容）
+            const failSrc = (window.Danmu && typeof window.Danmu.getActiveSourceLabel === 'function')
+                ? window.Danmu.getActiveSourceLabel() : '';
+            statusAfter.textContent = `该集弹幕加载失败（数据源：${failSrc || '未知'}）。可稍后重试，或到 设置→弹幕→数据源 切换后重新搜索`;
         }
     };
 }
@@ -1563,7 +1752,6 @@ async function initPlayer(videoUrl) {
     tierSettingsMenuAdded = false; // 设置面板随播放器实例销毁重建，重置探测档位菜单标记
     bitrateSettingsMenuAdded = false; // 同步重置画质模式菜单标记
     speedSettingsMenuAdded = false; // 同步重置长按倍速/区域菜单标记
-    danmuSettingsMenuAdded = false; // 同步重置弹幕子菜单标记（随实例重建重新添加）
     playerLocked = false; // 播放器实例重建后解锁（锁定遮罩随旧实例销毁）
     nextManifestPrefetched = false; // 重置下一集预取标志
     nextDanmuPrefetched = false; // 同步重置下一集弹幕预热标志（新集起播 30 秒后预热其下一集）
@@ -2028,22 +2216,23 @@ async function initPlayer(videoUrl) {
         showError('视频播放失败: ' + (error.message || '未知错误'));
     });
 
-    // 控制栏快捷功能：倍速 / 缓存；清晰度与画质模式在设置面板（齿轮）内
+    // 控制栏快捷功能：选集 / 倍速 / 缓存；清晰度与画质模式在设置面板（齿轮）内
     // 画质模式先于清晰度添加（面板按添加顺序渲染，清晰度在其下方）；长按倍速/区域在清单解析后添加
+    setupEpisodeControlButton();
     setupRateControlButton();
     setupCacheControlButton();
     setupDownloadControlButton();
     setupCinemaFavoriteButton();
     setupBitrateSettingsMenu();
-    // 弹幕设置子菜单（含手动匹配入口，无论弹幕是否已加载都可用）
-    setupDanmuSettingsMenu();
-    // 弹幕开关按钮常驻：初始为"未匹配"态（点击打开手动匹配），数据加载后自动变为开关态
-    try { ensureDanmuControls(); } catch (e) { }
+    // 弹幕设置浮层 + 右上角按钮组（浮层先建好，详情按钮通过 entry 打开它）
+    setupDanmuQuickPanel();
+    // 右上角弹幕按钮组常驻：开关按钮即时生效，数据加载后由 danmu:loaded 校正确认
+    try { ensureDanmuTopButtons(); } catch (e) { }
 
-    // 弹幕加载事件：控制栏弹幕开关按钮显隐（仅弹幕成功加载后出现，失败静默隐藏）。
+    // 弹幕加载事件：右上角按钮组与设置浮层同步（弹幕成功加载后刷新按钮与浮层数据源等）。
     // 监听器随实例生命周期：命名函数注册，实例销毁时移除，避免跨实例累积
     const onDanmuLoaded = function () {
-        try { ensureDanmuControls(); } catch (e) { }
+        try { ensureDanmuTopButtons(); } catch (e) { }
         // 数据就绪后校正显隐：用户可能在数据尚未就绪时点过开关（show 了也没内容，
         // 且 loaded 到达后插件不会自行按持久化状态刷新），此处强制与 danmuVisible 对齐
         try {
@@ -2053,20 +2242,12 @@ async function initPlayer(videoUrl) {
                 else if (!plugin.isHide) plugin.hide();
             }
         } catch (e) { }
-        // 同步设置面板"数据源"文案到当前实际命中的源（插件数据源首次加载完成时刷新）
-        try {
-            if (window.Danmu && typeof window.Danmu.getActiveSourceLabel === 'function') {
-                const label = window.Danmu.getActiveSourceLabel();
-                const settingApi = art.setting || art.settings;
-                if (settingApi && typeof settingApi.update === 'function') {
-                    settingApi.update({ name: 'danmuSourceInfo', html: '数据源：' + label, tooltip: '点击切换数据源' });
-                }
-            }
-        } catch (e) { /* 静默 */ }
+        // 数据就绪后刷新复合按钮与设置浮层（按钮状态点/浮层数据源胶囊等随实际命中源同步）
+        try { refreshDanmuControl(); } catch (e) { /* 静默 */ }
     };
     const onDanmuUnavailable = function () {
         // 匹配失败不移除按钮（常驻入口）：更新为"未匹配"态（点击打开手动匹配）
-        try { updateDanmuToggleIcon(); } catch (e) { }
+        try { refreshDanmuControl(); } catch (e) { }
     };
     window.addEventListener('danmu:loaded', onDanmuLoaded);
     window.addEventListener('danmu:unavailable', onDanmuUnavailable);
@@ -3347,13 +3528,8 @@ function closeAllQuickPanels() {
 }
 
 // 面板与按钮水平居中对齐（须在面板可见后调用，需要测量宽度）
+// 面板为紧凑内容宽度（≤480px 也一样），居中后两端钳制在播放器内，不再全宽拉伸
 function alignQuickPanel(panel, btn, playerRoot) {
-    // 小屏沿用 CSS 的左右贴边全宽布局
-    if (window.matchMedia && window.matchMedia('(max-width: 480px)').matches) {
-        panel.style.left = '8px';
-        panel.style.right = '8px';
-        return;
-    }
     const rootRect = playerRoot.getBoundingClientRect();
     const btnRect = btn.getBoundingClientRect();
     const w = panel.offsetWidth || 100;
@@ -3363,7 +3539,27 @@ function alignQuickPanel(panel, btn, playerRoot) {
     panel.style.left = x + 'px';
 }
 
-// 打开/关闭快捷面板；refresh 在每次打开前重建内容与选中态
+// 弹幕/缓存/下载浮层贴各自右上角按钮下沿弹出（右对齐钳制在播放器内；
+// 面板为紧凑内容宽度，小屏不再全宽拉伸）
+function alignDanmuPanel(panel, btn, playerRoot) {
+    const rootRect = playerRoot.getBoundingClientRect();
+    let top = 56; // 兜底：按钮未就绪时按按钮组默认位置（top10 + 高30 + 间距16）
+    let right = 10;
+    if (btn) {
+        const btnRect = btn.getBoundingClientRect();
+        top = btnRect.bottom - rootRect.top + 8;
+        right = rootRect.right - btnRect.right;
+    }
+    panel.style.top = Math.max(8, top) + 'px';
+    panel.style.bottom = 'auto';
+    const w = panel.offsetWidth || 260;
+    right = Math.max(8, Math.min(right, rootRect.width - w - 8));
+    panel.style.left = 'auto';
+    panel.style.right = right + 'px';
+}
+
+// 打开/关闭快捷面板；refresh 在每次打开前重建内容与选中态；
+// entry.align 存在时用自定义对齐（弹幕浮层贴右上角按钮下沿），否则默认水平居中对齐控制栏按钮
 function toggleQuickPanel(entry, show) {
     const { panel, btn, playerRoot, refresh } = entry;
     const willShow = typeof show === 'boolean' ? show : panel.classList.contains('hidden');
@@ -3371,7 +3567,8 @@ function toggleQuickPanel(entry, show) {
         closeAllQuickPanels();
         if (refresh) refresh();
         panel.classList.remove('hidden');
-        alignQuickPanel(panel, btn, playerRoot); // 先移除 hidden 才能测量宽度
+        if (entry.align) entry.align(panel, btn, playerRoot); // 先移除 hidden 才能测量宽度
+        else alignQuickPanel(panel, btn, playerRoot);
     } else {
         panel.classList.add('hidden');
     }
@@ -3482,6 +3679,70 @@ function refreshRateButtonLabel() {
         const r = (art.video && art.video.playbackRate) || 1;
         span.textContent = r !== 1 ? formatRate(r) : '倍速';
     }
+}
+
+// ===== 选集快捷按钮（控制栏，倍速左侧）：弹出全部集数网格，点击换集播放 =====
+function setupEpisodeControlButton() {
+    if (!art) return;
+    const playerRoot = art.template.$player || document.querySelector('#player .art-video-player');
+    if (!playerRoot) return;
+    if (!Array.isArray(currentEpisodes) || currentEpisodes.length < 2) return; // 单集无需选集
+
+    art.controls.add({
+        name: 'episodeQuickButton',
+        position: 'right',
+        index: 4, // 倍速按钮 index 5 → 本按钮排其左侧
+        html: '<span class="ep-btn-text">选集</span>',
+        tooltip: '选集播放',
+        style: QUICK_BTN_STYLE,
+        click: () => toggleQuickPanel(epEntry)
+    });
+    const epButtonEl = art.controls.episodeQuickButton || playerRoot.querySelector('.art-control-episodeQuickButton');
+    if (!epButtonEl) return;
+
+    const panel = document.createElement('div');
+    panel.className = 'art-speed-panel episode-panel hidden';
+    panel.innerHTML = '<div class="wdtv-ep-grid"></div>';
+    playerRoot.appendChild(panel);
+
+    // 集数网格：与底部剧集列表同序（默认模式含倒序开关；综艺模式按长/短组顺序）
+    function buildEpisodes() {
+        let order = currentEpisodes.map((_, i) => i);
+        if (sortMode === 'variety') {
+            const { longIdx, shortIdx } = getVarietyGroups();
+            order = longIdx.concat(shortIdx);
+        } else if (episodesReversed) {
+            order.reverse();
+        }
+        panel.querySelector('.wdtv-ep-grid').innerHTML = order.map(ri => {
+            const raw = (currentEpisodeNames[ri] || '').trim();
+            // 极简：chip 只放纯数字集号，完整集名放 title 悬停提示
+            const title = raw ? `第${ri + 1}集 · ${raw}` : `第${ri + 1}集`;
+            return `<button class="art-speed-item wdtv-ep-chip${ri === currentEpisodeIndex ? ' active' : ''}" data-ri="${ri}" type="button" title="${escapeHtml(title)}">${ri + 1}</button>`;
+        }).join('');
+    }
+
+    panel.addEventListener('click', (e) => {
+        const chip = e.target.closest('.wdtv-ep-chip[data-ri]');
+        if (!chip) return;
+        const ri = parseInt(chip.dataset.ri, 10);
+        toggleQuickPanel(epEntry, false); // 选不选都收起面板
+        if (ri >= 0 && ri < currentEpisodes.length && ri !== currentEpisodeIndex) {
+            playEpisode(ri);
+        }
+    });
+
+    const epEntry = {
+        key: 'episode', panel, btn: epButtonEl, playerRoot,
+        refresh() {
+            buildEpisodes();
+            // 打开时把当前集滚动到可视区
+            const cur = panel.querySelector('.wdtv-ep-chip.active');
+            if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+        }
+    };
+    registerQuickPanel(epEntry);
+    observeControlsHide(playerRoot);
 }
 
 function setupRateControlButton() {
@@ -3695,31 +3956,32 @@ function setupCacheControlButton() {
     const playerRoot = art.template.$player || document.querySelector('#player .art-video-player');
     if (!playerRoot) return;
 
-    // 按钮文案：缓存中显示"缓存 xx%"，完成显示"缓存完"，其余"缓存"
+    // 按钮状态：缓存中显示"缓存 xx%"，完成显示"缓存完"，空闲纯图标（极简：无状态文字）
     // 注意 failed 态也必须显示百分比（此前 failed 只显示"缓存"，用户会以为缓存进度凭空消失）
     const updateButtonLabel = (s) => {
         const span = playerRoot.querySelector('.cache-btn-text');
         if (!span) return;
         if (!s) s = VideoCache.getSession();
-        if (s && s.enabled && s.state === 'done') span.textContent = '缓存完';
+        let text = '';
+        if (s && s.enabled && s.state === 'done') text = '缓存完';
         else if (s && s.enabled && s.percent != null && s.state !== 'disabled') {
-            span.textContent = '缓存 ' + s.percent + '%' + (s.state === 'failed' ? '！' : '');
-        } else {
-            span.textContent = '缓存';
+            text = s.percent + '%' + (s.state === 'failed' ? '！' : '');
         }
+        span.textContent = text;
+        span.style.display = text ? '' : 'none';
     };
 
-    art.controls.add({
-        name: 'cacheQuickButton',
-        position: 'right',
-        index: 8,
-        html: '<span class="cache-btn-text">缓存</span>',
-        tooltip: '整集后台缓存',
-        style: QUICK_BTN_STYLE,
-        click: () => toggleQuickPanel(cacheEntry)
+    // 右上角按钮（缓存 setup 最先执行，appendChild 到容器末尾；下载按钮随后插到它前面）
+    const wrap = ensureTopToolContainer(playerRoot);
+    const cacheBtn = document.createElement('button');
+    cacheBtn.className = 'wdtv-dm-topbtn wdtv-dm-cachebtn';
+    cacheBtn.type = 'button';
+    cacheBtn.title = '整集后台缓存';
+    cacheBtn.innerHTML = CACHE_ICON_SM + '<span class="cache-btn-text" style="display:none"></span>';
+    wrap.appendChild(cacheBtn);
+    cacheBtn.addEventListener('click', function () {
+        try { toggleQuickPanel(cacheEntry); } catch (e) { /* 静默 */ }
     });
-    const cacheButtonEl = art.controls.cacheQuickButton || playerRoot.querySelector('.art-control-cacheQuickButton');
-    if (!cacheButtonEl) return;
 
     const panel = document.createElement('div');
     panel.className = 'art-speed-panel cache-panel hidden';
@@ -3749,7 +4011,8 @@ function setupCacheControlButton() {
     });
 
     const cacheEntry = {
-        key: 'cache', panel, btn: cacheButtonEl, playerRoot,
+        key: 'cache', panel, btn: cacheBtn, playerRoot,
+        align: alignDanmuPanel, // 面板贴右上角按钮下沿下拉
         refresh() { renderCachePanel(panel); }
     };
     registerQuickPanel(cacheEntry);
@@ -3817,17 +4080,17 @@ function setupDownloadControlButton() {
     // 选中态（换集/重建播放器后重置为第一项）；格式固定 MP4（用户定案：不做 TS 选项）
     let selQualityIdx = 0;
 
-    art.controls.add({
-        name: 'downloadQuickButton',
-        position: 'right',
-        index: 6,
-        html: '<span class="dl-btn-text">下载</span>',
-        tooltip: '下载本集 / 批量下载',
-        style: QUICK_BTN_STYLE,
-        click: () => toggleQuickPanel(dlEntry)
+    // 右上角按钮（缓存 setup 先行把缓存钮 append 到容器末尾，下载钮插到它前面 → 顺序：…下载、缓存）
+    const wrap = ensureTopToolContainer(playerRoot);
+    const dlBtn = document.createElement('button');
+    dlBtn.className = 'wdtv-dm-topbtn wdtv-dm-dlbtn';
+    dlBtn.type = 'button';
+    dlBtn.title = '下载本集 / 批量下载';
+    dlBtn.innerHTML = DL_ICON_SM;
+    wrap.insertBefore(dlBtn, wrap.firstChild);
+    dlBtn.addEventListener('click', function () {
+        try { toggleQuickPanel(dlEntry); } catch (e) { /* 静默 */ }
     });
-    const dlButtonEl = art.controls.downloadQuickButton || playerRoot.querySelector('.art-control-downloadQuickButton');
-    if (!dlButtonEl) return;
 
     const panel = document.createElement('div');
     panel.className = 'art-speed-panel download-panel hidden';
@@ -3938,7 +4201,8 @@ function setupDownloadControlButton() {
     }
 
     const dlEntry = {
-        key: 'download', panel, btn: dlButtonEl, playerRoot,
+        key: 'download', panel, btn: dlBtn, playerRoot,
+        align: alignDanmuPanel, // 面板贴右上角按钮下沿下拉
         refresh() { refreshPanel(); }
     };
     registerQuickPanel(dlEntry);
@@ -4029,7 +4293,7 @@ function setupLongPressSpeedControl() {
 
     // 命中过滤：控件区/设置面板/倍速面板等交互元素上的按压不触发长按
     const inInteractiveArea = (target) => !!(target && target.closest &&
-        target.closest('.art-bottom, .art-setting-panel, .art-contextmenu, .art-loading, .art-layer, .art-speed-panel, .art-info'));
+        target.closest('.art-bottom, .art-setting-panel, .art-contextmenu, .art-loading, .art-layer, .art-speed-panel, .art-info, .wdtv-dm-topbtns'));
 
     // 判断横坐标是否落在配置的触发热区内
     const inTriggerZone = (clientX) => {
@@ -4270,7 +4534,7 @@ function setupPlayerGestures() {
 
     // 控件区/面板上的触摸不参与手势（进度条拖动、按钮、设置面板等照常工作）
     const inInteractiveArea = (target) => !!(target && target.closest &&
-        target.closest('.art-bottom, .art-setting-panel, .art-contextmenu, .art-loading, .art-layer, .art-speed-panel, .art-info, .wdtv-unlock-btn, .wdtv-lock-shield'));
+        target.closest('.art-bottom, .art-setting-panel, .art-contextmenu, .art-loading, .art-layer, .art-speed-panel, .art-info, .wdtv-unlock-btn, .wdtv-lock-shield, .wdtv-dm-topbtns'));
 
     const endGesture = () => {
         if (gestureType === 'seek') {
