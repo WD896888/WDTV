@@ -1626,7 +1626,10 @@
   // ============================================================
   function setupWatchPartyButton() {
     var bar = document.getElementById('playerEpisodesBar');
-    if (!bar || bar.querySelector('.wp-entry-btn')) return;
+    if (!bar) return;
+    // 防重复：按钮可能挂在片名行动作区（#cinemaFavChip 旁）而非工具行内，
+    // 必须全文档查重（player.js 触点与启动兜底会各调一次）
+    if (document.querySelector('.wp-entry-btn')) return;
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'wp-entry-btn';
@@ -1640,8 +1643,10 @@
       '<span>共同观影</span>' +
       '<span class="wp-badge" hidden></span>';
     btn.addEventListener('click', togglePanel);
+    // 优先挂在片名行动作区（#cinemaFavChip 旁，爱奇艺式标题行右侧动作位）；
+    // 兜底挂到剧集工具行行首
     var anchor = document.getElementById('cinemaFavChip');
-    if (anchor && anchor.parentElement === bar) anchor.insertAdjacentElement('afterend', btn);
+    if (anchor) anchor.insertAdjacentElement('afterend', btn);
     else bar.insertBefore(btn, bar.firstChild);
     ui.entryBtn = btn;
   }

@@ -3099,6 +3099,7 @@ function toggleSortDropdown(event) {
     menu.classList.toggle('hidden');
     dropdown.classList.toggle('open', !menu.classList.contains('hidden'));
     closeThresholdDropdown();
+    closeEpMoreDropdown();
 }
 
 // 关闭排序模式下拉菜单
@@ -3120,6 +3121,7 @@ function toggleThresholdDropdown(event) {
     const opening = !menu.classList.contains('hidden');
     dropdown.classList.toggle('open', opening);
     closeSortDropdown();
+    closeEpMoreDropdown();
     if (opening) {
         const activeItem = menu.querySelector('.wdtv-sort-dropdown-item.active');
         if (activeItem) menu.scrollTop = activeItem.offsetTop - menu.clientHeight / 2;
@@ -3130,6 +3132,26 @@ function toggleThresholdDropdown(event) {
 function closeThresholdDropdown() {
     const menu = document.getElementById('thresholdDropdownMenu');
     const dropdown = document.getElementById('thresholdDropdown');
+    if (menu) menu.classList.add('hidden');
+    if (dropdown) dropdown.classList.remove('open');
+}
+
+// 展开/收起「更多」剧集工具菜单（检测时长 / 剧集信息等次级工具）
+function toggleEpMoreDropdown(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('epMoreMenu');
+    const dropdown = document.getElementById('epMoreDropdown');
+    if (!menu || !dropdown) return;
+    menu.classList.toggle('hidden');
+    dropdown.classList.toggle('open', !menu.classList.contains('hidden'));
+    closeSortDropdown();
+    closeThresholdDropdown();
+}
+
+// 关闭「更多」剧集工具菜单
+function closeEpMoreDropdown() {
+    const menu = document.getElementById('epMoreMenu');
+    const dropdown = document.getElementById('epMoreDropdown');
     if (menu) menu.classList.add('hidden');
     if (dropdown) dropdown.classList.remove('open');
 }
@@ -3163,6 +3185,12 @@ document.addEventListener('click', (e) => {
     if (sortDd && !sortDd.contains(e.target)) closeSortDropdown();
     const thDd = document.getElementById('thresholdDropdown');
     if (thDd && !thDd.contains(e.target)) closeThresholdDropdown();
+    const epMoreDd = document.getElementById('epMoreDropdown');
+    if (epMoreDd) {
+        // 剧集信息点击后收起菜单：切换结果直接反映在下方列表
+        if (e.target.closest('#episodeViewBtn')) { closeEpMoreDropdown(); return; }
+        if (!epMoreDd.contains(e.target)) closeEpMoreDropdown();
+    }
 });
 
 // 同步排序控件状态：下拉框标签与选中项、子控件显隐、检测按钮显隐、显示方式激活态
@@ -3731,10 +3759,9 @@ function observeControlsHide(playerRoot) {
     mo.observe(playerRoot, { attributes: true, attributeFilter: ['class'] });
 }
 
-// 快捷按钮通用样式
+// 快捷按钮通用样式（水平间距由 CSS 统一控制：.art-controls .art-control{padding:0 7px!important}）
 const QUICK_BTN_STYLE = {
     width: 'auto',
-    padding: '0 8px',
     fontSize: '13px',
     color: 'rgba(222,234,250,0.92)',
     cursor: 'pointer',

@@ -6,41 +6,228 @@ body, html {
     background-color: #181e32 !important;
     background: #181e32 !important;
     color: rgba(236,244,255,0.96) !important;
-    padding-top: 37px !important;
 }
 
-/* Critical header and navigation styles */
-.player-header {
-    position: relative;
-    z-index: 2147483647 !important;
-    pointer-events: auto !important;
-}
-
-/* 顶部页眉 - 容器层玻璃（透明蓝调 + 重模糊 + 浅色文字） */
-.player-header-fixed {
+/* ============================================================
+   左上角返回键：与工具行控件同语言的幽灵胶囊
+   （轻模糊 + 低饱和描边，无厚投影/白色内高光，悬停平滑展开「上一页」文字）
+   ============================================================ */
+.player-back-fab {
     position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
+    top: 14px;
+    left: 16px;
     z-index: 9000 !important;
-    pointer-events: auto !important;
-    background: rgba(200,220,245,0.13) !important;
-    backdrop-filter: blur(32px) saturate(1.5) !important;
-    -webkit-backdrop-filter: blur(32px) saturate(1.5) !important;
-    border-bottom: 1px solid rgba(200,220,245,0.42) !important;
-    box-shadow:
-        0 4px 30px rgba(0,0,0,0.3),
-        inset 0 1px 0 rgba(255,255,255,0.1) !important;
+    display: flex;
+    align-items: center;
+    height: 34px;
+    padding: 0 11px;
+    border-radius: 999px;
+    background: rgba(155,180,218,0.08);
+    backdrop-filter: blur(10px) saturate(1.2);
+    -webkit-backdrop-filter: blur(10px) saturate(1.2);
+    border: 1px solid rgba(200,220,245,0.22);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.14);
+    color: rgba(214,227,246,0.88);
+    cursor: pointer;
+    transition: background 0.25s cubic-bezier(0.4,0,0.2,1),
+                border-color 0.25s cubic-bezier(0.4,0,0.2,1),
+                color 0.25s cubic-bezier(0.4,0,0.2,1),
+                transform 0.2s cubic-bezier(0.4,0,0.2,1);
+}
+.player-back-fab svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    filter: drop-shadow(0 1px 2px rgba(10,18,36,0.5));
+}
+.player-back-label {
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    transition: max-width 0.32s cubic-bezier(0.4,0,0.2,1),
+                opacity 0.25s cubic-bezier(0.4,0,0.2,1),
+                margin-left 0.32s cubic-bezier(0.4,0,0.2,1);
+}
+.player-back-fab:hover {
+    background: rgba(155,185,232,0.16);
+    border-color: rgba(200,220,245,0.34);
+    color: rgba(236,244,255,0.96);
+}
+.player-back-fab:hover .player-back-label {
+    max-width: 64px;
+    opacity: 1;
+    margin-left: 7px;
+}
+.player-back-fab:active {
+    transform: scale(0.96);
 }
 
-#homeButton {
-    pointer-events: auto !important;
+/* 片名信息区（爱奇艺/腾讯视频/优酷式）：播放器下方左对齐大字 + 右侧动作按钮 */
+.player-title-row {
+    max-width: 1200px;
+    margin: 0 auto 12px;
+    padding: 0 4px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 1.5em;
+}
+.player-title-text {
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: rgba(240,246,255,0.96);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+    text-shadow: 0 1px 10px rgba(10,18,36,0.45);
+    flex: 1 1 auto;
+}
+.player-title-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+@media (max-width: 640px) {
+    .player-back-fab {
+        top: 10px;
+        left: 10px;
+        height: 30px;
+        padding: 0 9px;
+    }
+    .player-back-fab svg {
+        width: 15px;
+        height: 15px;
+    }
+    .player-title-row {
+        margin-bottom: 10px;
+    }
+    .player-title-text {
+        font-size: 1.08rem;
+    }
+    .player-title-actions {
+        gap: 6px;
+    }
 }
 
-.home-button {
-    background: none !important;
-    border: none !important;
-    padding: 0 !important;
+/* ===== 剧集信息/工具区（爱奇艺式精简工具栏） ===== */
+.ep-meta-row {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0 0 8px;
+    padding: 0 2px;
+    min-height: 1.4em;
+}
+.ep-episode-info {
+    font-size: 0.98rem;
+    font-weight: 500;
+    color: rgba(220,232,250,0.92);
+    letter-spacing: 0.02em;
+    text-shadow: 0 1px 8px rgba(10,18,36,0.4);
+}
+.player-episode-stats {
+    font-size: 0.78rem;
+    color: var(--text-muted, rgba(180,200,230,0.5));
+    letter-spacing: 0.04em;
+}
+.ep-tool-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 0 0 14px;
+    padding: 0 2px;
+}
+.ep-tool-spacer {
+    flex: 1 1 auto;
+    min-width: 8px;
+}
+.ep-autoplay {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    border-radius: 10px;
+    background: rgba(155,180,218,0.08);
+    border: 1px solid var(--glass-border, rgba(200,220,245,0.42));
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+.ep-autoplay-label {
+    font-size: 0.85rem;
+    color: var(--pale, #e2e9f5);
+    font-family: 'Noto Sans SC', sans-serif;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+/* 「更多」下拉：触发按钮与菜单内部按钮布局适配
+   （双类选择器提升特异性，避免被后位的 .wdtv-name-dropdown-toggle 基类覆盖） */
+.wdtv-name-dropdown-toggle.ep-more-toggle {
+    padding: 4px 10px;
+    gap: 5px;
+    font-size: 0.8rem;
+}
+/* 注意：display 规则必须挂在 :not(.hidden) 下——
+   ID 优先级高于 Tailwind 的 .hidden{display:none}，直接写 display:flex 会让菜单永远关不掉 */
+#epMoreMenu:not(.hidden) {
+    width: max-content;   /* 按内容收缩，消除右侧空白 */
+    min-width: 0;
+    left: auto;
+    right: 0;             /* 「更多」在行尾：菜单右缘与按钮对齐，向左展开 */
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+#epMoreMenu .wdtv-modal-mini-btn {
+    width: 100%;
+    justify-content: flex-start;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--pale, #e2e9f5);
+    font-family: 'Noto Sans SC', sans-serif;
+    font-size: 0.8rem;
+    padding: 7px 10px;
+    text-shadow: none;
+    white-space: nowrap;
+}
+#epMoreMenu .wdtv-modal-mini-btn:hover {
+    background: rgba(255,255,255,0.18);
+    border-color: rgba(255,255,255,0.18);
+}
+#epMoreMenu .wdtv-modal-mini-btn:disabled {
+    opacity: 0.55;
+}
+#epMoreMenu .wdtv-modal-mini-btn svg {
+    color: rgba(180,200,230,0.8);
+}
+#epMoreMenu .wdtv-modal-mini-btn.active {
+    background: rgba(80,128,176,0.32);
+    border-color: rgba(130,180,255,0.45);
+    color: var(--white, #eff2fa);
+}
+@media (max-width: 640px) {
+    .ep-tool-row {
+        gap: 8px;
+    }
+    .ep-autoplay {
+        padding: 4px 10px;
+        gap: 6px;
+    }
+    .ep-autoplay-label {
+        font-size: 0.8rem;
+    }
 }
 
 /* Critical loading styles to prevent FOUC */
@@ -84,7 +271,7 @@ body, html {
 
 .player-container {
     width: 100%;
-    max-width: 1000px;
+    max-width: 1200px;
     margin: 0 auto;
 }
 
@@ -162,10 +349,7 @@ body, html {
 .wdtv-ep-row.episode-active{background:rgba(255,255,255,0.6) !important;border-color:rgba(130,180,255,0.7) !important}
 .wdtv-ep-row.episode-active .ep-row-name{font-weight:600}
 
-/* 集数进度文字 */
-#episodeInfo {
-    font-size: 1.05rem;
-}
+/* 集数进度文字（样式见 .ep-episode-info，与信息行同排） */
 
 /* ===== 剧集区三态切换 =====
    1) 正常观影（默认）：#episodesSection 为原版页面版块，「剧集选单」按钮行隐藏
@@ -220,7 +404,7 @@ body.wp-watch-mode #episodesToggleRow {
 /* 正常态：剧集区即原版版块（头部与弹窗内边距关闭） */
 .episodes-section {
     width: 100%;
-    max-width: 1000px;
+    max-width: 1200px;
     margin: 0 auto;
 }
 .episodes-section .episodes-modal-head {
@@ -353,13 +537,32 @@ body.wp-watch-mode .episodes-section.open .episodes-modal-body {
 .episode-btn-glass .ep-num-g{font-style:normal;font-size:0.62rem;color:rgba(42,58,92,0.5);margin-left:1px}
 @keyframes wdtvDurPulse{0%,100%{opacity:0.35}50%{opacity:0.9}}
 
-/* ===== 排序方式与时长检测工具栏（与首页详情弹窗同款） ===== */
-#playerEpisodesBar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.player-episode-stats{font-size:0.85rem;color:var(--text-secondary)}
+/* ===== 排序方式与时长检测工具栏（与首页详情弹窗同款） =====
+   播放页工具行布局见 .ep-tool-row；此处仅保留控件外观 */
 .wdtv-modal-mini-btn{padding:5px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-size:0.78rem;cursor:pointer;font-family:'Noto Serif SC',serif;letter-spacing:0.04em;transition:all 0.2s;text-shadow:none;display:inline-flex;align-items:center;gap:6px}
 .wdtv-modal-mini-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
 .wdtv-modal-mini-btn.active{background:rgba(120,170,255,0.42);border-color:rgba(130,180,255,0.7);color:#1d3557}
 .wdtv-modal-mini-btn:disabled{opacity:0.55;cursor:default}
+/* 播放页深色背景：标题动作区/工具行的按钮改为低饱和幽灵样式（不改动首页弹窗同款基类） */
+.player-title-actions .wdtv-modal-mini-btn,
+.ep-tool-row .wdtv-modal-mini-btn {
+    background: rgba(155,180,218,0.08);
+    border: 1px solid rgba(200,220,245,0.22);
+    color: rgba(214,227,246,0.88);
+    font-family: 'Noto Sans SC', sans-serif;
+    font-size: 0.8rem;
+}
+.player-title-actions .wdtv-modal-mini-btn:hover,
+.ep-tool-row .wdtv-modal-mini-btn:hover {
+    background: rgba(155,185,232,0.16);
+    border-color: rgba(200,220,245,0.34);
+}
+.player-title-actions .wdtv-modal-mini-btn.active,
+.ep-tool-row .wdtv-modal-mini-btn.active {
+    background: rgba(120,170,255,0.42);
+    border-color: rgba(130,180,255,0.7);
+    color: #1d3557;
+}
 /* 我的影院收藏按钮（工具栏首位，与首页详情弹窗同款）：三连类压过上面的蓝色 active */
 .wdtv-cinema-fav-chip svg{width:14px;height:14px;flex-shrink:0}
 .wdtv-modal-mini-btn.wdtv-cinema-fav-chip:hover{border-color:rgba(224,138,171,0.55);background:rgba(224,138,171,0.14);color:#c9679a}
@@ -396,21 +599,6 @@ body.wp-watch-mode .episodes-section.open .episodes-modal-body {
 .wdtv-variety-label{font-size:0.8rem;color:var(--text-secondary);font-family:'Noto Sans SC',sans-serif;letter-spacing:0.04em;margin-bottom:6px}
 .wdtv-variety-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px !important}
 
-/* 播放器控制按钮 - 内部控制层 */
-.player-glass-button {
-    background: rgba(255,255,255,0.3) !important;
-    backdrop-filter: blur(20px) saturate(1.5) !important;
-    -webkit-backdrop-filter: blur(20px) saturate(1.5) !important;
-    border: 1px solid rgba(255,255,255,0.2) !important;
-    color: #2a3a5c !important;
-    border-radius: 8px !important;
-    padding: 0.5rem 1rem !important;
-    font-weight: 500 !important;
-    transition: all 0.2s cubic-bezier(0.4,0,0.2,1) !important;
-    box-shadow: none !important;
-    text-shadow: none !important;
-}
-
 /* 纯图标按钮：无圆形/背景包裹，仅显示图标图案 */
 .player-icon-button {
     width: 2.4rem !important;
@@ -433,27 +621,6 @@ body.wp-watch-mode .episodes-section.open .episodes-modal-body {
 .player-icon-button:hover {
     background: none !important;
     color: rgba(222,234,250,1) !important;
-}
-
-.player-glass-button:hover {
-    background: rgba(255,255,255,0.45) !important;
-    border-color: rgba(255,255,255,0.4) !important;
-    color: #2a3a5c !important;
-    transform: none !important;
-    box-shadow: none !important;
-}
-
-.player-glass-button.primary {
-    background: rgba(42,90,160,0.4) !important;
-    border: 1px solid rgba(42,90,160,0.5) !important;
-    color: #fff !important;
-    text-shadow: 0 1px 4px rgba(0,0,0,0.3) !important;
-}
-
-.player-glass-button.primary:hover {
-    background: rgba(42,90,160,0.55) !important;
-    border-color: rgba(42,90,160,0.6) !important;
-    color: #fff !important;
 }
 
 /* 进度条容器 - 内部控制层 */
@@ -706,8 +873,8 @@ input:checked + .slider:before {
     z-index: 320; /* 高于右侧拍照钮/锁定钮(310)：面板展开覆盖其上，避免误触拍照 */
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-    padding: 14px;
+    gap: 5px;
+    padding: 10px;
     background: linear-gradient(155deg, rgba(117, 145, 189, 0.32) 0%, rgba(50, 66, 94, 0.58) 100%);
     -webkit-backdrop-filter: blur(22px) saturate(1.35);
     backdrop-filter: blur(22px) saturate(1.35);
@@ -724,11 +891,11 @@ input:checked + .slider:before {
 }
 
 .art-speed-item {
-    min-width: 54px;
-    padding: 8px 10px;
+    min-width: 48px;
+    padding: 6px 9px;
     text-align: center;
     border-radius: 9px;
-    font-size: 13px;
+    font-size: 12.5px;
     color: rgba(234, 240, 248, 0.95);
     text-shadow: 0 1px 2px rgba(15, 25, 42, 0.4);
     cursor: pointer;
@@ -759,8 +926,8 @@ input:checked + .slider:before {
 /* ===== 选集快捷面板（控制栏选集按钮）：集数网格，与底部剧集列表同序 ===== */
 .art-speed-panel.episode-panel {
     grid-template-columns: 1fr; /* 覆盖倍速面板的 4 列网格，内部自建集数网格 */
-    width: 300px;
-    padding: 12px;
+    width: 280px;
+    padding: 10px;
 }
 
 .wdtv-ep-grid {
@@ -777,7 +944,7 @@ input:checked + .slider:before {
     justify-content: center;
     line-height: 1;
     min-width: 0;
-    padding: 9px 2px;
+    padding: 7px 2px;
     border: none;
     border-radius: 7px;
     background: transparent;
@@ -798,6 +965,10 @@ input:checked + .slider:before {
    压缩整体间距与时间字号，保证最右侧的全屏按钮始终留在屏幕内 ===== */
 .art-video-player .art-controls{min-width:0}
 .art-video-player .art-controls .art-control{flex-shrink:0}
+/* 控制栏按钮水平内边距收紧（与页面工具行同语言）。
+   注意：进度条 .art-control-progress 不在 .art-controls 内（在 .art-bottom>.art-progress 下），
+   本规则不会命中它，其 padding 保持库默认（seek 行为与历史版本一致） */
+.art-video-player .art-controls .art-control{padding:0 7px!important}
 .art-video-player.wdtv-has-cache-btn .art-control-time{font-size:12px}
 @media (max-width:600px){
   .art-video-player .art-bottom{padding:0 6px!important}
@@ -809,7 +980,7 @@ input:checked + .slider:before {
 /* 缓存面板：单列布局覆盖 art-speed-panel 的多列 grid */
 .art-speed-panel.cache-panel {
     display: block;
-    min-width: 240px;
+    min-width: 220px;
     max-width: 300px;
 }
 
@@ -1033,8 +1204,8 @@ input:checked + .slider:before {
 .art-video-player *{scrollbar-width:none!important}
 .art-video-player *::-webkit-scrollbar{width:0!important;height:0!important;display:none!important}
 
-/* --- 底部控制区：深蓝玻璃渐变（替换原生纯黑渐变） --- */
-.art-video-player .art-bottom{padding:0 14px!important}
+/* --- 底部控制区：深蓝玻璃渐变（替换原生纯黑渐变）；左右边距收紧减少空带 --- */
+.art-video-player .art-bottom{padding:0 10px!important}
 .art-video-player .art-bottom-gradient{
   background-image:linear-gradient(to top,
     rgba(8,16,34,0.8) 0%,
@@ -1198,24 +1369,24 @@ html .art-video-player.art-backdrop .art-info{
    height:auto!important：ArtPlayer 用"项高×数量"算内联 height（不含我们的 gap），
    会把面板压矮触发内部滚动；覆盖后取消滚动设计，点开即见全部设置项 --- */
 .art-video-player .art-settings{
-  width:250px!important;
+  width:230px!important;
   height:auto!important;
   max-height:none!important;
   overflow:visible!important;
-  padding:10px 12px!important;
+  padding:8px 10px!important;
 }
 .art-video-player .art-setting-panel{padding:0!important;gap:2px!important}
 .art-video-player .art-setting-panel .art-setting-item{
-  padding:6px 10px!important;
+  padding:5px 9px!important;
   border-radius:9px!important;
-  font-size:13px!important;
+  font-size:12.5px!important;
   line-height:1.4!important;
   font-family:'Noto Sans SC',sans-serif!important;
   letter-spacing:.02em;
   color:rgba(234,240,248,0.95)!important;
 }
 .art-video-player .art-setting-panel .art-setting-item .art-setting-item-left-text,
-.art-video-player .art-setting-panel .art-setting-item .art-setting-item-right{font-size:13px!important}
+.art-video-player .art-setting-panel .art-setting-item .art-setting-item-right{font-size:12.5px!important}
 .art-video-player .art-setting-panel .art-setting-item:hover{background:rgba(117,145,189,0.28)!important}
 .art-video-player .art-setting-panel .art-setting-item.art-current{
   background:rgba(117,145,189,0.28)!important;
@@ -1569,8 +1740,8 @@ html .art-video-player.art-backdrop .art-info{
     display: flex;
     flex-direction: column;
     gap: 5px;
-    width: 260px;
-    padding: 12px 13px 10px;
+    width: 248px;
+    padding: 10px 11px 9px;
     /* 贴右上角「详情」按钮下沿下拉（JS alignDanmuPanel 打开时精确定位，此处为兜底默认值） */
     top: 56px;
     right: 10px;

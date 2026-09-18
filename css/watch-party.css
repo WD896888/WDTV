@@ -59,7 +59,7 @@ body.wp-watch-mode .wp-entry-btn {
    ============================================================ */
 .wp-panel {
   position: fixed;
-  top: 37px; /* 让出固定页眉高度（body padding-top 37px） */
+  top: 0;
   right: 0;
   bottom: 0;
   width: 340px;
@@ -108,14 +108,19 @@ body.wp-watch-mode #playerContainer {
   grid-column: 1;
   grid-row: 1;
 }
-body.wp-watch-mode #episodesSection {
+body.wp-watch-mode .player-title-row {
   grid-column: 1;
   grid-row: 2;
+  margin-bottom: 4px;
+}
+body.wp-watch-mode #episodesSection {
+  grid-column: 1;
+  grid-row: 3;
 }
 /* 右栏：无内部滚动——内容自然展开，全部直接显示在页面上（随页面滚动查看） */
 body.wp-watch-mode #wpInline {
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1 / span 3;
   width: auto;
   max-width: none;
   margin: 0;
@@ -137,27 +142,20 @@ body.wp-watch-mode footer {
   display: none !important;
 }
 @media (min-width: 769px) {
-  /* 页面锁定：html/body 均禁止滚动（border-box 含页眉 padding，避免盒高溢出） */
+  /* 页面锁定：html/body 均禁止滚动（页眉已移除，无 padding-top 让位需求） */
   html.wp-watch-mode,
   body.wp-watch-mode {
     overflow: hidden !important;
     height: 100%;
     box-sizing: border-box;
   }
-  /* 原 player.css 给 html/body 各 37px 让位（双重偏移致页面溢出）；
-     锁定后由 body 单份承担，且按页眉实际高度 58px 精确让位 */
-  html.wp-watch-mode {
-    padding-top: 0 !important;
-  }
-  body.wp-watch-mode {
-    padding-top: 58px !important;
-  }
-  /* 主容器占满页眉以下整屏（100% 链基于 html/body，避免 vh 基准偏差） */
+  /* 主容器占满整屏（100% 链基于 html/body，避免 vh 基准偏差）；
+     三行：播放器（吃剩余高度）/ 片名 / 剧集 */
   body.wp-watch-mode main.container {
     height: 100%;
     margin-bottom: 0;
     overflow: hidden;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto auto;
   }
   body.wp-watch-mode #playerContainer {
     min-height: 0;
