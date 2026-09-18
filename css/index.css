@@ -926,6 +926,273 @@
     letter-spacing:.16em;
 }
 
+/* ================================================================
+   页面：观影空间 Hub（双人共同观影入口：方式卡 / 创建 / 加入 / 最近房间）
+   全部选择器带 wdtv-hub- 前缀避免冲突；玻璃基调与 .wdtv-space* 一致
+   ================================================================= */
+.wdtv-space-hub{
+    width:100%;
+    max-width:560px;
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+    padding:32px 28px 28px;
+    border-radius:24px;
+    border:1px solid rgba(255,255,255,0.12);
+    background:rgba(255,255,255,0.05);
+    backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.08);
+    font-family:'Noto Sans SC',sans-serif;
+}
+.wdtv-hub-head{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:8px;
+}
+.wdtv-hub-icon{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:64px;height:64px;
+    border-radius:20px;
+    border:1px solid rgba(255,255,255,0.16);
+    background:rgba(255,255,255,0.06);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.wdtv-hub-icon svg{
+    width:30px;height:30px;
+    stroke:rgba(236,244,255,0.72);
+    fill:none;
+    stroke-width:1.5;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+}
+.wdtv-hub-sub{
+    margin:0;
+    color:var(--text-muted);
+    font-size:.8rem;
+    letter-spacing:.14em;
+}
+.wdtv-hub-modes{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:12px;
+}
+.wdtv-hub-mode{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    padding:16px 14px;
+    border-radius:18px;
+    border:1px solid rgba(255,255,255,0.1);
+    background:rgba(255,255,255,0.04);
+    text-align:left;
+}
+.wdtv-hub-mode-icon{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:34px;height:34px;
+    border-radius:11px;
+    border:1px solid rgba(255,255,255,0.14);
+    background:rgba(255,255,255,0.05);
+    color:rgba(214,231,252,0.8);
+}
+.wdtv-hub-mode-icon svg{
+    width:17px;height:17px;
+    stroke-width:1.5;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+}
+.wdtv-hub-mode-title{
+    margin:2px 0 0;
+    color:rgba(238,244,252,0.9);
+    font-size:.85rem;
+    letter-spacing:.04em;
+}
+.wdtv-hub-mode-desc{
+    margin:0;
+    color:var(--text-muted);
+    font-size:.72rem;
+    line-height:1.55;
+}
+.wdtv-hub-actions{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+}
+.wdtv-hub-join{
+    display:flex;
+    gap:10px;
+}
+.wdtv-hub-btn{
+    padding:11px 22px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,0.18);
+    background:rgba(255,255,255,0.07);
+    color:rgba(238,244,252,0.9);
+    font-size:.86rem;
+    letter-spacing:.08em;
+    cursor:pointer;
+    font-family:'Noto Sans SC',sans-serif;
+    transition:all .2s;
+    -webkit-tap-highlight-color:transparent;
+    white-space:nowrap;
+}
+.wdtv-hub-btn:hover{
+    background:rgba(255,255,255,0.13);
+    border-color:rgba(255,255,255,0.3);
+}
+.wdtv-hub-btn:active{transform:scale(.97)}
+.wdtv-hub-btn:disabled{opacity:.55;cursor:default;transform:none}
+.wdtv-hub-btn-primary{
+    border-color:rgba(106,154,224,0.55);
+    background:linear-gradient(135deg,#6a9ae0,#5c8bd4);
+    color:#f4f8ff;
+}
+.wdtv-hub-btn-primary:hover{
+    background:linear-gradient(135deg,#7ba7e6,#6a9ae0);
+    border-color:rgba(150,190,240,0.7);
+}
+.wdtv-hub-input{
+    flex:1;
+    min-width:0;
+    padding:11px 16px;
+    border-radius:9999px;
+    border:1px solid rgba(255,255,255,0.14);
+    background:rgba(10,16,28,0.42);
+    color:var(--pale);
+    font-size:.9rem;
+    letter-spacing:.32em;
+    text-transform:uppercase;
+    font-family:'Cormorant Garamond',serif;
+    outline:none;
+    transition:border-color .2s,background .2s;
+}
+.wdtv-hub-input::placeholder{
+    color:rgba(210,224,244,0.38);
+    letter-spacing:.14em;
+    font-family:'Noto Sans SC',sans-serif;
+    font-size:.8rem;
+}
+.wdtv-hub-input:focus{
+    border-color:rgba(106,154,224,0.6);
+    background:rgba(10,16,28,0.55);
+}
+.wdtv-hub-result{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:12px;
+    padding:20px 16px;
+    border-radius:18px;
+    border:1px solid rgba(106,154,224,0.35);
+    background:rgba(106,154,224,0.08);
+    text-align:center;
+}
+.wdtv-hub-result[hidden]{display:none}
+.wdtv-hub-result-label{
+    margin:0;
+    color:rgba(222,234,250,0.72);
+    font-size:.76rem;
+    letter-spacing:.1em;
+}
+.wdtv-hub-code{
+    font-family:'Cormorant Garamond',serif;
+    font-size:2.3rem;
+    font-weight:500;
+    letter-spacing:.42em;
+    text-indent:.42em; /* 抵消末位字距，视觉居中 */
+    color:var(--pale);
+    line-height:1.1;
+    font-variant-numeric:tabular-nums;
+}
+.wdtv-hub-result-actions{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    justify-content:center;
+}
+.wdtv-hub-countdown{
+    margin:0;
+    color:var(--text-muted);
+    font-size:.74rem;
+    letter-spacing:.08em;
+    min-height:1.2em;
+}
+.wdtv-hub-recent{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+}
+.wdtv-hub-recent[hidden]{display:none}
+.wdtv-hub-recent-title{
+    margin:0;
+    color:var(--text-muted);
+    font-size:.72rem;
+    letter-spacing:.18em;
+}
+.wdtv-hub-recent-list{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+}
+.wdtv-hub-recent-item{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    width:100%;
+    padding:11px 16px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,0.1);
+    background:rgba(255,255,255,0.04);
+    color:rgba(238,244,252,0.85);
+    font-size:.82rem;
+    cursor:pointer;
+    font-family:'Noto Sans SC',sans-serif;
+    text-align:left;
+    transition:all .2s;
+    -webkit-tap-highlight-color:transparent;
+}
+.wdtv-hub-recent-item:hover{
+    background:rgba(255,255,255,0.1);
+    border-color:rgba(255,255,255,0.24);
+}
+.wdtv-hub-recent-item:active{transform:scale(.985)}
+.wdtv-hub-recent-code{
+    font-family:'Cormorant Garamond',serif;
+    font-size:1rem;
+    letter-spacing:.24em;
+    color:rgba(214,231,252,0.9);
+    font-variant-numeric:tabular-nums;
+}
+.wdtv-hub-recent-name{
+    flex:1;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+.wdtv-hub-recent-time{
+    color:var(--text-muted);
+    font-size:.7rem;
+    white-space:nowrap;
+}
+
+/* 观影空间 Hub 手机端：方式卡单列、内边距收紧 */
+@media (max-width:640px){
+    .wdtv-space-hub{padding:24px 18px 20px;gap:16px}
+    .wdtv-hub-modes{grid-template-columns:1fr;gap:10px}
+    .wdtv-hub-mode{padding:13px 14px}
+    .wdtv-hub-join{flex-wrap:wrap}
+    .wdtv-hub-join .wdtv-hub-input{min-width:0}
+    .wdtv-hub-join .wdtv-hub-btn{flex:0 0 auto}
+    .wdtv-hub-code{font-size:1.9rem}
+}
+
 /* ---- 三端响应式：平板 / 手机缩小 Dock 尺寸 ---- */
 /* 平板（≤1024px）：中等尺寸 */
 @media (max-width:1024px){

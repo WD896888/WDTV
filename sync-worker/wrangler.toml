@@ -1,0 +1,16 @@
+name = "wdtv-sync-worker"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+# 双人共同观影房间服务（Durable Object）
+# 部署：cd sync-worker && npx wrangler deploy
+# 密钥（必须与 Pages 项目 AUTH_SECRET 同值）：
+#   npx wrangler secret put AUTH_SECRET --name wdtv-sync-worker
+
+[[durable_objects.bindings]]
+name = "WATCH_ROOM_SELF"
+class_name = "WatchRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WatchRoom"]

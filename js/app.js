@@ -1325,6 +1325,15 @@ function playVideo(url, vod_name, sourceCode, episodeIndex = 0, vodId = '', resu
         playerUrl += `&position=${Math.floor(resumePosition)}`;
     }
 
+    // 双人共同观影：首页带 room 参数（从共看面板"搜索影片"进入）→ 播放跳转透传，
+    // 回到播放页后 watch-party 自动重连房间并发起同步
+    try {
+        const wpRoom = new URLSearchParams(window.location.search).get('room');
+        if (wpRoom && /^[A-Za-z0-9]{6}$/.test(wpRoom)) {
+            playerUrl += `&room=${encodeURIComponent(wpRoom.toUpperCase())}`;
+        }
+    } catch (e) { }
+
     // 保存当前状态到localStorage
     try {
         localStorage.setItem('currentVideoTitle', vod_name || '未知视频');

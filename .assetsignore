@@ -6,6 +6,10 @@ node_modules
 .trae
 .git
 .wrangler
+.dev.vars
+
+# 双人共同观影实时服务（独立 Worker 项目，含其 .dev.vars 密钥文件，严禁公开）
+sync-worker
 
 # 其他平台的函数与配置（避免源码公开 + 减小上传体积）
 api

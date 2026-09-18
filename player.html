@@ -26,8 +26,9 @@
 
     <script src="libs/tailwindcss.min.js"></script>
     <link rel="stylesheet" href="css/styles.css">
-    <link rel="stylesheet" href="css/player.css?v=80">
+    <link rel="stylesheet" href="css/player.css?v=85">
     <link rel="stylesheet" href="css/downloader.css?v=4">
+    <link rel="stylesheet" href="css/watch-party.css?v=33">
 
     <meta http-equiv="Cache-Control" content="no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -138,7 +139,8 @@
     main button,main input,main a,main label,main select,main textarea,
     main #player,main .art-video-player,main video,main .switch,
     main .episode-grid,main #episodesGrid,main #episodesList,
-    main #resourceInfoBarContainer,main #playerEpisodesBar{pointer-events:auto}
+    main #episodesToggleRow,main #playerEpisodesBar,
+    main #wpInline{pointer-events:auto}
     footer{position:relative;z-index:10;pointer-events:none;color:rgba(180,200,230,0.7)}
     footer svg{color:rgba(180,200,230,0.7)}
     footer a{pointer-events:auto}
@@ -227,102 +229,134 @@
             </div>
         </div>
 
-        <!-- 源信息 -->
-        <div id="resourceInfoBarContainer" class="player-container flex justify-between items-center mb-2">
-            <!-- 资源信息卡片、切换按钮、视频数将由JS动态渲染 -->
-        </div>
-
-        <!-- 集数导航 -->
-        <div class="player-container">
-            <div class="flex justify-center items-center my-4">
-                <span class="text-gray-600 font-medium" id="episodeInfo">加载中...</span>
-            </div>
-        </div>
-
-        <!-- 自动连播开关（流量竞速兜底开关已移至首页设置面板"功能开关"） -->
-        <div class="player-container mb-2">
-            <div class="flex flex-wrap items-center gap-2">
-                <div class="flex items-center gap-1 flex-shrink-0">
-                    <span class="text-gray-600 whitespace-nowrap">自动连播</span>
-                    <label class="switch">
-                        <input type="checkbox" id="autoplayToggle">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </div>
-        </div>
-
-        <!-- 排序方式与时长检测工具栏（与首页详情弹窗同款） -->
-        <div class="player-container mb-2">
-            <div id="playerEpisodesBar">
-                <button id="cinemaFavChip" type="button" class="wdtv-modal-mini-btn wdtv-cinema-fav-chip"
-                        onclick="toggleCinemaFromPlayer()" style="display:none">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                    <span id="cinemaFavChipText">加入我的影院</span>
+        <!-- 剧集选单按钮：仅在开启并进入观影模式后显示（正常观影隐藏，见 player.css body.wp-watch-mode） -->
+        <div id="episodesToggleRow" class="player-container mb-2">
+            <div class="flex justify-center items-center">
+                <button id="episodesToggleBtn" type="button" onclick="toggleEpisodesModal()" class="wdtv-episodes-toggle">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 6h16M4 12h16M4 18h10"/>
+                    </svg>
+                    <span class="wdtv-episodes-toggle-label">剧集选单</span>
+                    <svg class="wdtv-episodes-toggle-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 9l-7 7-7-7"/></svg>
                 </button>
-                <div id="sortModeDropdown" class="wdtv-name-dropdown">
-                    <button type="button" class="wdtv-name-dropdown-toggle" onclick="toggleSortDropdown(event)">
-                        <span id="sortModeLabel">默认排序</span>
-                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                    </button>
-                    <div id="sortModeMenu" class="wdtv-name-dropdown-menu hidden">
-                        <div class="wdtv-sort-dropdown-item active" data-mode="default"><span>默认排序</span></div>
-                        <div class="wdtv-sort-dropdown-item" data-mode="variety"><span>综艺排序</span></div>
+            </div>
+        </div>
+
+        <!-- 剧集区：正常观影保持原版页面布局；进入观影模式后整体收纳为「剧集选单」弹窗（同一 DOM 节点三态切换） -->
+        <div id="episodesSection" class="episodes-section">
+            <div class="episodes-modal">
+                <div class="episodes-modal-head">
+                    <span class="episodes-modal-title">剧集选单</span>
+                    <span id="resolutionInfo" class="resource-info-bar-resolution" style="display:none"></span>
+                    <button type="button" class="episodes-modal-close" onclick="closeEpisodesModal()" title="关闭">&times;</button>
+                </div>
+                <div class="episodes-modal-body">
+                    <!-- 集数导航 -->
+                    <div class="player-container">
+                        <div class="flex justify-center items-center my-4">
+                            <span class="text-gray-600 font-medium" id="episodeInfo">加载中...</span>
+                        </div>
+                    </div>
+
+                    <!-- 自动连播开关（流量竞速兜底开关已移至首页设置面板"功能开关"） -->
+                    <div class="player-container mb-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div class="flex items-center gap-1 flex-shrink-0">
+                                <span class="text-gray-600 whitespace-nowrap">自动连播</span>
+                                <label class="switch">
+                                    <input type="checkbox" id="autoplayToggle">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 排序方式与时长检测工具栏（与首页详情弹窗同款） -->
+                    <div class="player-container mb-2">
+                        <div id="playerEpisodesBar">
+                            <button id="cinemaFavChip" type="button" class="wdtv-modal-mini-btn wdtv-cinema-fav-chip"
+                                    onclick="toggleCinemaFromPlayer()" style="display:none">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                                <span id="cinemaFavChipText">加入我的影院</span>
+                            </button>
+                            <div id="sortModeDropdown" class="wdtv-name-dropdown">
+                                <button type="button" class="wdtv-name-dropdown-toggle" onclick="toggleSortDropdown(event)">
+                                    <span id="sortModeLabel">默认排序</span>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                </button>
+                                <div id="sortModeMenu" class="wdtv-name-dropdown-menu hidden">
+                                    <div class="wdtv-sort-dropdown-item active" data-mode="default"><span>默认排序</span></div>
+                                    <div class="wdtv-sort-dropdown-item" data-mode="variety"><span>综艺排序</span></div>
+                                </div>
+                            </div>
+                            <span id="defaultSortControls" class="wdtv-sort-subcontrols">
+                                <button onclick="toggleEpisodeOrder()" class="wdtv-modal-mini-btn">
+                                    <svg class="w-4 h-4" id="orderToggleIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                                    </svg>
+                                    <span id="orderToggleLabel">倒序排列</span>
+                                </button>
+                            </span>
+                            <span id="varietySortControls" class="wdtv-sort-subcontrols hidden">
+                                <button data-nummode="group" onclick="setVarietyNumberMode('group')"
+                                        class="wdtv-modal-mini-btn num-mode active">新集数</button>
+                                <button data-nummode="original" onclick="setVarietyNumberMode('original')"
+                                        class="wdtv-modal-mini-btn num-mode">原集数</button>
+                                <button data-nummode="both" onclick="setVarietyNumberMode('both')"
+                                        class="wdtv-modal-mini-btn num-mode">双显</button>
+                                <span class="wdtv-threshold-label" title="按时长划分两组的分界线">分组线
+                                    <span id="thresholdDropdown" class="wdtv-name-dropdown wdtv-inline-dropdown">
+                                        <span class="wdtv-name-dropdown-toggle wdtv-threshold-toggle" onclick="toggleThresholdDropdown(event)">
+                                            <input id="varietyThresholdInput" type="number" min="1" step="1"
+                                                   value="60" onchange="setVarietyThreshold(this.value)"
+                                                   onclick="event.stopPropagation()" class="wdtv-threshold-input"
+                                                   title="输入自定义分组线（分钟），回车生效">分钟
+                                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                        </span>
+                                        <div id="thresholdDropdownMenu" class="wdtv-name-dropdown-menu hidden"></div>
+                                    </span>
+                                </span>
+                            </span>
+                            <button id="detectDurationBtn" onclick="detectEpisodeDurations()" class="wdtv-modal-mini-btn">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <span id="detectDurationLabel">检测时长</span>
+                            </button>
+                            <button id="episodeViewBtn" type="button" onclick="toggleEpisodeView()" class="wdtv-modal-mini-btn"
+                                    title="切换剧集布局：数字方块 / 详细列表（显示完整集名）">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                                </svg>
+                                <span>剧集信息</span>
+                            </button>
+                            <span id="playerEpisodeStats" class="player-episode-stats"></span>
+                        </div>
+                    </div>
+
+                    <!-- 集数网格 -->
+                    <div class="player-container">
+                        <div class="episode-grid" id="episodesGrid">
+                            <div class="grid" id="episodesList">
+                                <!-- 集数将在这里动态加载 -->
+                                <div class="col-span-full text-center text-gray-500 py-8">加载中...</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <span id="defaultSortControls" class="wdtv-sort-subcontrols">
-                    <button onclick="toggleEpisodeOrder()" class="wdtv-modal-mini-btn">
-                        <svg class="w-4 h-4" id="orderToggleIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
-                        </svg>
-                        <span id="orderToggleLabel">倒序排列</span>
-                    </button>
-                </span>
-                <span id="varietySortControls" class="wdtv-sort-subcontrols hidden">
-                    <button data-nummode="group" onclick="setVarietyNumberMode('group')"
-                            class="wdtv-modal-mini-btn num-mode active">新集数</button>
-                    <button data-nummode="original" onclick="setVarietyNumberMode('original')"
-                            class="wdtv-modal-mini-btn num-mode">原集数</button>
-                    <button data-nummode="both" onclick="setVarietyNumberMode('both')"
-                            class="wdtv-modal-mini-btn num-mode">双显</button>
-                    <span class="wdtv-threshold-label" title="按时长划分两组的分界线">分组线
-                        <span id="thresholdDropdown" class="wdtv-name-dropdown wdtv-inline-dropdown">
-                            <span class="wdtv-name-dropdown-toggle wdtv-threshold-toggle" onclick="toggleThresholdDropdown(event)">
-                                <input id="varietyThresholdInput" type="number" min="1" step="1"
-                                       value="60" onchange="setVarietyThreshold(this.value)"
-                                       onclick="event.stopPropagation()" class="wdtv-threshold-input"
-                                       title="输入自定义分组线（分钟），回车生效">分钟
-                                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                            </span>
-                            <div id="thresholdDropdownMenu" class="wdtv-name-dropdown-menu hidden"></div>
-                        </span>
-                    </span>
-                </span>
-                <button id="detectDurationBtn" onclick="detectEpisodeDurations()" class="wdtv-modal-mini-btn">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <span id="detectDurationLabel">检测时长</span>
-                </button>
-                <button id="episodeViewBtn" type="button" onclick="toggleEpisodeView()" class="wdtv-modal-mini-btn"
-                        title="切换剧集布局：数字方块 / 详细列表（显示完整集名）">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-                    </svg>
-                    <span>剧集信息</span>
-                </button>
-                <span id="playerEpisodeStats" class="player-episode-stats"></span>
             </div>
         </div>
 
-        <!-- 集数网格 -->
-        <div class="player-container">
-            <div class="episode-grid" id="episodesGrid">
-                <div class="grid" id="episodesList">
-                    <!-- 集数将在这里动态加载 -->
-                    <div class="col-span-full text-center text-gray-500 py-8">加载中...</div>
-                </div>
+        <!-- 双人共同观影：进入房间后变为右侧悬浮玻璃面板直接叠于页面背景（房态/选片/聊天/画布/共享控制常驻可见；
+             头部折叠按钮可收起信息区，把面板空间主要留给聊天） -->
+        <div id="wpInline" class="wp-inline player-container mb-2" hidden>
+            <div class="wp-head">
+                <span class="wp-title">共同观影</span>
+                <button type="button" class="wp-info-toggle" title="收起房间信息">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+                </button>
             </div>
+            <div class="wp-body"></div>
         </div>
     </main>
 
@@ -386,11 +420,14 @@
     <script defer src="js/ui.js?v=12"></script>
     <script defer src="js/api.js?v=13"></script>
     <script defer src="js/search.js?v=10"></script>
-    <script defer src="js/video-cache.js?v=92"></script>
+    <script defer src="js/video-cache.js?v=93"></script>
     <script defer src="js/downloader.js?v=20"></script>
     <script defer src="js/cinema.js?v=16"></script>
     <script defer src="js/danmu.js?v=15"></script>
-    <script defer src="js/player.js?v=132"></script>
+    <script defer src="js/watch-party.js?v=24"></script>
+    <script defer src="js/watch-party-local.js?v=6"></script>
+    <script defer src="js/watch-party-ui.js?v=32"></script>
+    <script defer src="js/player.js?v=139"></script>
     <script src="js/cloud-sync.js?v=1"></script>
 
     <script>

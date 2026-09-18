@@ -167,6 +167,156 @@ body, html {
     font-size: 1.05rem;
 }
 
+/* ===== 剧集区三态切换 =====
+   1) 正常观影（默认）：#episodesSection 为原版页面版块，「剧集选单」按钮行隐藏
+   2) 观影模式（body.wp-watch-mode）：按钮行直接显示在视频下方
+   3) 观影模式 + .open：剧集区变为玻璃弹窗覆盖层
+   wp-watch-mode 由 watch-party-ui.js 依据房间状态在 body 上切换 */
+#episodesToggleRow {
+    display: none;
+}
+/* 观影模式隐藏按钮行（剧集选单入口已并入共同观影组件底部工具条） */
+body.wp-watch-mode #episodesToggleRow {
+    display: none;
+}
+/* 剧集选单按钮：无胶囊/无玻璃底板，融入页面背景的幽灵按钮 */
+.wdtv-episodes-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: rgba(180, 200, 230, 0.75);
+    font-size: 0.9rem;
+    font-family: 'Noto Sans SC', sans-serif;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, transform 0.12s;
+}
+.wdtv-episodes-toggle:hover {
+    background: rgba(155, 180, 218, 0.1);
+    color: rgba(236, 244, 255, 0.96);
+}
+.wdtv-episodes-toggle:active {
+    transform: scale(0.97);
+}
+.wdtv-episodes-toggle svg {
+    flex-shrink: 0;
+}
+.wdtv-episodes-toggle .wdtv-episodes-toggle-label {
+    font-weight: 500;
+    white-space: nowrap;
+}
+.wdtv-episodes-toggle .wdtv-episodes-toggle-chevron {
+    transition: transform 0.2s;
+}
+.episodes-modal-open .wdtv-episodes-toggle .wdtv-episodes-toggle-chevron {
+    transform: rotate(180deg);
+}
+
+/* 正常态：剧集区即原版版块（头部与弹窗内边距关闭） */
+.episodes-section {
+    width: 100%;
+    max-width: 1000px;
+    margin: 0 auto;
+}
+.episodes-section .episodes-modal-head {
+    display: none;
+}
+.episodes-section .episodes-modal-body {
+    padding: 0;
+    overflow: visible;
+}
+
+/* 观影模式：未展开时剧集区整体隐藏，腾出空间给内嵌观影面板 */
+body.wp-watch-mode .episodes-section:not(.open) {
+    display: none;
+}
+
+/* 观影模式：展开为玻璃弹窗（与换源弹窗同基调） */
+body.wp-watch-mode .episodes-section.open {
+    position: fixed;
+    inset: 0;
+    z-index: 9600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(200, 220, 245, 0.25);
+    backdrop-filter: blur(8px) saturate(1.2);
+    -webkit-backdrop-filter: blur(8px) saturate(1.2);
+}
+body.wp-watch-mode .episodes-section.open .episodes-modal {
+    display: flex;
+    flex-direction: column;
+    width: min(860px, 100%);
+    max-height: 88vh;
+    border-radius: 24px;
+    background: rgba(200, 220, 245, 0.13);
+    backdrop-filter: blur(32px) saturate(1.5);
+    -webkit-backdrop-filter: blur(32px) saturate(1.5);
+    border: 1px solid rgba(200, 220, 245, 0.42);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    color: rgba(236, 244, 255, 0.96);
+    overflow: hidden;
+    animation: episodesModalIn 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes episodesModalIn {
+    from { opacity: 0; transform: translateY(14px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.episodes-modal-head {
+    display: none;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid rgba(200, 220, 245, 0.16);
+}
+body.wp-watch-mode .episodes-section.open .episodes-modal-head {
+    display: flex;
+}
+.episodes-modal-title {
+    font-size: 1.02rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+.episodes-modal-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: rgba(222, 234, 250, 0.92);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.episodes-modal-close:hover {
+    background: rgba(200, 220, 245, 0.16);
+}
+body.wp-watch-mode .episodes-section.open .episodes-modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 4px 20px 20px;
+    /* 集数较多时避免触发放大页面字号的重排抖动 */
+    overscroll-behavior: contain;
+}
+@media (max-width: 640px) {
+    body.wp-watch-mode .episodes-section.open .episodes-modal-body {
+        padding: 4px 14px 16px;
+    }
+    .wdtv-episodes-toggle {
+        padding: 9px 16px;
+        gap: 8px;
+    }
+}
+
 /* 集数按钮 - 与首页详情弹窗 .wdtv-episode-btn 同款视觉，尺寸略放大
    注意：不使用 backdrop-filter——按钮本身已坐在 .player-container 磨砂面板上，
    自带 blur 会在背景动画时产生每帧 N 个模糊采样，是播放页卡顿元凶 */
@@ -453,49 +603,7 @@ input:checked + .slider:before {
     border-radius: 0;
 }
 
-/* 资源信息卡片 - 内部控制层 */
-#resourceInfoBarContainer {
-    align-items: center !important;
-    border-radius: 8px !important;
-    background: rgba(255,255,255,0.3) !important;
-    backdrop-filter: blur(20px) saturate(1.5) !important;
-    -webkit-backdrop-filter: blur(20px) saturate(1.5) !important;
-    border: 1px solid rgba(255,255,255,0.2) !important;
-    box-shadow: none !important;
-}
-
-/* ===== 资源信息栏：玻璃卡片 + 朴素文本排版 ===== */
-#resourceInfoBarContainer {
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px 12px;
-    padding: 12px 16px !important;
-    background: rgba(200,220,245,0.08);
-    border: 1px solid rgba(200,220,245,0.18);
-    border-radius: 12px;
-}
-
-.resource-info-bar-left {
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 4px 10px;
-    flex: 1;
-    min-width: 0;
-}
-
-/* 源名 - 主文字 */
-.resource-info-bar-left > span:first-child {
-    font-size: 1.05rem;
-    font-weight: 600;
-    color: rgba(236,244,255,0.96);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 14em;
-}
-
-/* 视频数量 / 分辨率 - 次级文字 */
-.resource-info-bar-videos,
+/* ===== 分辨率文本（显示在剧集选单弹窗头部） ===== */
 .resource-info-bar-resolution {
     font-size: 0.95rem;
     font-weight: 400;
@@ -503,60 +611,9 @@ input:checked + .slider:before {
     white-space: nowrap;
 }
 
-/* 切换资源按钮 */
-.resource-switch-btn {
-    align-items: center;
-    background: rgba(200,220,245,0.12);
-    border: 1px solid rgba(200,220,245,0.28);
-    color: rgba(236,244,255,0.96);
-    font-weight: 500;
-    font-size: 0.95rem;
-    cursor: pointer;
-    gap: 6px;
-    padding: 7px 16px;
-    border-radius: 8px;
-    white-space: nowrap;
-    flex-shrink: 0;
-    transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
-    box-shadow: none;
-    text-shadow: none;
-}
-
-.resource-switch-btn:hover {
-    background: rgba(200,220,245,0.22);
-    border-color: rgba(200,220,245,0.45);
-    color: #ffffff;
-}
-
-.resource-switch-btn:active {
-    background: rgba(200,220,245,0.3);
-}
-
-.resource-switch-icon {
-    width: 14px;
-    height: 14px;
-    margin-right: 0;
-    color: currentColor;
-    vertical-align: middle;
-    transition: transform 0.3s;
-}
-
-/* 资源信息栏移动端：收紧内边距与字号 */
 @media (max-width: 640px) {
-    #resourceInfoBarContainer {
-        padding: 8px 10px !important;
-        gap: 6px 10px;
-    }
-    .resource-info-bar-left > span:first-child {
-        font-size: 0.9rem;
-    }
-    .resource-info-bar-videos,
     .resource-info-bar-resolution {
         font-size: 0.8rem;
-    }
-    .resource-switch-btn {
-        font-size: 0.85rem;
-        padding: 5px 10px;
     }
 }
 

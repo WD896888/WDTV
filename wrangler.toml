@@ -42,3 +42,11 @@ id = "2c83fb3ae9214837b21f9d84d4cdd821"
 binding = "WDTV_DB"
 database_name = "wdtv-users"
 database_id = "83bf889c-410e-482f-bdca-1b5890334d64"
+
+# ===== 双人共同观影实时服务（Durable Object，独立 Worker 项目 sync-worker/） =====
+# 部署：cd sync-worker && npx wrangler deploy
+# secret：npx wrangler secret put AUTH_SECRET --name wdtv-sync-worker（必须与本项目 AUTH_SECRET 同值）
+[[durable_objects.bindings]]
+name = "WATCH_ROOM"
+class_name = "WatchRoom"
+script_name = "wdtv-sync-worker"

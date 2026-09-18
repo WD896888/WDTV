@@ -148,7 +148,7 @@ function allowRegister(env) {
 const loginAttempts = new Map();
 
 // 从 Authorization: Bearer <jwt> 解出 payload，失败返回 null
-async function requireAuth(request, env) {
+export async function requireAuth(request, env) {
     const m = /^Bearer\s+(.+)$/i.exec(request.headers.get('Authorization') || '');
     if (!m) return null;
     return verifyJwt(m[1].trim(), env.AUTH_SECRET);

@@ -17,7 +17,7 @@
     // ===== 常量 =====
     var DB_NAME = 'wdtv-video-cache';
     var DB_VERSION = 1;
-    var VC_VERSION = 92; // 构建版本（跟随 ?v= 递增）：缓存面板可见，用于确认设备实际运行的构建
+    var VC_VERSION = 93; // 构建版本（跟随 ?v= 递增）：缓存面板可见，用于确认设备实际运行的构建
     var STORE_FRAGS = 'frags';
     var STORE_TEXTS = 'texts';
     var STORE_META = 'meta';
@@ -1916,6 +1916,45 @@
     }
 
     // ===== 导出 =====
+    // 纯读查询指定 videoKey 的整集覆盖率（不切换 currentKey、不影响任何会话状态）。
+    // 供双人共同观影 M2 开播校验调用：cached=已缓存分片数（vsize 索引范围扫描），total=meta 声明的当前档位总分片数
+    function coverageOf(videoKey) {
+        if (state.disabled || !videoKey) return Promise.resolve({ videoKey: videoKey, cached: 0, total: 0, percent: 0 });
+        return ensureDB().then(function (db) {
+            return Promise.all([
+                idbReq(db.transaction(STORE_META).objectStore(STORE_META).get(videoKey)),
+                new Promise(function (resolve, reject) {
+                    var range = IDBKeyRange.bound([videoKey, 0], [videoKey, Infinity]);
+                    var req = db.transaction(STORE_FRAGS).objectStore(STORE_FRAGS).index('vsize').openKeyCursor(range);
+                    var n = 0;
+                    req.onsuccess = function () {
+                        var cur = req.result;
+                        if (!cur) { resolve(n); return; }
+                        n++;
+                        cur.continue();
+                    };
+                    req.onerror = function () { reject(req.error); };
+                })
+            ]).then(function (arr) {
+                var meta = arr[0], cached = arr[1] || 0;
+                var total = (meta && meta.total) || 0;
+                return {
+                    videoKey: videoKey,
+                    cached: cached,
+                    total: total,
+                    percent: total > 0 ? Math.min(100, Math.round(cached / total * 100)) : 0
+                };
+            });
+        }).catch(function () {
+            return { videoKey: videoKey, cached: 0, total: 0, percent: 0 };
+        });
+    }
+
+    // 当前会话的缓存键（无会话返回 null）；共同观影 M2 用它与房间 mediaKey 比对
+    function currentKeyOf() {
+        return state.currentKey || null;
+    }
+
     window.VideoCache = {
         init: init,
         version: VC_VERSION,
@@ -1930,6 +1969,8 @@
         deleteVideo: deleteVideo,
         clearAll: clearAll,
         listEntries: listEntries,
+        coverageOf: coverageOf,
+        currentKeyOf: currentKeyOf,
         housekeep: housekeep,
         openManager: openManager,
         closeManager: closeManager

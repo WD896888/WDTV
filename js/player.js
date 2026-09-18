@@ -128,6 +128,8 @@ let shortcutHintTimeout = null; // 用于控制快捷键提示显示时间
 let adFilteringEnabled = true; // 默认开启广告过滤
 const RACE_HEDGE_STORAGE = 'wdtvRaceHedge'; // 关键路径竞速兜底开关（流量下直连慢但在流时代理并行竞速；默认关闭）
 let currentVideoUrl = ''; // 记录当前实际的视频URL
+let wdtvWatchParty = null; // 双人共同观影控制器（js/watch-party.js，建房前仅有事件监听不发包）
+window.WDTVNoAutoplay = window.WDTVNoAutoplay || false; // M3 本地播放期间拦截自动连播（watch-party-local 设置）
 let baseEpisodeUrl = ''; // 当前集的原始地址（进度/历史键基准，不随清晰度目录切换变化）
 let syntheticTiers = []; // 单档源探测到的同级清晰度目录 [{ label, url, kbps, height }]
 let qualitySwapSeek = null; // 清晰度目录切换后待恢复的播放位置
@@ -288,6 +290,71 @@ function initializePageContent() {
     // 惰性兜底巡检：页面加载即对账 + 淘汰 + 重试失败删除（不依赖播放行为），并启动 15 分钟低频定时兜底
     try { VideoCache.housekeep(); } catch (e) { }
 
+    // 双人共同观影：注入播放器环境（惰性 getter，art 创建前后均可安全求值）
+    try {
+        if (typeof WatchParty !== 'undefined') {
+            wdtvWatchParty = WatchParty.init({
+                getArt: () => art,
+                getHls: () => currentHls,
+                getVideoKey: () => currentVideoUrl,
+                getBaseVideoKey: () => baseEpisodeUrl || currentVideoUrl,
+                getEpisodes: () => currentEpisodes,
+                getEpisodeNames: () => currentEpisodeNames,
+                getTitle: () => currentVideoTitle,
+                getEpisode: () => currentEpisodeIndex
+            });
+        }
+    } catch (e) { wdtvWatchParty = null; }
+
+    // 双人共同观影入口按钮：无条件挂载（建房进入时无视频也必须可用，不能依赖 initPlayer 路径）
+    if (typeof setupWatchPartyButton === 'function') setupWatchPartyButton();
+
+    // 双人共同观影：面板内选片直达播放（同页换源，不整页跳转；地址栏保留 room 参数供刷新重连）。
+    // 无条件注册：Hub 建房进入时无视频参数、art 未创建，照样可通过面板选片起播（!art 走 initPlayer 分支）。
+    // 由 js/watch-party-ui.js 在"粘贴直链 / 我的影院选集"后调用
+    window.WDTVPlayDirect = function (url, title, epIndex) {
+        try {
+            if (!url || typeof url !== 'string') return false;
+            if (art && art.video && !art.video.paused && !videoHasEnded) {
+                try { saveCurrentProgress(); } catch (e) { }
+            }
+            currentVideoUrl = url;
+            baseEpisodeUrl = url;
+            if (title) {
+                currentVideoTitle = String(title);
+                try { localStorage.setItem('currentVideoTitle', currentVideoTitle); } catch (e) { }
+            }
+            if (typeof epIndex === 'number' && epIndex >= 0) currentEpisodeIndex = epIndex;
+            syntheticTiers = [];
+            tierProbeInfo = null;
+            tierProbeToken++;
+            qualitySwapSeek = null;
+            videoHasEnded = false;
+            nextManifestPrefetched = false;
+            nextDanmuPrefetched = false;
+            userClickedPosition = null;
+            clearVideoProgress();
+            const errElDirect = getErrorEl();
+            if (errElDirect) errElDirect.style.display = 'none';
+            try {
+                const u = new URL(window.location.href);
+                u.searchParams.set('url', url);
+                u.searchParams.set('index', String(currentEpisodeIndex));
+                if (title) u.searchParams.set('title', title);
+                u.searchParams.delete('position');
+                window.history.replaceState({}, '', u.toString());
+            } catch (e) { }
+            if (isWebkit || !art) {
+                initPlayer(url);
+            } else {
+                resolvePlayableUrl(url).then((switchUrl) => { art.switch = switchUrl; });
+            }
+            try { updateEpisodeInfo(); } catch (e) { }
+            setTimeout(() => { try { saveToHistory(); } catch (e) { } }, 3000);
+            return true;
+        } catch (e) { return false; }
+    };
+
     // 监听自动连播开关变化
     document.getElementById('autoplayToggle').addEventListener('change', function (e) {
         autoplayEnabled = e.target.checked;
@@ -360,19 +427,21 @@ function initializePageContent() {
         console.warn('读取排序/时长状态失败:', e);
     }
 
-    // 设置页面标题
-    document.title = currentVideoTitle + ' - WDTV播放器';
-    document.getElementById('videoTitle').textContent = currentVideoTitle;
+    // 设置页面标题（共看建房进入：无视频，明确提示待选片，避免误显 localStorage 旧片名/"未知视频"）
+    const wpRoomOnly = !videoUrl && !!urlParams.get('room');
+    document.title = (wpRoomOnly ? '共同观影 · 待选择影片' : currentVideoTitle) + ' - WDTV播放器';
+    document.getElementById('videoTitle').textContent = wpRoomOnly
+        ? '共同观影 · 请在面板中选择影片'
+        : currentVideoTitle;
 
     // 初始化播放器
     if (videoUrl) {
         initPlayer(videoUrl);
-    } else {
+    } else if (!urlParams.get('room')) {
+        // 无视频且无 room 参数才是真正的坏链；共看建房进入（?room=X）时留空播放区，
+        // 等待共同观影面板内选片（搜索回流 / 直链 / 我的影院）后由 WDTVPlayDirect 起播
         showError('无效的视频链接');
     }
-
-    // 渲染源信息
-    renderResourceInfoBar();
 
     // 更新集数信息
     updateEpisodeInfo();
@@ -2203,6 +2272,9 @@ async function initPlayer(videoUrl) {
 
         // 视频加载成功后，在稍微延迟后将其添加到观看历史
         setTimeout(saveToHistory, 3000);
+
+        // 双人共同观影：元数据就绪通知（挂起状态对齐 / M2 覆盖率上报等）
+        try { if (wdtvWatchParty) wdtvWatchParty.onMetadata(); } catch (e) { }
     })
 
     // 错误处理
@@ -2423,6 +2495,11 @@ async function initPlayer(videoUrl) {
 
     // 视频播放结束事件
     art.on('video:ended', function () {
+        // M3 本地播放：无"下一集"概念，拦截自动连播
+        if (window.WDTVNoAutoplay) {
+            try { art.pause(); } catch (e) { }
+            return;
+        }
         videoHasEnded = true;
 
         clearVideoProgress();
@@ -2591,6 +2668,48 @@ function updateEpisodeInfo() {
         document.getElementById('episodeInfo').textContent = '无集数信息';
     }
 }
+
+// ===== 剧集选单弹窗：仅在观影模式（body.wp-watch-mode）下生效 =====
+// #episodesSection 三态切换：正常观影为页面版块 / 观影模式隐藏为单按钮 / .open 展开为玻璃弹窗
+function openEpisodesModal() {
+    const wrap = document.getElementById('episodesSection');
+    if (!wrap) return;
+    wrap.classList.add('open');
+    document.documentElement.classList.add('episodes-modal-open');
+}
+
+function closeEpisodesModal() {
+    const wrap = document.getElementById('episodesSection');
+    if (!wrap) return;
+    wrap.classList.remove('open');
+    document.documentElement.classList.remove('episodes-modal-open');
+}
+
+function toggleEpisodesModal() {
+    const wrap = document.getElementById('episodesSection');
+    if (!wrap) return;
+    if (wrap.classList.contains('open')) closeEpisodesModal();
+    else openEpisodesModal();
+}
+
+// 弹窗一次性事件绑定：遮罩点击关闭 + Esc 关闭
+(function bindEpisodesModalEvents() {
+    const bind = () => {
+        const wrap = document.getElementById('episodesModalWrap');
+        if (!wrap) return;
+        wrap.addEventListener('click', function (e) {
+            if (e.target === wrap) closeEpisodesModal();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeEpisodesModal();
+        });
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bind);
+    } else {
+        bind();
+    }
+})();
 
 // 渲染集数按钮列表（排序方式与时长标签与首页详情弹窗同款）
 function renderEpisodes() {
@@ -2763,10 +2882,21 @@ function renderVarietyEpisodes() {
 
 // 播放指定集数
 function playEpisode(index) {
+    // 双人共同观影：无控制权（未开共享）时禁止换集（纯观看语义，函数级强制门禁）
+    try {
+        if (wdtvWatchParty && typeof wdtvWatchParty.hasControl === 'function' && !wdtvWatchParty.hasControl()) {
+            if (typeof showToast === 'function') showToast('观影模式：换集由房主控制，可请房主开启共享控制', 'info');
+            return;
+        }
+    } catch (e) { }
+
     // 确保index在有效范围内
     if (index < 0 || index >= currentEpisodes.length) {
         return;
     }
+
+    // 剧集选单弹窗：选集后自动收起，回到播放界面
+    closeEpisodesModal();
 
     // 保存当前播放进度（如果正在播放）
     if (art && art.video && !art.video.paused && !videoHasEnded) {
@@ -2797,6 +2927,9 @@ function playEpisode(index) {
     nextDanmuPrefetched = false; // 同步重置下一集弹幕预热标志
 
     clearVideoProgress();
+
+    // 双人共同观影：换集广播（共享控制下双方选集同步——换集复用 src 通道，对方整页跟随到对应集）
+    try { if (wdtvWatchParty) wdtvWatchParty.onEpisodeSwitch(index); } catch (e) { }
 
     // 更新URL参数（不刷新页面）
     const currentUrl = new URL(window.location.href);
@@ -5320,53 +5453,6 @@ function closeEmbeddedPlayer() {
         console.error('尝试关闭嵌入式播放器失败:', e);
     }
     return false;
-}
-
-function renderResourceInfoBar() {
-    // 获取容器元素
-    const container = document.getElementById('resourceInfoBarContainer');
-    if (!container) {
-        console.error('找不到资源信息卡片容器');
-        return;
-    }
-    
-    // 获取当前视频 source_code
-    const urlParams = new URLSearchParams(window.location.search);
-    const currentSource = urlParams.get('source') || '';
-    
-    // 显示临时加载状态
-    container.innerHTML = `
-      <div class="resource-info-bar-left flex">
-        <span>加载中...</span>
-        <span class="resource-info-bar-videos">-</span>
-      </div>
-      <button class="resource-switch-btn flex" id="switchResourceBtn" onclick="showSwitchResourceModal()">
-        <span class="resource-switch-icon">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v16m0 0l-6-6m6 6l6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </span>
-        切换资源
-      </button>
-    `;
-
-    // 查找当前源名称
-    let resourceName = currentSource
-    if (currentSource && API_SITES[currentSource]) {
-        resourceName = API_SITES[currentSource].name;
-    }
-
-    container.innerHTML = `
-      <div class="resource-info-bar-left flex">
-        <span>${resourceName}</span>
-        <span class="resource-info-bar-videos">${currentEpisodes.length} 个视频</span>
-        <span id="resolutionInfo" class="resource-info-bar-resolution" style="display:none"></span>
-      </div>
-      <button class="resource-switch-btn flex" id="switchResourceBtn" onclick="showSwitchResourceModal()">
-        <span class="resource-switch-icon">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 4v16m0 0l-6-6m6 6l6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </span>
-        切换资源
-      </button>
-    `;
 }
 
 // ===== 换源测速增强：实测码率 + 实测吞吐 =====

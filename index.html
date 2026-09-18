@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -173,8 +173,8 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 /* 影院区可点击：splash 内容层默认 pointer-events:none，需把影院区加入可交互白名单，
    否则卡片点击会落到背景水波 canvas 上（与 #resultsArea/#doubanArea 同机制） */
 .splash-content #cinemaArea,.splash-content #cinemaArea *{pointer-events:auto}
-/* 底栏页面：影院空态卡片与观影空间预留卡片同样加入白名单（含"去搜索"按钮） */
-.splash-content #cinemaEmpty,.splash-content #cinemaEmpty *,.splash-content .wdtv-space-card,.splash-content .wdtv-space-card *{pointer-events:auto}
+/* 底栏页面：影院空态卡片与观影空间 Hub 同样加入白名单（含创建/加入按钮与输入框） */
+.splash-content #cinemaEmpty,.splash-content #cinemaEmpty *,.splash-content .wdtv-space-hub,.splash-content .wdtv-space-hub *{pointer-events:auto}
 /* 影院卡片点按体验：touch-action:manipulation 消除双击缩放延迟并减少点被误判为滚动导致的
    pointercancel（点卡片没反应）；user-select:none 防止按住卡片时选中文字 */
 .splash-content #cinemaArea .douban-card{touch-action:manipulation;-webkit-user-select:none;user-select:none}
@@ -633,15 +633,60 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
         </div>
           </section>
 
-          <!-- 页面：观影空间（预留，功能后续实现） -->
+          <!-- 页面：观影空间（双人共同观影 Hub：创建/加入房间，js/space.js 驱动） -->
           <section id="page-space" class="wdtv-page" data-dock-page="space">
             <div class="wdtv-space">
-              <div class="wdtv-space-card">
-                <div class="wdtv-space-icon">
-                  <svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"></rect><path d="M7 5v14M17 5v14M2.5 9.5h4.5M2.5 14.5h4.5M17 9.5h4.5M17 14.5h4.5"></path></svg>
+              <div class="wdtv-space-hub">
+                <div class="wdtv-hub-head">
+                  <div class="wdtv-hub-icon">
+                    <svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"></rect><path d="M7 5v14M17 5v14M2.5 9.5h4.5M2.5 14.5h4.5M17 9.5h4.5M17 14.5h4.5"></path></svg>
+                  </div>
+                  <h2 class="wdtv-space-title">观影空间</h2>
+                  <p class="wdtv-hub-sub">双人同步观影 · 聊天 · 画布</p>
                 </div>
-                <h2 class="wdtv-space-title">观影空间</h2>
-                <span class="wdtv-space-badge">敬请期待</span>
+                <div class="wdtv-hub-modes">
+                  <div class="wdtv-hub-mode">
+                    <div class="wdtv-hub-mode-icon">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"></path></svg>
+                    </div>
+                    <p class="wdtv-hub-mode-title">在线共同观影</p>
+                    <p class="wdtv-hub-mode-desc">双方各自在线拉流，房主控制播放，实时同步进度</p>
+                  </div>
+                  <div class="wdtv-hub-mode">
+                    <div class="wdtv-hub-mode-icon">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4"></path><path d="M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2"></path></svg>
+                    </div>
+                    <p class="wdtv-hub-mode-title">预缓存共同观影</p>
+                    <p class="wdtv-hub-mode-desc">先在播放页把同一集缓存到本地，双方缓存就绪后离线同步播放</p>
+                  </div>
+                  <div class="wdtv-hub-mode">
+                    <div class="wdtv-hub-mode-icon">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path><path d="M8 13h2m3 0h3"></path></svg>
+                    </div>
+                    <p class="wdtv-hub-mode-title">本地视频共同观影</p>
+                    <p class="wdtv-hub-mode-desc">双方各自选择同一个本地视频文件，指纹校验后同步播放，不经服务器</p>
+                  </div>
+                </div>
+                <div class="wdtv-hub-actions">
+                  <button type="button" id="wpCreateBtn" class="wdtv-hub-btn wdtv-hub-btn-primary">创建房间</button>
+                  <div class="wdtv-hub-join">
+                    <input id="wpJoinCode" class="wdtv-hub-input" maxlength="6" placeholder="房间码" autocomplete="off">
+                    <button type="button" id="wpJoinBtn" class="wdtv-hub-btn">加入房间</button>
+                  </div>
+                </div>
+                <div id="wpCreateResult" class="wdtv-hub-result" hidden>
+                  <p class="wdtv-hub-result-label">房间已创建，把邀请链接发给对方</p>
+                  <div class="wdtv-hub-code" id="wpRoomCode">XXXXXX</div>
+                  <div class="wdtv-hub-result-actions">
+                    <button type="button" id="wpCopyInvite" class="wdtv-hub-btn">复制邀请链接</button>
+                    <button type="button" id="wpEnterRoom" class="wdtv-hub-btn wdtv-hub-btn-primary">进入房间</button>
+                  </div>
+                  <p class="wdtv-hub-countdown" id="wpCountdown"></p>
+                </div>
+                <div id="wpRecentWrap" class="wdtv-hub-recent" hidden>
+                  <p class="wdtv-hub-recent-title">最近房间</p>
+                  <div id="wpRecentList" class="wdtv-hub-recent-list"></div>
+                </div>
               </div>
             </div>
           </section>
@@ -852,7 +897,7 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 <!-- External JS -->
 <script src="libs/tailwindcss.min.js"></script>
 <script src="js/config.js?v=11"></script>
-<script src="js/video-cache.js?v=91"></script>
+<script src="js/video-cache.js?v=93"></script>
 <script src="js/downloader.js?v=20"></script>
 <script src="js/connection-test.js?v=9"></script>
 <script src="js/customer_site.js?v=8"></script>
@@ -860,13 +905,14 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 <script src="js/api.js?v=13"></script>
 <script src="js/douban.js?v=9"></script>
 <script src="js/search.js?v=10"></script>
-<script src="js/app.js?v=22"></script>
+<script src="js/app.js?v=23"></script>
 <script src="js/cinema.js?v=17"></script>
 <script src="js/pwa-register.js?v=8"></script>
 <script src="js/index-page.js?v=11"></script>
 <script src="js/dock.js?v=3"></script>
 <script src="js/cloud-sync.js?v=1"></script>
 <script src="js/cloud-sync-ui.js?v=4"></script>
+<script src="js/space.js?v=2"></script>
 
 <!-- InternalBeyond Scripts -->
 <script>
@@ -1032,7 +1078,7 @@ function toSim(e){if(mode==='pane'){var r=pane.getBoundingClientRect();if(r.widt
 function stir(e){if(!(e.buttons&1))return;if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;var lp=stirPts[e.pointerId];if(!lp){stirPts[e.pointerId]={x:p.x,y:p.y};return}var dx=p.x-lp.x,dy=p.y-lp.y;var d=Math.sqrt(dx*dx+dy*dy);if(d<1.15)return;var steps=Math.min(6,Math.ceil(d/1.5));var s=Math.min(0.55,0.12+d*0.05);for(var i=1;i<=steps;i++)poke(lp.x+dx*i/steps,lp.y+dy*i/steps,s*MOUSE_STR_MAG,1.7*MOUSE_MAG);lp.x=p.x;lp.y=p.y}
 function tap(e){if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;stirPts[e.pointerId]={x:p.x,y:p.y};poke(p.x,p.y,2.0*MOUSE_STR_MAG,2.8*MOUSE_MAG)}
 function lift(e){delete stirPts[e.pointerId]}
-function bgBlank(e){var t=e.target;if(!t||t===sp||t===slot||t===pane)return true;if(t.closest&&(t.closest('#searchArea')||t.closest('#doubanArea')||t.closest('#resultsArea')||t.closest('#cinemaEmpty')||t.closest('.wdtv-space-card')||t.closest('.wdtv-dock')||t.closest('.wdtv-modal-overlay')||t.closest('.wdtv-disclaimer-modal')||t.closest('.wdtv-history-panel')||t.closest('.wdtv-settings-panel')||t.closest('#chat-mini')))return false;return true}
+function bgBlank(e){var t=e.target;if(!t||t===sp||t===slot||t===pane)return true;if(t.closest&&(t.closest('#searchArea')||t.closest('#doubanArea')||t.closest('#resultsArea')||t.closest('#cinemaEmpty')||t.closest('.wdtv-space-hub')||t.closest('.wdtv-dock')||t.closest('.wdtv-modal-overlay')||t.closest('.wdtv-disclaimer-modal')||t.closest('.wdtv-history-panel')||t.closest('.wdtv-settings-panel')||t.closest('#chat-mini')))return false;return true}
 if(sp&&!REDUCED){var gwTouch={};sp.addEventListener('pointerdown',function(e){if(mode!=='bg')return;var ok=bgBlank(e);gwTouch[e.pointerId]=ok;if(ok)tap(e)},{passive:true});sp.addEventListener('pointermove',function(e){if(mode==='bg'&&gwTouch[e.pointerId]!==false)stir(e)},{passive:true});sp.addEventListener('pointerup',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointercancel',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointerleave',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true})}
 var fogCv=document.getElementById('gw-fogwipe');var fog=fogCv?fogCv.getContext('2d'):null;var wipeStrokes=[];
 function blotch(x,y,r,a){if(!fog)return;var g=fog.createRadialGradient(W*x,H*y,0,W*x,H*y,Math.max(W,H)*r);g.addColorStop(0,'rgba(222,234,250,'+a+')');g.addColorStop(1,'rgba(222,234,250,0)');fog.fillStyle=g;fog.fillRect(0,0,W,H)}
