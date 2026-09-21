@@ -2067,6 +2067,18 @@ async function initPlayer(videoUrl) {
                     // 增加错误计数
                     errorCount++;
 
+                    // 坏缓存自愈：分片解析/追加失败且该分片来自本地缓存时，删除缓存记录强制重新走网络下载。
+                    // （截断分片一旦入库会被缓存永久秒回，表现为白色缓存区域内固定几秒无法播放、seek 跳过即正常；
+                    //   未缓存分片为无害 no-op）
+                    try {
+                        if (data && data.frag && typeof VideoCache.invalidateFragment === 'function' &&
+                            (data.details === Hls.ErrorDetails.FRAG_PARSING_ERROR ||
+                             data.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR ||
+                             data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR)) {
+                            VideoCache.invalidateFragment(data.frag.url, data.frag.rangeStart, data.frag.rangeEnd);
+                        }
+                    } catch (e) { }
+
                     // 处理bufferAppendError
                     if (data.details === 'bufferAppendError') {
                         bufferAppendErrorCount++;
@@ -2097,6 +2109,17 @@ async function initPlayer(videoUrl) {
                                     errorDisplayed = true;
                                     showError('视频加载失败，可能是格式不兼容或源不可用');
                                 }
+                                break;
+                        }
+                    } else if (data.fatal) {
+                        // 播放中致命错误同样必须恢复：此前被静默吞掉后 hls 彻底停摆，
+                        // 表现为"卡住一直加载不出来、只能手动 seek 才能恢复"
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                hls.startLoad();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                hls.recoverMediaError();
                                 break;
                         }
                     }

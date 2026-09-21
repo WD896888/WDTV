@@ -17,7 +17,7 @@
     // ===== 常量 =====
     var DB_NAME = 'wdtv-video-cache';
     var DB_VERSION = 1;
-    var VC_VERSION = 93; // 构建版本（跟随 ?v= 递增）：缓存面板可见，用于确认设备实际运行的构建
+    var VC_VERSION = 94; // 构建版本（跟随 ?v= 递增）：缓存面板可见，用于确认设备实际运行的构建
     var STORE_FRAGS = 'frags';
     var STORE_TEXTS = 'texts';
     var STORE_META = 'meta';
@@ -938,7 +938,7 @@
     // - 停滞看门狗：出流后连续 FRAG_DIRECT_STALL_MS 无新字节才判连接僵死 → 失败
     // 首字节到达后不再限制总时长：慢但在流的连接（蜂窝网常见）允许跑完，
     // 由 hls.js ABR 自行降档适配带宽，而不是误杀直连锁进更慢的跨境代理
-    function directXhrLoad(url, headers, responseType, onSuccess, onFail) {
+    function directXhrLoad(url, headers, responseType, onSuccess, onFail, onAbort) {
         var xhr = new XMLHttpRequest();
         var startTs = performance.now();
         var firstByteAt = 0;
@@ -983,6 +983,16 @@
                 var endTs = performance.now();
                 var data = xhr.response;
                 var size = data ? (data.byteLength != null ? data.byteLength : data.length) : 0;
+                // 截断保护：直连响应声明 content-length 且实际字节少于声明（上游提前断流）
+                // → 按失败处理回退代理，绝不把截断数据交给 hls/写穿透入库。
+                // 仅判"少于"：跨域下 content-encoding 头多数不可读，压缩响应解压后字节数
+                // 只会大于声明的压缩长度，判"少于"可完全避开该误判
+                if (size > 0) {
+                    try {
+                        var cl = parseInt(xhr.getResponseHeader('content-length') || '0', 10) || 0;
+                        if (cl > 0 && size < cl) { onFail('truncated'); return; }
+                    } catch (e) { }
+                }
                 // stats 形状与 serveFromCache 一致：hls.js 读取 loading 嵌套字段做 ABR 采样，缺失会抛 TypeError
                 var stats = {
                     aborted: false,
@@ -1011,6 +1021,9 @@
             if (settled) return;
             settled = true;
             clearTimers();
+            // 上层主动中止（非看门狗）：通知调用方清理在途标记（inflightPlayback），
+            // 否则该分片被永久排除出预取队列，缓存永远补不上这几秒
+            if (typeof onAbort === 'function') onAbort();
         };
         try { xhr.send(); } catch (e) {
             if (!settled) { settled = true; clearTimers(); onFail('network'); }
@@ -1044,11 +1057,19 @@
                     httpErr.status = res.status;
                     throw httpErr;
                 }
+                // 可校验期望长度：仅无内容编码（未压缩直传）时 content-length 才与解压后字节一致；
+                // 0 = 未知（分块传输/压缩响应），调用方跳过长度校验
+                var contentLength = 0;
+                try {
+                    var enc = ((res.headers && res.headers.get('content-encoding')) || '').toLowerCase();
+                    var cl = parseInt((res.headers && res.headers.get('content-length')) || '0', 10) || 0;
+                    if (!enc && cl > 0) contentLength = cl;
+                } catch (e) { }
                 // 无流式读取能力（老浏览器）→ 退回总超时语义
                 if (!res.body || typeof res.body.getReader !== 'function') {
                     var legacyTimer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (e) { } }, FRAG_FETCH_TIMEOUT_MS) : null;
                     return res.arrayBuffer().then(function (buf) {
-                        return { ok: true, status: res.status, arrayBuffer: function () { return Promise.resolve(buf); } };
+                        return { ok: true, status: res.status, contentLength: contentLength, arrayBuffer: function () { return Promise.resolve(buf); } };
                     }).finally(function () { if (legacyTimer) clearTimeout(legacyTimer); });
                 }
                 clearTimers();
@@ -1071,6 +1092,7 @@
                         resolve({
                             ok: true,
                             status: res.status,
+                            contentLength: contentLength,
                             arrayBuffer: function () { return Promise.resolve(buf.buffer); }
                         });
                     }
@@ -1153,7 +1175,30 @@
                 if (isSessionGone()) return Promise.reject(new Error('session-switched'));
                 return fetchWithTimeout(url, headers).then(function (res) {
                     if (!res.ok) throw new Error('HTTP ' + res.status);
-                    return res;
+                    return res.arrayBuffer().then(function (buf) {
+                        // 少数源对 Range 返回 200 全量内容时截取对应区间，保证缓存内容正确
+                        if (item.rs != null && res.status === 200 && item.re != null && buf.byteLength > item.re) {
+                            buf = buf.slice(item.rs, item.re);
+                        }
+                        // 完整性校验（防坏分片永久入库）：
+                        // 代理流式透传会剥离 content-length 并把上游提前断流"洗"成干净结尾，
+                        // fetch 层无法察觉截断；截断/空分片一旦入库会被缓存永久秒回，
+                        // 表现为"进度条已缓存区域内固定几秒永远无法播放、seek 跳过即正常"。
+                        // - 空响应 → 失败；
+                        // - BYTERANGE 区间（期望 = re-rs）→ 字节数必须严格相等；
+                        // - 普通分片（期望 = content-length）→ 仅"少于声明"判截断
+                        //   （跨域下压缩响应的编码头多数不可读，解压后只会多于声明，避免误杀）。
+                        // 校验失败抛错 → 下一跳重试（直连失败回退代理），绝不写入缓存。
+                        if (!buf || !buf.byteLength) throw new Error('empty-fragment');
+                        if (item.rs != null && item.re != null) {
+                            if (buf.byteLength !== item.re - item.rs) {
+                                throw new Error('fragment-size-mismatch (' + buf.byteLength + ' != ' + (item.re - item.rs) + ')');
+                            }
+                        } else if (res.contentLength > 0 && buf.byteLength < res.contentLength) {
+                            throw new Error('fragment-truncated (' + buf.byteLength + ' < ' + res.contentLength + ')');
+                        }
+                        return buf;
+                    });
                 }).catch(function (e) {
                     if (isAborted() || isSessionGone()) throw e; // 会话已切换：立即终止，不做下一段尝试
                     if (i === 0 && attempts.length > 1) markDirectFail(item.url); // 直连失败记账
@@ -1161,22 +1206,16 @@
                     throw e;
                 });
             }
-            return attemptFetch(0).then(function (res) {
-                return res.arrayBuffer().then(function (buf) {
-                    // 少数源对 Range 返回 200 全量内容时截取对应区间，保证缓存内容正确
-                    if (item.rs != null && res.status === 200 && item.re != null && buf.byteLength > item.re) {
-                        buf = buf.slice(item.rs, item.re);
+            return attemptFetch(0).then(function (buf) {
+                return putFragSafe(item.key, item.url, item.rs, item.re, buf).then(function (ok) {
+                    if (ok) {
+                        s.failStreak = 0;
+                        state.cachedFragKeys.add(item.key);
+                        if (s.levelKeys.has(item.key)) s.levelCached.add(item.key);
+                    } else {
+                        s.failStreak++;
+                        markPumpFailed(s);
                     }
-                    return putFragSafe(item.key, item.url, item.rs, item.re, buf).then(function (ok) {
-                        if (ok) {
-                            s.failStreak = 0;
-                            state.cachedFragKeys.add(item.key);
-                            if (s.levelKeys.has(item.key)) s.levelCached.add(item.key);
-                        } else {
-                            s.failStreak++;
-                            markPumpFailed(s);
-                        }
-                    });
                 });
             });
         })().catch(function () {
@@ -1252,6 +1291,11 @@
                 if (!rec.ts || Date.now() - rec.ts > ttl) return undefined;
                 textMemCacheSet(rec.url || key.slice(2), rec.data);
             }
+            if (rec && type === 'fragment' && isBrokenFragRecord(rec)) {
+                // 空分片记录：视为未命中并删除，让本次加载走网络重新下载修复
+                repairBrokenFragRecord(key);
+                return undefined;
+            }
             return rec; // undefined = 未命中
         }).finally(function () { state.pendingReads.delete(ck); });
         state.pendingReads.set(ck, p);
@@ -1264,6 +1308,31 @@
         while (state.textMemCache.size > TEXT_MEM_CACHE_MAX) {
             state.textMemCache.delete(state.textMemCache.keys().next().value);
         }
+    }
+
+    // 空分片记录判定：历史版本曾把空响应当成功入库（下载侧无空体校验），
+    // 空分片被永久秒回后 hls 解析必然失败 → "缓存区域内固定几秒永远无法播放"
+    function isBrokenFragRecord(rec) {
+        if (!rec) return false;
+        var size = (rec.size != null) ? rec.size
+            : (rec.data && rec.data.byteLength != null) ? rec.data.byteLength : -1;
+        return size === 0;
+    }
+
+    // 坏记录修复：从已缓存集合移除并删除 IndexedDB 记录，视为未命中；
+    // 下一次加载走网络重新下载，已损坏的旧缓存随播放自愈
+    function repairBrokenFragRecord(key) {
+        state.cachedFragKeys.delete(key);
+        var s = state.session;
+        if (s.levelCached.has(key)) s.levelCached.delete(key);
+        ensureDB().then(function (db) {
+            return txWrite(db, [STORE_FRAGS], function (tx) {
+                tx.objectStore(STORE_FRAGS).delete(key);
+            });
+        }).then(function () {
+            notifyProgress();
+            pump(); // 记录已清空：立即可被预取队列重新挑起
+        }).catch(function () { });
     }
 
     // 命中回调：hls.js 对缺失字段/0 时长敏感（会抛 TypeError），必须给完整 LoadStats；
@@ -1290,11 +1359,15 @@
     }
 
     // 写穿透：网络加载成功后入库。分片数据必须先同步拷贝（hls.js 可能随即 detach 原 buffer）
-    function writeThrough(key, type, context, data) {
+    function writeThrough(key, type, context, data, stats) {
         if (state.disabled || !state.currentKey) return Promise.resolve();
         if (type === 'fragment') {
             if (!data || !data.byteLength) return Promise.resolve();
             if (state.cachedFragKeys.has(key)) return Promise.resolve();
+            // 长度一致性校验：hls stats.total 为已声明的 content-length（未知时回退 loaded 值，
+            // 校验自然空转）且与实际字节不符 = 响应被截断 → 不入库，避免坏分片永久秒回
+            var total = stats ? stats.total : 0;
+            if (total > 0 && data.byteLength !== total) return Promise.resolve();
             var copy = data.slice(0);
             var normRecRange = normRangeValues(context.rangeStart, context.rangeEnd);
             return putFragTx({
@@ -1393,7 +1466,7 @@
                                 function makeSuccessWrapper() {
                                     return function (response, stats, ctx) {
                                         finishInflight();
-                                        try { writeThrough(key, t, context, response && response.data); } catch (e) { }
+                                        try { writeThrough(key, t, context, response && response.data, stats); } catch (e) { }
                                         try { if (response && typeof response === 'object' && response.url !== context.url) response.url = context.url; } catch (e) { }
                                         return baseOnSuccess(response, stats, context);
                                     };
@@ -1530,7 +1603,8 @@
                                         if (!proxyStarted) startProxy();
                                         else if (proxyDone) settleError(new Error('direct ' + reason + ' + proxy failed'), { aborted: false });
                                         // else 竞速代理仍在途 → 等它的结果
-                                    }
+                                    },
+                                    finishInflight // hls 主动中止（seek/换档）时清理在途标记，防预取队列永久漏掉该分片
                                 );
                                 if (raceOn) startProxy(); // 竞速模式：代理腿立即并行，不等直连出结果
                             }).catch(function () {
@@ -1580,6 +1654,7 @@
         abortDownload('episode');
         state.currentKey = key;
         state.cachedFragKeys = new Set();
+        state.inflightPlayback = new Set(); // 换集清理在途标记：旧集泄漏的键不得阻塞新集预取
         state.metaMem = null;
         state.session = defaultSession();
         // 自动缓存关闭时默认挂起后台下载（rebuildQueue 的 pump 因 paused 直接让路）
@@ -1701,6 +1776,21 @@
     function notePositionChange() {
         if (state.disabled) return;
         pump();
+    }
+
+    // ===== 坏缓存自愈 =====
+    // 播放侧对某分片解析/追加失败时调用：若该分片确实在本地缓存中，删除记录并从
+    // 已缓存集合移除，让下一次加载/预取走网络重新下载。
+    // 背景：代理流式透传剥离 content-length 后，上游提前断流被"洗"成干净结尾，截断分片
+    // 曾被当作完整数据永久入库 → 白色缓存区域内固定几秒永远无法播放、seek 跳过即正常。
+    // 未缓存（键不存在）时为无害 no-op，不会对网络分片产生任何副作用。
+    function invalidateFragment(url, rs, re) {
+        if (state.disabled || !state.currentKey || !url) return false;
+        var norm = normRangeValues(rs, re);
+        var key = fragmentKey(url, norm[0], norm[1]);
+        if (!state.cachedFragKeys.has(key)) return false;
+        repairBrokenFragRecord(key);
+        return true;
     }
 
     function deleteVideo(key) {
@@ -1971,6 +2061,7 @@
         listEntries: listEntries,
         coverageOf: coverageOf,
         currentKeyOf: currentKeyOf,
+        invalidateFragment: invalidateFragment,
         housekeep: housekeep,
         openManager: openManager,
         closeManager: closeManager

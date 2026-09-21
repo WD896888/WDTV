@@ -2,9 +2,11 @@
  * WDTV 视频下载器（下载引擎 + 下载管理器 + 批量下载弹窗）
  *
  * 能力：
- *  - 解析 m3u8（媒体列表 / 主列表自动选档、AES-128 解密、EXT-X-MAP(fMP4)、BYTERANGE）
+ *  - 解析 m3u8（媒体列表 / 主列表自动选档、AES-128 解密、EXT-X-MAP(fMP4)、BYTERANGE、EXT-X-DISCONTINUITY）
  *  - 分片并发下载（IndexedDB 持久化，刷新/关页后可续传），逐分片重试
- *  - 合成保存：TS 直拼；MP4 用 mux.js 转封装（libs/mux-mp4.js，参考 m3u8-downloader 项目同款方案）
+ *  - 合成保存：TS 直拼；MP4 用 mux.js 转封装（libs/mux-mp4.js），
+ *    并探测 EXT-X-DISCONTINUITY（广告插入）造成的源 PTS 重置，逐分片重排时间线，
+ *    保证成片进度条连续（否则本地播放器播到广告处进度会瞬间归零）
  *  - 下载管理器：实时进度 / 速度、暂停继续、重试、保存、删除，跨页签共享状态
  *  - 批量下载弹窗：画质 / 格式选择 + 集数多选
  *
@@ -406,11 +408,15 @@
     const keyChanges = []; // { fromIdx, enc } — 支持逐段轮换密钥
     let mediaSeq = 0, duration = 0, map = null;
     let bytLen = 0, bytOff = -1, prevEnd = 0;
+    let pendingDur = 0;      // EXTINF 声明的本分片时长（秒）
+    let discPending = false; // #EXT-X-DISCONTINUITY 是否落在本分片之前（广告/拼接处，PTS 时间线可能在此重置）
     for (const raw of lines) {
       const line = raw.trim();
       if (!line) continue;
       if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
         mediaSeq = parseInt(line.split(':')[1], 10) || 0;
+      } else if (line.startsWith('#EXT-X-DISCONTINUITY') && !line.startsWith('#EXT-X-DISCONTINUITY-')) {
+        discPending = true;
       } else if (line.startsWith('#EXT-X-KEY')) {
         const method = (/METHOD=([^,\s]+)/.exec(line) || [])[1] || 'NONE';
         const uriM = /URI="([^"]+)"/.exec(line);
@@ -431,7 +437,7 @@
         if (m) { bytLen = parseInt(m[1], 10) || 0; bytOff = m[2] != null ? parseInt(m[2], 10) : -1; }
       } else if (line.startsWith('#EXTINF:')) {
         const d = parseFloat(line.slice(8));
-        if (isFinite(d)) duration += d;
+        if (isFinite(d)) { duration += d; pendingDur = d; }
       } else if (!line.startsWith('#')) {
         let url = null;
         try { url = new URL(line, baseUrl).toString(); } catch (e) { }
@@ -443,7 +449,8 @@
           prevEnd = off + bytLen;
           bytLen = 0; bytOff = -1;
         }
-        segs.push({ url, range });
+        segs.push({ url, range, dur: pendingDur, disc: discPending });
+        pendingDur = 0; discPending = false;
       }
     }
     return { segs, keyChanges, map, mediaSeq, duration };
@@ -481,6 +488,57 @@
     const ck = await crypto.subtle.importKey('raw', keyBuf, { name: 'AES-CBC' }, false, ['decrypt']);
     const ivBytes = iv || seqIv(seqNum);
     return crypto.subtle.decrypt({ name: 'AES-CBC', iv: ivBytes }, ck, data);
+  }
+
+  // ===== TS 首帧时间戳探测（时间线焊接用） =====
+
+  // 解析 PES 头里 5 字节的 33 位 PTS/DTS（90kHz）。用乘法而非位运算：2^33 超出 32 位安全范围
+  function parsePesTimestamp(b, o) {
+    return ((b[o] >> 1) & 0x07) * 0x40000000
+      + b[o + 1] * 0x400000
+      + (b[o + 2] >> 1) * 0x8000
+      + b[o + 3] * 0x80
+      + (b[o + 4] >> 1);
+  }
+
+  // 从 TS 分片中找出首个视频/音频 PES 的 PTS/DTS（90kHz），探测失败返回 null。
+  // 视频优先（进度以视频时间线为准）；视频带 B 帧时取 DTS（解码序首帧），否则取 PTS。
+  // 用途：EXT-X-DISCONTINUITY（广告插入）前后源 PTS 会重置，合成时需要锚点重排时间线
+  function probeTsFirstDts(u8) {
+    let video = null, audio = null;
+    const len = u8.length;
+    let i = 0;
+    while (i < len && u8[i] !== 0x47) i++; // 同步到首个 TS 包（188 字节）
+    while (i + 188 <= len && (video === null || audio === null)) {
+      if (u8[i] !== 0x47) { // 失步重同步
+        i++;
+        while (i < len && u8[i] !== 0x47) i++;
+        continue;
+      }
+      const pusi = (u8[i + 1] & 0x40) !== 0;   // PES 包起始
+      const afc = u8[i + 3] & 0x30;            // 自适应字段/载荷标志
+      if (pusi && (afc & 0x10)) {
+        let off = i + 4;
+        if (afc & 0x20) off += 1 + u8[i + 4];  // 跳过自适应字段
+        if (off + 9 <= len && u8[off] === 0 && u8[off + 1] === 0 && u8[off + 2] === 1) {
+          const sid = u8[off + 3];
+          const isVideo = sid >= 0xE0 && sid <= 0xEF;
+          const isAudio = sid >= 0xC0 && sid <= 0xDF;
+          if (isVideo || isAudio) {
+            const flags = u8[off + 7];
+            if ((flags & 0xC0) === 0x80 && off + 14 <= len) {          // 仅 PTS
+              if (isVideo) video = parsePesTimestamp(u8, off + 9);
+              else audio = parsePesTimestamp(u8, off + 9);
+            } else if ((flags & 0xC0) === 0xC0 && off + 19 <= len) {   // PTS + DTS（B 帧流）
+              if (isVideo) video = parsePesTimestamp(u8, off + 14);    // 视频取 DTS（解码序）
+              else audio = parsePesTimestamp(u8, off + 9);
+            }
+          }
+        }
+      }
+      i += 188;
+    }
+    return video !== null ? video : audio;
   }
 
   // ===== 任务模型 =====
@@ -807,12 +865,49 @@
     } else if (media.map) {
       blob = new Blob(parts, { type: 'video/mp4' }); // fMP4 直拼
     } else {
-      // TS → MP4 转封装（mux.js，与 m3u8-downloader 参考实现同方案：逐分片转码，首段带 initSegment）
+      // TS → MP4 转封装（mux.js）。
+      // 关键修复：广告插入处（#EXT-X-DISCONTINUITY）源 PTS 会重置（广告从 0 重新计时），
+      // 旧实现 keepOriginalTimestamps 原样透传，成片里广告片段的 baseMediaDecodeTime(tfdt)
+      // 突然跳回 0 → 本地播放器按时间线显示进度，一播到广告进度条瞬间归零、广告结束后又跳回。
+      // 现在：逐分片探测首帧 PTS/DTS，检测时间线断裂（显式标记或隐藏跳变），
+      // 为每个分片计算 baseMediaDecodeTime 偏移（输出时间 = 原始时间 + 偏移），
+      // 把断裂的源时间线"焊接"成连续的输出时间线。
       await ensureMuxJs();
+      const TS_CLOCK = 90000;    // MPEG-TS 时钟频率
+      const JUMP_TOL = TS_CLOCK; // 1 秒内的时间戳波动视为连续（EXTINF 舍入误差量级）
       const out = [];
+      let outEnd = 0;            // 输出时间线上，下一分片应开始的位置（90kHz）
+      let prevOffset = 0;        // 上一分片应用的偏移
+      let anchored = false;      // 输出时间线基准是否已确立
       for (let i = 0; i < parts.length; i++) {
+        const seg = media.segs[i] || {};
+        const firstDts = probeTsFirstDts(new Uint8Array(parts[i]));
+        const dur90 = Math.round((seg.dur || 0) * TS_CLOCK);
+        let offset;
+        if (!anchored) {
+          if (firstDts !== null) {
+            // 首个可探测分片：分片0直接归零；此前分片探测失败时沿用原始时间线
+            offset = i === 0 ? -firstDts : 0;
+            anchored = true;
+          } else {
+            offset = 0; // 整体探测失败：退回旧行为（保留原始时间戳）
+          }
+        } else if (firstDts === null) {
+          offset = prevOffset; // 无锚点：沿用上一偏移
+        } else if (i > 0 && (seg.disc || Math.abs(firstDts + prevOffset - outEnd) > JUMP_TOL)) {
+          // 时间线断裂：显式 EXT-X-DISCONTINUITY，或无标签的 PTS 跳变（部分源插广告不打标记）
+          // → 把本分片锚定到前一分片的结束位置
+          offset = outEnd - firstDts;
+        } else {
+          offset = prevOffset; // 连续：沿用偏移，由原始 PTS 自然衔接
+        }
+        const outStart = firstDts !== null ? firstDts + offset : outEnd;
+        outEnd = outStart + dur90;
+        prevOffset = offset;
+
         const trans = new window.muxjs.Transmuxer({
           keepOriginalTimestamps: true,
+          baseMediaDecodeTime: offset, // mux.js 会把它加到各轨首帧 DTS 上（90kHz）
           duration: parseInt(task.durationSec || 0, 10)
         });
         trans.on('data', segment => {

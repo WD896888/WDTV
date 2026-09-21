@@ -485,6 +485,16 @@ export async function onRequest(context) {
             const streamHeaders = buildFilteredUpstreamHeaders(upstream.headers);
             streamHeaders.set('Content-Type', upstreamType || 'application/octet-stream');
 
+            // 截断防护：流式透传 1:1 转发上游字节，必须保留 content-length（仅未压缩响应，
+            // 压缩响应的长度是压缩字节数，解压后不可比）。此前剥离该头会把上游提前断流
+            // "洗"成干净结尾——浏览器无法察觉截断，截断分片被前端缓存当作完整数据永久
+            // 入库，表现为进度条已缓存区域内固定几秒永远无法播放、seek 跳过即恢复
+            const upstreamEncoding = (upstream.headers.get('content-encoding') || '').toLowerCase();
+            const upstreamLength = parseInt(upstream.headers.get('content-length') || '0', 10) || 0;
+            if (!upstreamEncoding && upstreamLength > 0) {
+                streamHeaders.set('Content-Length', String(upstreamLength));
+            }
+
             // BYTERANGE 源：带 Range 的请求按上游状态码原样直通（206 保留 Content-Range）。
             // Cache API 不缓存 206，直通即可；此前此类请求被强制 200 全量返回
             if (upstream.status !== 200) {
