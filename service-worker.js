@@ -27,7 +27,11 @@
 //                    覆盖了定位用的 translateY(-50%)，改为专属入场动画（全程保持 -50% 偏移）
 // v11（2026-09-12）：弹幕按钮拆分（控制栏复合按钮 → 右上角开关+详情幽灵按钮）+ 弹幕浮层改右上角下拉，
 //                    升级缓存版本清空旧缓存，确保 player.html/css/js 新版本即时到达
-const CACHE_VERSION = 'wdtv-sw-v11';
+// v12（2026-09-22）：修复录屏严重缺陷——移动端 captureStream 改固定帧率 30（requestFrame 时间戳在
+//                    WebKit/国产内核不可靠导致成片仅 1 秒）、录制画布接入 DOM、跨域污染预检；
+//                    停止后回写 MP4/WebM 容器时长元数据（修复缩略图预览时长显示 0~2 秒）；
+//                    升级缓存版本清空旧缓存，确保 player.js 修复即时到达
+const CACHE_VERSION = 'wdtv-sw-v12';
 const ASSET_CACHE = `wdtv-assets-${CACHE_VERSION}`;
 const PAGE_CACHE = `wdtv-pages-${CACHE_VERSION}`;
 
