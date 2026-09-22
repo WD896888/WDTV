@@ -5091,8 +5091,8 @@ function unlockPlayerGestures() {
 // 位于锁定钮原先的位置（屏幕右侧垂直居中），随控制栏显隐。
 // 点击弹出两个选项：
 //   1) 提取当前画面：canvas 逐像素绘制 video 解码帧，PNG（无损）导出，尺寸=视频原始分辨率
-//   2) 录制屏幕画面：捕获视频解码流（原生 captureStream 优先，含音频；兜底 canvas 逐帧绘制），
-//      MediaRecorder 高码率录制，画面为视频原分辨率、无任何 UI 覆盖
+//   2) 录制屏幕画面：MediaRecorder 高码率录制，画面为视频原分辨率、无任何 UI 覆盖；
+//      捕获路径：移动端优先元素直捕（原生管线直供，不卡顿）→ canvas 绘制兜底；桌面 canvas 手动帧模式
 let screenRec = null; // 进行中的录屏 { rec, chunks, cleanup }
 
 // 生成保存文件名：标题_第N集_类型_日期时间.ext（过滤文件系统非法字符）
@@ -5419,17 +5419,20 @@ function captureVideoScreenshot() {
     }
 }
 
-// 在支持的容器格式里挑选 MediaRecorder mimeType：按用户要求优先 MP4（H.264/AAC，浏览器直录无需转码），不支持时回退 WebM
+// 在支持的容器格式里挑选 MediaRecorder mimeType：MP4（H.264/AAC）优先——浏览器直录无需转码，
+// 且移动端可走硬件编码器（卡顿修复关键之一，几乎零 CPU 负载）。
+// WebM 兜底时桌面优先 VP9（画质更好，桌面算力充裕）；移动端优先 VP8——libvpx 软编下 VP8
+// realtime 编码成本约为 VP9 的 1/3，是原分辨率不降画质前提下的关键降载手段（VP9 软编在安卓
+// 上会吃满大核导致播放掉帧），高码率（≥8Mbps）下两者画质差异可忽略
 function pickRecorderMime() {
-    const candidates = [
+    const mp4 = [
         'video/mp4;codecs=avc1.640028,mp4a.40.2',
         'video/mp4;codecs=avc1,mp4a.40.2',
-        'video/mp4',
-        'video/webm;codecs=vp9,opus',
-        'video/webm;codecs=vp9',
-        'video/webm;codecs=vp8,opus',
-        'video/webm'
+        'video/mp4'
     ];
+    const webmDesktop = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    const webmMobile = ['video/webm;codecs=vp8,opus', 'video/webm', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp9'];
+    const candidates = REC_IS_MOBILE ? [...mp4, ...webmMobile] : [...mp4, ...webmDesktop];
     for (const m of candidates) {
         if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
     }
@@ -5453,81 +5456,118 @@ function startVideoRecording() {
     const h = video.videoHeight;
     let rafId = 0;
 
-    // ===== 画面捕获：canvas 绘制 video 解码帧 → captureStream 产出视频轨 =====
-    // 为什么不直接 video.captureStream()？
-    //   Chrome 中 video 元素暂停/缓冲时，其捕获流的视频轨会以设定帧率"持续重复输出最后一帧"
-    //   （为 WebRTC 保持轨道活跃的设计行为）。而本播放器点击视频画面即切换播放/暂停——
-    //   用户开始/停止录制前点到画面唤控制栏的那几秒，暂停帧会被 MediaRecorder 如实录成定格画面，
-    //   这正是成片开头/结尾出现几秒重复帧的根源。
-    // 帧模式选择（关键修复：部分设备录出来只有 1 秒的根源）：
-    //   手动帧模式（captureStream(0) + requestFrame）在桌面 Chromium/Firefox 上帧时间戳可靠，
-    //   暂停/缓冲区间不产帧、成片无定格；但 WebKit（iOS）与国产 Chromium 分叉（X5/夸克/UC 等）
-    //   的 requestFrame 帧时间戳不可靠（多帧挤在同一时间戳），封装器把整段录制压进首个
-    //   timeslice → 成片"只有一秒"。
-    //   → 移动端一律退回固定帧率 captureStream(30)：可靠性优先，代价是暂停/缓冲区间实录为
-    //     定格画面（观感自然，不影响正确性）。
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    // 画布必须接入 DOM 并保持可合成（缩至 1×1 半透明、不可交互）：部分内核对离屏画布的
-    // captureStream 不产帧或帧时间戳不前进，同样会把成片时长压成 ~1 秒
-    canvas.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1;';
-    document.body.appendChild(canvas);
-    // 跨域污染预检：视频源无 CORS 头时 drawImage 会污染画布，捕获轨产不出有效帧——
-    // 与其录出 ~1 秒废片再"保存成功"，不如开始前明确报错（截图 captureVideoScreenshot 同理）
-    try {
-        ctx.drawImage(video, 0, 0, w, h);
-        ctx.getImageData(0, 0, 1, 1); // 画布被污染时抛 SecurityError
-    } catch (e) {
-        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
-        if (typeof showToast === 'function') showToast('录屏失败：视频源受跨域保护，无法捕获画面', 'error');
-        return;
-    }
-    let canvasStream;
-    try {
-        canvasStream = canvas.captureStream(REC_IS_MOBILE ? 30 : 0); // 移动端固定帧率，桌面手动帧模式
-    } catch (e) {
-        try { canvasStream = canvas.captureStream(60); } catch (e2) {
-            if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
-            if (typeof showToast === 'function') showToast('录屏失败：视频源不允许捕获画面', 'error');
-            return;
-        }
-    }
-    const vTrack = canvasStream.getVideoTracks()[0];
-    const manualFrame = !REC_IS_MOBILE && typeof vTrack.requestFrame === 'function'; // 固定帧率模式为 false
-
-    // 实际录制时长（秒）：仅累计播放前进时间（与成片内容对齐），停止后用于回写容器时长元数据
-    let recordedDur = 0;
+    // ===== 捕获路径选择（关键修复：安卓录制卡顿/严重掉帧，且不损失任何画质）=====
+    // 移动端优先"元素直捕" video.captureStream()：视频帧由原生播放管线直供 MediaRecorder，
+    // 没有 canvas drawImage、没有 GPU 回读、没有第二套捕获管线，是浏览器原生优化过的最高效
+    // 路径——原分辨率/原帧率下也不额外吃 CPU（MP4 直录可用时走硬件编码器，几乎零负载）。
+    //   当年弃用元素直捕的原因（暂停/缓冲时重复帧）只存在于固定帧率模式 captureStream(fps)；
+    //   无参模式按"元素产出新解码帧"产帧：暂停/缓冲区间没有新解码帧即不产帧，与桌面手动帧
+    //   模式同优，且音视频同源原生同步。
+    //   顺带修复：此前 canvas 路径 + 无参元素捕获流并存（只为取音频），等于双份捕获负载。
+    // 元素直捕不可用（API 缺失/拿不到视频轨/抛异常）时回退 canvas 绘制路径（见下）。
+    // 桌面保持 canvas 手动帧模式不变（现状稳定，且彻底无重复帧）。
+    let stream = null; // 送入 MediaRecorder 的流
+    let hasAudio = false;
+    let canvas = null; // 仅 canvas 兜底路径创建
+    let canvasStream = null;
+    let srcStream = null; // 元素捕获流（元素直捕时即录制流；canvas 路径时仅取音频）
+    let vTrack = null; // canvas 兜底路径的视频轨
+    let manualFrame = false; // 桌面手动帧模式标志
+    let onTimeUpdate = null; // 元素直捕路径的时长累计器（canvas 路径在绘制循环内累计）
+    let recordedDur = 0; // 实际录制时长（秒）：仅累计播放前进时间，停止后回写容器时长元数据
     let lastTs = video.currentTime;
-    const draw = () => {
-        rafId = requestAnimationFrame(draw);
-        if (video.paused || video.ended || video.readyState < 2) return; // 无新画面：不绘制、不产帧
-        if (video.currentTime === lastTs) return; // 解码帧未更新（源帧率低于刷新率）：不重复产帧
-        // 正常前进按差值累加；拖动跳转（单帧差值异常大）按上限 1 秒计，避免时长虚增
-        recordedDur += Math.min(Math.max(video.currentTime - lastTs, 0), 1);
-        lastTs = video.currentTime;
-        try { ctx.drawImage(video, 0, 0, w, h); } catch (e) {
-            // 录制中途捕获失败（GPU 上下文丢失等）：明确提示并保存已录内容，不再静默截断
-            if (typeof showToast === 'function') showToast('录制中止：画面捕获失败，已保存已录内容', 'error');
-            stopVideoRecording();
+
+    if (REC_IS_MOBILE && (video.captureStream || video.mozCaptureStream)) {
+        try {
+            srcStream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+            if (srcStream && srcStream.getVideoTracks().length) {
+                stream = srcStream;
+                hasAudio = srcStream.getAudioTracks().length > 0;
+            }
+        } catch (e) { srcStream = null; }
+    }
+    if (!stream) {
+        // ---- canvas 绘制兜底路径 ----
+        // 原理：canvas 绘制 video 解码帧 → captureStream 产出视频轨。而 video 元素固定帧率
+        // 捕获模式（captureStream(fps)）在暂停/缓冲时会以设定帧率持续重复输出最后一帧
+        // （WebRTC 保持轨道活跃的设计行为），这正是成片出现定格画面的根源，故不采用。
+        // 帧模式：手动帧模式（captureStream(0) + requestFrame）在桌面 Chromium/Firefox 上帧
+        // 时间戳可靠，暂停/缓冲区间不产帧；但 WebKit（iOS）与国产 Chromium 分叉（X5/夸克/UC 等）
+        // 的 requestFrame 帧时间戳不可靠（多帧挤在同一时间戳），封装器把整段录制压进首个
+        // timeslice → 成片"只有一秒"。故移动端退回固定帧率 captureStream(30)：可靠性优先。
+        const canvas0 = document.createElement('canvas');
+        canvas0.width = w;
+        canvas0.height = h;
+        const ctx = canvas0.getContext('2d');
+        // 画布必须接入 DOM 并保持可合成（缩至 1×1 半透明、不可交互）：部分内核对离屏画布的
+        // captureStream 不产帧或帧时间戳不前进，同样会把成片时长压成 ~1 秒
+        canvas0.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1;';
+        document.body.appendChild(canvas0);
+        canvas = canvas0;
+        // 跨域污染预检：视频源无 CORS 头时 drawImage 会污染画布，捕获轨产不出有效帧——
+        // 与其录出 ~1 秒废片再"保存成功"，不如开始前明确报错（截图 captureVideoScreenshot 同理）
+        try {
+            ctx.drawImage(video, 0, 0, w, h);
+            ctx.getImageData(0, 0, 1, 1); // 画布被污染时抛 SecurityError
+        } catch (e) {
+            if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+            if (typeof showToast === 'function') showToast('录屏失败：视频源受跨域保护，无法捕获画面', 'error');
             return;
         }
-        if (manualFrame) vTrack.requestFrame(); // 手动模式下此刻才真正产出一帧
-    };
-    draw();
-
-    // ===== 音频：取媒体元素捕获流的音频轨（暂停时同样无样本，与画面自然对齐）；拿不到则无声录制 =====
-    // 注意：只取 audioTracks，不用其视频轨（避免上面的定格问题）
-    let audioTracks = [];
-    let srcStream = null;
-    try {
-        srcStream = video.captureStream ? video.captureStream()
-            : (video.mozCaptureStream ? video.mozCaptureStream() : null);
-        if (srcStream) audioTracks = srcStream.getAudioTracks();
-    } catch (e) { srcStream = null; }
-    const stream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
-    const hasAudio = audioTracks.length > 0;
+        try {
+            canvasStream = canvas0.captureStream(REC_IS_MOBILE ? 30 : 0); // 移动端固定帧率，桌面手动帧模式
+        } catch (e) {
+            try { canvasStream = canvas0.captureStream(60); } catch (e2) {
+                if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+                if (typeof showToast === 'function') showToast('录屏失败：视频源不允许捕获画面', 'error');
+                return;
+            }
+        }
+        vTrack = canvasStream.getVideoTracks()[0];
+        manualFrame = !REC_IS_MOBILE && typeof vTrack.requestFrame === 'function'; // 固定帧率模式为 false
+        // 音频：取元素捕获流的音频轨（拿不到则无声录制）。只取音频：其视频轨立即停掉——
+        // 无消费者的活跃轨道仍会随解码逐帧捕获，白耗一条管线（移动端等于双份捕获负载）
+        if (!srcStream) {
+            try {
+                srcStream = video.captureStream ? video.captureStream()
+                    : (video.mozCaptureStream ? video.mozCaptureStream() : null);
+            } catch (e) { srcStream = null; }
+        }
+        const audioTracks = srcStream ? srcStream.getAudioTracks() : [];
+        if (srcStream) srcStream.getVideoTracks().forEach(t => { try { t.stop(); } catch (e2) { } });
+        hasAudio = audioTracks.length > 0;
+        stream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
+        // 移动端绘制节流至 ~30fps：与捕获帧率对齐（60Hz 屏隔帧绘制），省一半 drawImage/
+        // 纹理上传开销且画质无损（捕获本身就是 30fps）；桌面逐帧绘制（手动帧模式需要每个新解码帧）
+        const drawMinInterval = REC_IS_MOBILE ? 33 : 0;
+        let lastDrawAt = 0;
+        const draw = () => {
+            rafId = requestAnimationFrame(draw);
+            if (video.paused || video.ended || video.readyState < 2) return; // 无新画面：不绘制、不产帧
+            if (video.currentTime === lastTs) return; // 解码帧未更新（源帧率低于刷新率）：不重复产帧
+            if (drawMinInterval && performance.now() - lastDrawAt < drawMinInterval) return; // 节流
+            lastDrawAt = performance.now();
+            // 正常前进按差值累加；拖动跳转（单帧差值异常大）按上限 1 秒计，避免时长虚增
+            recordedDur += Math.min(Math.max(video.currentTime - lastTs, 0), 1);
+            lastTs = video.currentTime;
+            try { ctx.drawImage(video, 0, 0, w, h); } catch (e) {
+                // 录制中途捕获失败（GPU 上下文丢失等）：明确提示并保存已录内容，不再静默截断
+                if (typeof showToast === 'function') showToast('录制中止：画面捕获失败，已保存已录内容', 'error');
+                stopVideoRecording();
+                return;
+            }
+            if (manualFrame) vTrack.requestFrame(); // 手动模式下此刻才真正产出一帧
+        };
+        draw();
+    } else {
+        // ---- 元素直捕路径：无绘制循环，时长经 timeupdate 累计（供停止后回写容器元数据）----
+        onTimeUpdate = () => {
+            const dt = video.currentTime - lastTs;
+            if (dt > 0 && dt <= 1) recordedDur += dt; // 正常前进才累计；拖动跳转/回退不计
+            lastTs = video.currentTime;
+        };
+        video.addEventListener('timeupdate', onTimeUpdate);
+    }
 
     // 原画面高码率：按分辨率给足码率（1080P≈16Mbps、4K 上限 50Mbps），尽量保留原始画质
     const bitrate = Math.min(50 * 1000 * 1000, Math.max(10 * 1000 * 1000, Math.round(w * h * 8)));
@@ -5542,7 +5582,7 @@ function startVideoRecording() {
     } catch (e) {
         if (typeof showToast === 'function') showToast('当前浏览器无法启动录制', 'error');
         cancelAnimationFrame(rafId);
-        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+        if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);
         return;
     }
 
@@ -5607,9 +5647,10 @@ function startVideoRecording() {
     const cleanup = () => {
         cancelAnimationFrame(rafId);
         video.removeEventListener('ended', onVideoEnded);
+        if (onTimeUpdate) video.removeEventListener('timeupdate', onTimeUpdate);
         try { stream.getTracks().forEach(t => t.stop()); } catch (e) { }
-        if (srcStream) { try { srcStream.getTracks().forEach(t => t.stop()); } catch (e) { } } // 停掉元素捕获流的全部轨道（含未并入的旧视频轨）
-        if (canvas.parentNode) canvas.parentNode.removeChild(canvas); // 移除隐藏录制画布
+        if (srcStream && srcStream !== stream) { try { srcStream.getTracks().forEach(t => t.stop()); } catch (e) { } } // canvas 路径：停掉元素捕获流的全部轨道
+        if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas); // 移除隐藏录制画布（元素直捕路径无画布）
         screenRec = null;
         const pr = (art && art.template && art.template.$player) || document.querySelector('#player .art-video-player');
         if (pr && pr.__wdtvPhotoRefresh) pr.__wdtvPhotoRefresh();

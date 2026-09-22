@@ -31,7 +31,12 @@
 //                    WebKit/国产内核不可靠导致成片仅 1 秒）、录制画布接入 DOM、跨域污染预检；
 //                    停止后回写 MP4/WebM 容器时长元数据（修复缩略图预览时长显示 0~2 秒）；
 //                    升级缓存版本清空旧缓存，确保 player.js 修复即时到达
-const CACHE_VERSION = 'wdtv-sw-v12';
+// v13（2026-09-22）：修复安卓录屏严重卡顿/掉帧（不降画质）——移动端优先元素直捕
+//                    video.captureStream()（原生管线直供编码器，去掉 canvas 逐帧绘制/GPU 回读/
+//                    双份捕获负载，MP4 直录可用时走硬件编码器），canvas 绘制降为兜底路径；
+//                    WebM 兜底时移动端优先 VP8（libvpx 软编成本约为 VP9 的 1/3）。分辨率/帧率/
+//                    码率不变，桌面行为不变。升级缓存版本确保修复即时到达
+const CACHE_VERSION = 'wdtv-sw-v13';
 const ASSET_CACHE = `wdtv-assets-${CACHE_VERSION}`;
 const PAGE_CACHE = `wdtv-pages-${CACHE_VERSION}`;
 
