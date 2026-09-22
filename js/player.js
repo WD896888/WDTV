@@ -1831,7 +1831,10 @@ async function initPlayer(videoUrl) {
     // 配置HLS.js选项
     const hlsConfig = {
         debug: false,
-        loader: VideoCache.wrapLoader(adFilteringEnabled ? CustomHlsJsLoader : Hls.DefaultConfig.loader),
+        // CustomHlsJsLoader 始终接管：广告过滤开关在其内部分流；
+        // 即使关闭广告过滤，VOD 清单归一化（补 #EXT-X-ENDLIST）也必须生效，
+        // 否则无 ENDLIST 的点播清单会触发 hls.js 直播语义 → 播放中时长坍缩/进度条打满
+        loader: VideoCache.wrapLoader(CustomHlsJsLoader),
         enableWorker: true,
         lowLatencyMode: false,
         backBufferLength: 90,
@@ -2593,7 +2596,10 @@ function prefetchNextEpisodeManifest() {
     });
 }
 
-// 自定义M3U8 Loader用于过滤广告
+// 自定义M3U8 Loader：清单后处理总入口（广告过滤 + VOD 语义归一化）
+// 始终接管 manifest/level 响应：广告过滤开关只决定是否摘除 DISCONTINUITY 标记，
+// 而 VOD 结束标记补写（ensureVodEndList）与开关无关、必须始终生效——
+// 它是"播放中总时长坍缩/进度条打满"（直播窗口语义误用于点播清单）的根治手段。
 class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     constructor(config) {
         super(config);
@@ -2605,7 +2611,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 const cached = nextManifestCache.get(context.url);
                 if (cached) {
                     const onSuccess = callbacks.onSuccess;
-                    const filtered = filterAdsFromM3U8(cached);
+                    const filtered = normalizeM3U8(cached);
                     const now = performance.now();
                     // 构造 hls.js 期望的 LoadStats 形状：其内部会读取 loading/parsing/buffer
                     // 等嵌套字段做统计计算，形状缺失会抛 TypeError 导致换集失败
@@ -2629,8 +2635,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 callbacks.onSuccess = function (response, stats, context) {
                     // 如果是m3u8文件，处理内容以移除广告分段
                     if (response.data && typeof response.data === 'string') {
-                        // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-                        response.data = filterAdsFromM3U8(response.data);
+                        response.data = normalizeM3U8(response.data);
                     }
                     return onSuccess(response, stats, context);
                 };
@@ -2639,6 +2644,41 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             load(context, config, callbacks);
         };
     }
+}
+
+// 清单后处理统一入口：广告过滤开启时摘除 DISCONTINUITY 标记（并连带 VOD 归一化），
+// 关闭时也必须保留 VOD 归一化（补 ENDLIST），杜绝直播窗口语义误用于点播清单
+function normalizeM3U8(m3u8Content) {
+    return adFilteringEnabled ? filterAdsFromM3U8(m3u8Content) : ensureVodEndList(m3u8Content);
+}
+
+// VOD 语义保证：给缺失 #EXT-X-ENDLIST 的媒体清单补上结束标记。
+// 部分采集源把点播视频当"直播流"下发（清单无 ENDLIST）→ hls.js 走直播语义：
+// 周期性重载清单、按"直播窗口"计算时长与可播范围。一旦某次重载拿到更短的窗口
+// （代理边缘缓存 120s 内的旧副本 / CDN 轮换 / 上游截断响应），hls.js 会 flushFrontBuffer
+// 把已缓冲的后续时长瞬间冲洗掉；若重载副本带 ENDLIST 且截止在当前播放点附近，
+// _streamEnded 成立 → mediaSource.endOfStream() → 媒体提前结束。
+// 表现为"播放中后面的进度条突然消失、总时长坍缩为当前时刻"（WebKit 原生 HLS 下
+// 直播流 duration 直接报 Infinity，ArtPlayer 归零后进度条同样瞬间打满）。
+// 本站只播点播剧集：媒体清单（含 EXTINF）若无 ENDLIST 且 MEDIA-SEQUENCE=0（无窗口滑动），
+// 一律补写 ENDLIST，让 hls.js 按一次性定长 VOD 处理——不重载、不冲洗、时长恒定。
+// 注意：对仍在实时追加的"真直播"清单（MEDIA-SEQUENCE>0 的滑动窗口）不生效，保留直播语义。
+function ensureVodEndList(m3u8Content) {
+    if (!m3u8Content || m3u8Content.indexOf('#EXTINF') === -1) return m3u8Content; // 主清单/非媒体清单不动
+    if (m3u8Content.indexOf('#EXT-X-ENDLIST') !== -1) return m3u8Content;
+    const lines = m3u8Content.split('\n');
+    let slidWindow = false;
+    for (let i = 0; i < lines.length; i++) {
+        const t = lines[i].trim();
+        if (t.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+            if ((parseInt(t.split(':')[1], 10) || 0) > 0) { slidWindow = true; break; }
+        }
+    }
+    if (slidWindow) return m3u8Content;
+    // 剔除尾部空行后补写，保证 ENDLIST 位于清单末尾（HLS 规范对位置无强制，约定俗成放最后）
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    lines.push('#EXT-X-ENDLIST');
+    return lines.join('\n');
 }
 
 // 过滤可疑的广告内容（移除 #EXT-X-DISCONTINUITY 不连续标记，掐断广告段拼接）
@@ -2658,7 +2698,8 @@ function filterAdsFromM3U8(m3u8Content) {
         }
     }
 
-    return filteredLines.join('\n');
+    // 广告过滤后统一补 VOD 结束标记（无 ENDLIST 的清单正是直播语义时长坍缩的源头）
+    return ensureVodEndList(filteredLines.join('\n'));
 }
 
 
@@ -5122,6 +5163,218 @@ function downloadBlob(blob, filename) {
     setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
+// ===== 录制文件容器元数据修复（时长回写）=====
+// 背景：MediaRecorder 直出的文件普遍缺真实时长元数据，正是「相册/文件管理器缩略图预览
+// 显示 0~2 秒、点进去播放才正常」的根源：
+//   MP4（Chromium 分片直录）：moov 头里 mvhd/tkhd/mdhd 的时长字段是占位值，真实时长只
+//     存在于分片（moof/mdat）数据里；系统缩略图只读 moov 头 → 显示 0~2 秒；
+//   WebM（Chromium 直录直播流）：Segment 的 Info 里没有 Duration 元素 → 播放器显示 Infinity/0。
+// 方案：录制停止后按实际录制时长回写容器元数据（按魔数识别容器，不信任 MIME）。
+// 任何异常一律回退原 Blob，且修复结果必须不小于原文件，杜绝修复器自身损坏成片。
+
+// 读取 EBML 变长整数。keepMarker=true 读元素 ID（保留标记位）；false 读数据尺寸。
+// unknown（数据位全 1，直播流 Segment 常见）返回 { unknown: true }
+function ebmlReadVint(u8, pos, keepMarker) {
+    const first = u8[pos];
+    if (first === undefined || first === 0) return null;
+    let len = 1, marker = 0x80;
+    while (!(first & marker)) { marker >>= 1; if (++len > 8) return null; }
+    if (pos + len > u8.length) return null;
+    if (keepMarker) {
+        let id = 0;
+        for (let i = 0; i < len; i++) id = id * 256 + u8[pos + i];
+        return { length: len, value: id };
+    }
+    const dataMask = marker - 1;
+    let unknown = (first & dataMask) === dataMask;
+    for (let i = 1; i < len && unknown; i++) if (u8[pos + i] !== 0xff) unknown = false;
+    if (unknown) return { length: len, unknown: true };
+    let value = first & dataMask;
+    for (let i = 1; i < len; i++) value = value * 256 + u8[pos + i];
+    return { length: len, value };
+}
+
+// 解析单个 EBML 元素（id + 尺寸 + 数据位置）
+function ebmlParseElement(u8, pos) {
+    const id = ebmlReadVint(u8, pos, true);
+    if (!id) return null;
+    const size = ebmlReadVint(u8, pos + id.length, false);
+    if (!size) return null;
+    return {
+        id: id.value,
+        start: pos,
+        idLen: id.length,
+        sizeLen: size.length,
+        dataStart: pos + id.length + size.length,
+        end: size.unknown ? u8.length : pos + id.length + size.length + size.value,
+        sizeUnknown: !!size.unknown
+    };
+}
+
+// 编码 EBML 尺寸 vint（最小编码；v = 2^(7len)-1 时会与 unknown 标记冲突，故进位到更长编码）
+function ebmlEncodeVintSize(v) {
+    let len = 1;
+    while (v >= Math.pow(2, 7 * len) - 1 && len < 7) len++;
+    const out = new Uint8Array(len);
+    let x = v;
+    for (let i = len - 1; i >= 1; i--) { out[i] = x & 255; x = Math.floor(x / 256); }
+    out[0] = (1 << (8 - len)) | x;
+    return out;
+}
+
+function concatUint8(parts) {
+    let total = 0;
+    for (const p of parts) total += p.length;
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const p of parts) { out.set(p, off); off += p.length; }
+    return out;
+}
+
+// WebM：重建首个 Cluster 之前的头部区（EBML 头 + Segment 头 + Info[含新 Duration] + Tracks 等），
+// 首个 Cluster 起的全部数据原样拼接。直播流 Segment 尺寸为 unknown，头部增减不影响结构；
+// MediaRecorder 输出无 SeekHead/Cues，头部整体平移不会产生失效引用。
+function patchWebmDurationMeta(u8, durationSec) {
+    const EBML_HEADER_ID = 0x1A45DFA3, SEGMENT_ID = 0x18538067, INFO_ID = 0x1549A966,
+        CLUSTER_ID = 0x1F43B675, TIMESCALE_ID = 0x2AD7B1, DURATION_ID = 0x4489;
+    const head = ebmlParseElement(u8, 0);
+    if (!head || head.id !== EBML_HEADER_ID) return null;
+    const seg = ebmlParseElement(u8, head.end);
+    if (!seg || seg.id !== SEGMENT_ID || !seg.sizeUnknown) return null; // 有限尺寸 Segment 无法安全重建
+    // 收集首个 Cluster 之前的子元素原始字节，并定位 Info
+    const prefix = [];
+    let infoIdx = -1, p = seg.dataStart;
+    while (p < seg.end) {
+        const el = ebmlParseElement(u8, p);
+        if (!el) return null;
+        if (el.id === CLUSTER_ID) break;
+        if (el.id === INFO_ID && infoIdx === -1) infoIdx = prefix.length;
+        prefix.push({ el, raw: u8.subarray(p, el.end) });
+        p = el.end;
+    }
+    if (infoIdx === -1 || p >= seg.end) return null; // 无 Info 或无 Cluster：不成片，放弃
+    const info = prefix[infoIdx].el;
+    // 解析 Info 子元素：读 TimestampScale，找已有 Duration
+    let timeScale = 1000000, haveDur = false;
+    const children = [];
+    let q = info.dataStart;
+    while (q < info.end) {
+        const el = ebmlParseElement(u8, q);
+        if (!el) return null;
+        if (el.id === TIMESCALE_ID) {
+            let v = 0;
+            for (let i = el.dataStart; i < el.end; i++) v = v * 256 + u8[i];
+            if (v > 0) timeScale = v;
+        }
+        if (el.id === DURATION_ID && !haveDur) haveDur = true; // 替换首个；多余的丢弃
+        else children.push({ el, raw: u8.subarray(q, el.end) });
+        q = el.end;
+    }
+    // 新 Duration：EBML float64，值 = 秒 × 1e9 / TimestampScale（TimestampScale 单位为纳秒）
+    const durValue = durationSec * 1e9 / timeScale;
+    const durationRaw = new Uint8Array(11); // id 0x4489 + size 0x88 + float64
+    durationRaw[0] = 0x44; durationRaw[1] = 0x89; durationRaw[2] = 0x88;
+    new DataView(durationRaw.buffer).setFloat64(3, durValue);
+    // 重组 Info：按原顺序重排子元素，Duration 插到 TimestampScale 之后（无则追加末尾），
+    // 并用 Info 原 id 字节 + 新尺寸 vint 重新封装成完整元素
+    const infoParts = [];
+    let inserted = false;
+    for (let i = 0; i < children.length; i++) {
+        const c = children[i];
+        infoParts.push(c.raw);
+        if (!inserted && c.el.id === TIMESCALE_ID) { infoParts.push(durationRaw); inserted = true; }
+    }
+    if (!inserted) infoParts.push(durationRaw);
+    const newInfoEl = concatUint8([
+        u8.subarray(info.start, info.dataStart - info.sizeLen), // Info 原 id 字节
+        ebmlEncodeVintSize(infoParts.reduce((s, x) => s + x.length, 0)),
+        ...infoParts
+    ]);
+    // 重组整文件：EBML 头 + Segment 头（原样）+ 前缀元素（Info 换新）+ 首个 Cluster 起原样
+    const parts = [u8.subarray(0, seg.dataStart)];
+    for (let i = 0; i < prefix.length; i++) parts.push(i === infoIdx ? newInfoEl : prefix[i].raw);
+    parts.push(u8.subarray(p, u8.length));
+    return concatUint8(parts);
+}
+
+// MP4：就地改写 moov 头里的时长字段（mvhd/tkhd/mdhd，等长改写、不动文件结构）。
+// 分片 MP4（Chromium 直录）这些字段近乎 0，是缩略图时长显示错误的直接原因。
+function patchMp4DurationMeta(u8, durationSec) {
+    function findBoxes(start, end) {
+        const boxes = [];
+        let p = start;
+        while (p + 8 <= end) {
+            let size = (u8[p] << 24 | u8[p + 1] << 16 | u8[p + 2] << 8 | u8[p + 3]) >>> 0;
+            let header = 8;
+            if (size === 1) { // 64-bit largesize
+                if (p + 16 > end) break;
+                size = 0;
+                for (let i = 8; i < 16; i++) size = size * 256 + u8[p + i];
+                header = 16;
+            } else if (size === 0) size = end - p; // 最后一个 box 到容器末尾
+            if (size < header || p + size > end) break;
+            boxes.push({ type: String.fromCharCode(u8[p + 4], u8[p + 5], u8[p + 6], u8[p + 7]), start: p, header, end: p + size });
+            p += size;
+        }
+        return boxes;
+    }
+    const u32 = o => (u8[o] << 24 | u8[o + 1] << 16 | u8[o + 2] << 8 | u8[o + 3]) >>> 0;
+    const patches = [];
+    const setU32 = (o, v) => patches.push([o, (v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255]);
+    const setU64 = (o, v) => {
+        const hi = Math.floor(v / 4294967296), lo = v % 4294967296;
+        patches.push([o, (hi >>> 24) & 255, (hi >>> 16) & 255, (hi >>> 8) & 255, hi & 255,
+            (lo >>> 24) & 255, (lo >>> 16) & 255, (lo >>> 8) & 255, lo & 255]);
+    };
+    const moov = findBoxes(0, u8.length).find(b => b.type === 'moov');
+    if (!moov) return null;
+    let patched = 0;
+    const moovBoxes = findBoxes(moov.start + moov.header, moov.end);
+    const mvhd = moovBoxes.find(b => b.type === 'mvhd');
+    let movieTs = 0;
+    if (mvhd) {
+        const d = mvhd.start + mvhd.header;
+        if (u8[d] === 1) { movieTs = u32(d + 20); const v = Math.floor(durationSec * movieTs); if (movieTs > 0 && v < Number.MAX_SAFE_INTEGER) { setU64(d + 24, v); patched++; } }
+        else if (u8[d] === 0) { movieTs = u32(d + 12); const v = Math.floor(durationSec * movieTs); if (movieTs > 0 && v < 4294967296) { setU32(d + 16, v); patched++; } }
+    }
+    if (!movieTs) movieTs = 1000; // mvhd 缺失/异常时 tkhd 用常规 movie timescale 兜底
+    for (const trak of moovBoxes.filter(b => b.type === 'trak')) {
+        const trakBoxes = findBoxes(trak.start + trak.header, trak.end);
+        const tkhd = trakBoxes.find(b => b.type === 'tkhd');
+        if (tkhd) {
+            const d = tkhd.start + tkhd.header, v = Math.floor(durationSec * movieTs);
+            if (u8[d] === 1 && v < Number.MAX_SAFE_INTEGER) { setU64(d + 28, v); patched++; }
+            else if (u8[d] === 0 && v < 4294967296) { setU32(d + 20, v); patched++; }
+        }
+        const mdia = trakBoxes.find(b => b.type === 'mdia');
+        const mdhd = mdia && findBoxes(mdia.start + mdia.header, mdia.end).find(b => b.type === 'mdhd');
+        if (mdhd) {
+            const d = mdhd.start + mdhd.header;
+            if (u8[d] === 1) { const ts = u32(d + 20), v = Math.floor(durationSec * ts); if (ts > 0 && v < Number.MAX_SAFE_INTEGER) { setU64(d + 24, v); patched++; } }
+            else if (u8[d] === 0) { const ts = u32(d + 12), v = Math.floor(durationSec * ts); if (ts > 0 && v < 4294967296) { setU32(d + 16, v); patched++; } }
+        }
+    }
+    if (!patched) return null;
+    const out = u8.slice();
+    for (const pt of patches) for (let i = 1; i < pt.length; i++) out[pt[0] + i - 1] = pt[i];
+    return out;
+}
+
+// 修复入口：按魔数识别容器（EBML 魔数=WebM、offset4 'ftyp'=MP4）并回写实际录制时长
+async function fixRecordingDurationMeta(blob, durationSec) {
+    try {
+        if (!blob || !blob.size || !(durationSec > 0)) return blob;
+        const u8 = new Uint8Array(await blob.arrayBuffer());
+        if (u8.length < 32) return blob;
+        let out = null;
+        if (u8[0] === 0x1A && u8[1] === 0x45 && u8[2] === 0xDF && u8[3] === 0xA3) out = patchWebmDurationMeta(u8, durationSec);
+        else if (u8[4] === 0x66 && u8[5] === 0x74 && u8[6] === 0x79 && u8[7] === 0x70) out = patchMp4DurationMeta(u8, durationSec);
+        // WebM 重建头部只会等长/增长（补 Duration），MP4 等长改写；结果反而变小 = 解析有误 → 用原文件
+        if (out && out.length >= u8.length) return new Blob([out], { type: blob.type });
+    } catch (e) { }
+    return blob;
+}
+
 // 提取当前画面：绘制视频原始分辨率帧，PNG 无损导出
 function captureVideoScreenshot() {
     const video = (art && art.video) ? art.video : null;
@@ -5200,38 +5453,66 @@ function startVideoRecording() {
     const h = video.videoHeight;
     let rafId = 0;
 
-    // ===== 画面捕获：canvas 手动帧模式（captureStream(0) + requestFrame）=====
+    // ===== 画面捕获：canvas 绘制 video 解码帧 → captureStream 产出视频轨 =====
     // 为什么不直接 video.captureStream()？
     //   Chrome 中 video 元素暂停/缓冲时，其捕获流的视频轨会以设定帧率"持续重复输出最后一帧"
     //   （为 WebRTC 保持轨道活跃的设计行为）。而本播放器点击视频画面即切换播放/暂停——
     //   用户开始/停止录制前点到画面唤控制栏的那几秒，暂停帧会被 MediaRecorder 如实录成定格画面，
     //   这正是成片开头/结尾出现几秒重复帧的根源。
-    // 手动帧模式原理：canvas.captureStream(0) 只在 requestFrame() 被调用时产出一帧，
-    //   本回调仅在"视频正在播放且 currentTime 前进（真正有新解码画面）"时绘制+产帧。
-    //   暂停/缓冲/卡顿区间不产生任何帧 → 成片时间轴直接跳过该区间，不再出现重复帧。
+    // 帧模式选择（关键修复：部分设备录出来只有 1 秒的根源）：
+    //   手动帧模式（captureStream(0) + requestFrame）在桌面 Chromium/Firefox 上帧时间戳可靠，
+    //   暂停/缓冲区间不产帧、成片无定格；但 WebKit（iOS）与国产 Chromium 分叉（X5/夸克/UC 等）
+    //   的 requestFrame 帧时间戳不可靠（多帧挤在同一时间戳），封装器把整段录制压进首个
+    //   timeslice → 成片"只有一秒"。
+    //   → 移动端一律退回固定帧率 captureStream(30)：可靠性优先，代价是暂停/缓冲区间实录为
+    //     定格画面（观感自然，不影响正确性）。
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
+    // 画布必须接入 DOM 并保持可合成（缩至 1×1 半透明、不可交互）：部分内核对离屏画布的
+    // captureStream 不产帧或帧时间戳不前进，同样会把成片时长压成 ~1 秒
+    canvas.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1;';
+    document.body.appendChild(canvas);
+    // 跨域污染预检：视频源无 CORS 头时 drawImage 会污染画布，捕获轨产不出有效帧——
+    // 与其录出 ~1 秒废片再"保存成功"，不如开始前明确报错（截图 captureVideoScreenshot 同理）
+    try {
+        ctx.drawImage(video, 0, 0, w, h);
+        ctx.getImageData(0, 0, 1, 1); // 画布被污染时抛 SecurityError
+    } catch (e) {
+        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+        if (typeof showToast === 'function') showToast('录屏失败：视频源受跨域保护，无法捕获画面', 'error');
+        return;
+    }
     let canvasStream;
     try {
-        canvasStream = canvas.captureStream(0); // 0 = 手动帧模式
+        canvasStream = canvas.captureStream(REC_IS_MOBILE ? 30 : 0); // 移动端固定帧率，桌面手动帧模式
     } catch (e) {
         try { canvasStream = canvas.captureStream(60); } catch (e2) {
+            if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
             if (typeof showToast === 'function') showToast('录屏失败：视频源不允许捕获画面', 'error');
             return;
         }
     }
     const vTrack = canvasStream.getVideoTracks()[0];
-    const manualFrame = typeof vTrack.requestFrame === 'function'; // 固定帧率兜底时为 false
+    const manualFrame = !REC_IS_MOBILE && typeof vTrack.requestFrame === 'function'; // 固定帧率模式为 false
 
-    let lastTs = -1;
+    // 实际录制时长（秒）：仅累计播放前进时间（与成片内容对齐），停止后用于回写容器时长元数据
+    let recordedDur = 0;
+    let lastTs = video.currentTime;
     const draw = () => {
         rafId = requestAnimationFrame(draw);
         if (video.paused || video.ended || video.readyState < 2) return; // 无新画面：不绘制、不产帧
         if (video.currentTime === lastTs) return; // 解码帧未更新（源帧率低于刷新率）：不重复产帧
+        // 正常前进按差值累加；拖动跳转（单帧差值异常大）按上限 1 秒计，避免时长虚增
+        recordedDur += Math.min(Math.max(video.currentTime - lastTs, 0), 1);
         lastTs = video.currentTime;
-        try { ctx.drawImage(video, 0, 0, w, h); } catch (e) { stopVideoRecording(); return; }
+        try { ctx.drawImage(video, 0, 0, w, h); } catch (e) {
+            // 录制中途捕获失败（GPU 上下文丢失等）：明确提示并保存已录内容，不再静默截断
+            if (typeof showToast === 'function') showToast('录制中止：画面捕获失败，已保存已录内容', 'error');
+            stopVideoRecording();
+            return;
+        }
         if (manualFrame) vTrack.requestFrame(); // 手动模式下此刻才真正产出一帧
     };
     draw();
@@ -5261,6 +5542,7 @@ function startVideoRecording() {
     } catch (e) {
         if (typeof showToast === 'function') showToast('当前浏览器无法启动录制', 'error');
         cancelAnimationFrame(rafId);
+        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
         return;
     }
 
@@ -5278,7 +5560,11 @@ function startVideoRecording() {
         // （X5/夸克/UC 等）解析失败报「下载失败: bad base-64」——剧集下载的合并 Blob
         // 全是干净类型（video/mp4）所以正常，录屏是全项目唯一带 codecs 的 Blob
         const mimeBase = (type.split(';')[0]) || 'video/mp4';
-        const blob = new Blob(chunks, { type: mimeBase });
+        let blob = new Blob(chunks, { type: mimeBase });
+        // 关键修复：回写容器时长元数据——MediaRecorder 直出的 MP4/WebM 普遍缺真实时长
+        // （moov/Info 里的时长字段缺失或为占位值），相册/文件管理器缩略图只读容器头会显示
+        // 0~2 秒；用实际录制时长回写后，预览时长与成片一致。失败自动回退原 Blob。
+        blob = await fixRecordingDurationMeta(blob, recordedDur);
         const ext = mimeBase.indexOf('mp4') !== -1 ? 'mp4' : 'webm';
         if (blob.size > 0) {
             const entry = { blob, filename: buildMediaFileName('录屏', ext), type: mimeBase };
@@ -5323,6 +5609,7 @@ function startVideoRecording() {
         video.removeEventListener('ended', onVideoEnded);
         try { stream.getTracks().forEach(t => t.stop()); } catch (e) { }
         if (srcStream) { try { srcStream.getTracks().forEach(t => t.stop()); } catch (e) { } } // 停掉元素捕获流的全部轨道（含未并入的旧视频轨）
+        if (canvas.parentNode) canvas.parentNode.removeChild(canvas); // 移除隐藏录制画布
         screenRec = null;
         const pr = (art && art.template && art.template.$player) || document.querySelector('#player .art-video-player');
         if (pr && pr.__wdtvPhotoRefresh) pr.__wdtvPhotoRefresh();
