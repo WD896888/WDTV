@@ -676,12 +676,12 @@ body.wp-watch-mode .episodes-section.open .episodes-modal-body {
     justify-content: center;
 }
 
-/* 开关 - 匹配首页 wdtv-toggle 样式 */
+/* 开关 - 紧凑尺寸（36×20），与剧集工具行小字号控件协调 */
 .switch {
     position: relative;
     display: inline-block;
-    width: 48px;
-    height: 24px;
+    width: 36px;
+    height: 20px;
 }
 
 .switch input {
@@ -699,17 +699,17 @@ body.wp-watch-mode .episodes-section.open .episodes-modal-body {
     bottom: 0;
     background-color: rgba(42,58,92,0.2);
     transition: background 0.3s, border-color 0.3s;
-    border-radius: 12px;
+    border-radius: 10px;
     border: 1px solid rgba(200,220,245,0.25);
 }
 
 .slider:before {
     position: absolute;
     content: "";
-    height: 20px;
-    width: 20px;
-    left: 2px;
-    bottom: 1px;
+    height: 16px;
+    width: 16px;
+    left: 1px;
+    top: 1px;
     background-color: rgba(42,58,92,0.6);
     transition: all 0.3s;
     border-radius: 50%;
@@ -722,7 +722,7 @@ input:checked + .slider {
 }
 
 input:checked + .slider:before {
-    transform: translateX(24px);
+    transform: translateX(16px);
     background-color: rgba(42,90,160,0.85);
     box-shadow: 0 0 12px rgba(42,90,160,0.3);
 }
