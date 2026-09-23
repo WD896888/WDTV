@@ -697,10 +697,10 @@ body.wp-watch-mode .episodes-section.open .episodes-modal-body {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(155,180,218,0.16);
+    background-color: rgba(200,220,245,0.06);
     transition: background 0.3s, border-color 0.3s;
     border-radius: 10px;
-    border: 1px solid rgba(200,220,245,0.28);
+    border: 1px solid rgba(200,220,245,0.32);
 }
 
 .slider:before {
@@ -710,21 +710,22 @@ body.wp-watch-mode .episodes-section.open .episodes-modal-body {
     width: 16px;
     left: 1px;
     top: 1px;
-    background-color: rgba(182,201,230,0.6);
+    background-color: rgba(200,220,245,0.22);
+    border: 1px solid rgba(212,228,248,0.42);
     transition: all 0.3s;
     border-radius: 50%;
-    box-shadow: 0 0 8px rgba(182,201,230,0.18);
 }
 
 input:checked + .slider {
-    background-color: rgba(212,227,246,0.28);
-    border-color: rgba(214,230,248,0.5);
+    background-color: rgba(210,228,248,0.1);
+    border-color: rgba(224,238,252,0.55);
 }
 
 input:checked + .slider:before {
     transform: translateX(16px);
-    background-color: #e9effa;
-    box-shadow: 0 0 10px rgba(228,239,252,0.32);
+    background-color: rgba(228,240,252,0.42);
+    border-color: rgba(238,246,252,0.68);
+    box-shadow: 0 0 8px rgba(228,240,252,0.22);
 }
 
 /* 快捷键提示 - 容器层玻璃 */
