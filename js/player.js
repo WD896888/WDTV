@@ -136,7 +136,7 @@ let qualitySwapSeek = null; // 清晰度目录切换后待恢复的播放位置
 let tierProbeToken = 0; // 探测竞态令牌：换集/换源后旧探测结果作废
 let tierSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加探测档位清晰度菜单
 let bitrateSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加画质模式菜单
-let speedSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加长按倍速/区域菜单
+let speedSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加长按倍速/区域与双击快退快进秒数菜单
 let tierProbeInfo = null; // 最近一次探测结果摘要 { host, probed, trials, real }（面板透出探测透明度）
 const tierZeroToastHosts = new Set(); // 本页会话内已弹过"0 档可用"提示的源主机（避免每集重复打扰）
 let longPressBoostActive = false; // 长按临时倍速进行中（临时速度不写入全局记忆）
@@ -2314,11 +2314,10 @@ async function initPlayer(videoUrl) {
         showError('视频播放失败: ' + (error.message || '未知错误'));
     });
 
-    // 控制栏快捷功能：选集 / 倍速 / 双击快退快进秒数 / 缓存；清晰度与画质模式在设置面板（齿轮）内
+    // 控制栏快捷功能：选集 / 倍速 / 缓存；清晰度、画质模式与双击快退快进秒数在设置面板（齿轮）内
     // 画质模式先于清晰度添加（面板按添加顺序渲染，清晰度在其下方）；长按倍速/区域在清单解析后添加
     setupEpisodeControlButton();
     setupRateControlButton();
-    setupSeekStepButtons();
     setupCacheControlButton();
     setupDownloadControlButton();
     setupCinemaFavoriteButton();
@@ -4032,106 +4031,6 @@ function setupRateControlButton() {
     updateButtonLabel();
 }
 
-// ===== 双击快退/快进秒数按钮（控制栏，倍速右侧两个独立按钮） =====
-// 分别调整「双击左侧快退」与「双击右侧快进」的跳转秒数（双击手势实时读取 speedConfig），
-// 点击按钮弹出秒数档位面板（SEEK_STEP_OPTIONS），选择后经 saveSpeedConfig 持久化（跨集/跨页面生效）
-function setupSeekStepButtons() {
-    if (!art) return;
-    const playerRoot = art.template.$player || document.querySelector('#player .art-video-player');
-    if (!playerRoot) return;
-
-    // 双三角图标（与手势提示的快退/快进图标同形）
-    const stepIcon = (forward) =>
-        `<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none" style="vertical-align:-1.5px;margin-right:3px">` +
-        (forward
-            ? '<path d="M4.5 5.5v13l8.6-6.5-8.6-6.5z"/><path d="M13.4 5.5v13l8.6-6.5-8.6-6.5z"/>'
-            : '<path d="M19.5 5.5v13l-8.6-6.5 8.6-6.5z"/><path d="M10.6 5.5v13L2 12l8.6-6.5z"/>') +
-        '</svg>';
-
-    art.controls.add({
-        name: 'rewindStepButton',
-        position: 'right',
-        index: 6, // 倍速按钮 index 5 → 本按钮排其右侧
-        html: '<span class="step-btn-text"></span>',
-        tooltip: '双击左侧快退秒数',
-        style: QUICK_BTN_STYLE,
-        click: () => toggleQuickPanel(rewindEntry)
-    });
-    art.controls.add({
-        name: 'forwardStepButton',
-        position: 'right',
-        index: 7,
-        html: '<span class="step-btn-text"></span>',
-        tooltip: '双击右侧快进秒数',
-        style: QUICK_BTN_STYLE,
-        click: () => toggleQuickPanel(forwardEntry)
-    });
-    // 注意：当前版本 ArtPlayer 的 controls.add 不返回元素，需从 controls 上按名字取回按钮节点
-    const rewindBtnEl = art.controls.rewindStepButton || playerRoot.querySelector('.art-control-rewindStepButton');
-    const forwardBtnEl = art.controls.forwardStepButton || playerRoot.querySelector('.art-control-forwardStepButton');
-    if (!rewindBtnEl || !forwardBtnEl) return;
-
-    const itemsHtml = () => SEEK_STEP_OPTIONS.map(s => `<div class="art-speed-item" data-step="${s}">${s}秒</div>`).join('');
-    const mkPanel = () => {
-        const panel = document.createElement('div');
-        panel.className = 'art-speed-panel hidden step-panel';
-        panel.innerHTML = itemsHtml();
-        playerRoot.appendChild(panel);
-        return panel;
-    };
-    const rewindPanel = mkPanel();
-    const forwardPanel = mkPanel();
-
-    // 按钮文案随当前秒数变化（如「15秒」，带方向图标）
-    const updateButtonLabel = (btn, seconds, forward) => {
-        if (!btn) return;
-        const span = btn.querySelector('.step-btn-text');
-        if (span) span.innerHTML = stepIcon(forward) + seconds + '秒';
-    };
-    const updateSeekStepButtons = () => {
-        updateButtonLabel(rewindBtnEl, speedConfig.rewindSeconds, false);
-        updateButtonLabel(forwardBtnEl, speedConfig.forwardSeconds, true);
-    };
-
-    const rewindEntry = {
-        key: 'rewindStep', panel: rewindPanel, btn: rewindBtnEl, playerRoot,
-        refresh() {
-            rewindPanel.querySelectorAll('.art-speed-item').forEach(item => {
-                item.classList.toggle('active', Number(item.dataset.step) === speedConfig.rewindSeconds);
-            });
-        }
-    };
-    const forwardEntry = {
-        key: 'forwardStep', panel: forwardPanel, btn: forwardBtnEl, playerRoot,
-        refresh() {
-            forwardPanel.querySelectorAll('.art-speed-item').forEach(item => {
-                item.classList.toggle('active', Number(item.dataset.step) === speedConfig.forwardSeconds);
-            });
-        }
-    };
-
-    const bindPanel = (panel, entry, configKey) => {
-        panel.addEventListener('click', (e) => {
-            const item = e.target.closest('.art-speed-item');
-            if (!item) return;
-            const v = Number(item.dataset.step);
-            if (SEEK_STEP_OPTIONS.indexOf(v) !== -1) {
-                saveSpeedConfig({ [configKey]: v });
-                updateSeekStepButtons();
-            }
-            toggleQuickPanel(entry, false);
-        });
-    };
-    bindPanel(rewindPanel, rewindEntry, 'rewindSeconds');
-    bindPanel(forwardPanel, forwardEntry, 'forwardSeconds');
-
-    registerQuickPanel(rewindEntry);
-    registerQuickPanel(forwardEntry);
-    observeControlsHide(playerRoot);
-
-    updateSeekStepButtons();
-}
-
 // ===== 倍速播放缓冲策略 =====
 // 高倍速（含长按临时倍速）下媒体消耗速度是码率的 N 倍，而代理链路吞吐有限（实测约 2.4Mbps）：
 // 按倍速放大 hls.js 前向缓冲目标（媒体秒）——2x 时 60s 缓冲只够 30 真实秒余量，
@@ -4538,12 +4437,17 @@ function setupDownloadControlButton() {
     observeControlsHide(playerRoot);
 }
 
-// 设置面板：长按倍速 / 长按区域（可自定义，全局记忆）
+// 设置面板：长按倍速 / 长按区域 / 双击快退快进秒数（可自定义，全局记忆）
 function addSpeedSettings() {
     if (!art || speedSettingsMenuAdded) return;
     const settingApi = art.setting || art.settings; // 兼容不同版本 ArtPlayer 的设置API命名
     if (!settingApi || typeof settingApi.add !== 'function') return;
     speedSettingsMenuAdded = true;
+    // 24 视窗线性图标：描边风格与全站 heroicons 一致（勿用 fill 实心——会被
+    // .art-video-player svg{fill:none!important} 全局规则清空导致图标隐形）
+    const STEP_ICON_ATTRS = 'viewBox="0 0 24 24" style="width:100%;height:100%" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+    const rewindStepIcon = '<svg ' + STEP_ICON_ATTRS + '><path d="M19.5 5.5v13l-8.6-6.5 8.6-6.5z"/><path d="M10.6 5.5v13L2 12l8.6-6.5z"/></svg>';
+    const forwardStepIcon = '<svg ' + STEP_ICON_ATTRS + '><path d="M4.5 5.5v13l8.6-6.5-8.6-6.5z"/><path d="M13.4 5.5v13l8.6-6.5-8.6-6.5z"/></svg>';
     try {
         settingApi.add({
             name: 'longPressRate',
@@ -4572,6 +4476,39 @@ function addSpeedSettings() {
             ],
             onSelect(item) {
                 saveSpeedConfig({ longPressZone: item.zone });
+                return item.html;
+            }
+        });
+        // 双击快退/快进秒数：与手势共用 speedConfig，选择后立即生效（双击时实时读取）
+        settingApi.add({
+            name: 'rewindStep',
+            html: '双击快退',
+            icon: rewindStepIcon,
+            width: 200,
+            tooltip: speedConfig.rewindSeconds + '秒',
+            selector: SEEK_STEP_OPTIONS.map(s => ({
+                html: s + '秒',
+                step: s,
+                default: s === speedConfig.rewindSeconds
+            })),
+            onSelect(item) {
+                saveSpeedConfig({ rewindSeconds: item.step });
+                return item.html;
+            }
+        });
+        settingApi.add({
+            name: 'forwardStep',
+            html: '双击快进',
+            icon: forwardStepIcon,
+            width: 200,
+            tooltip: speedConfig.forwardSeconds + '秒',
+            selector: SEEK_STEP_OPTIONS.map(s => ({
+                html: s + '秒',
+                step: s,
+                default: s === speedConfig.forwardSeconds
+            })),
+            onSelect(item) {
+                saveSpeedConfig({ forwardSeconds: item.step });
                 return item.html;
             }
         });
