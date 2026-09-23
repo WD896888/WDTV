@@ -710,23 +710,20 @@ body.wp-watch-mode .episodes-section.open .episodes-modal-body {
     width: 16px;
     left: 1px;
     top: 50%;
-    transform: translate(0, -50%); /* top:50% + 反向位移：严格垂直居中（含自身边框） */
-    background-color: rgba(200,220,245,0.08); /* 空心设计：近乎透明的填充，白色描边为主 */
-    border: 1px solid rgba(206,224,246,0.55);
+    transform: translate(0, -50%); /* top:50% + 反向位移：严格垂直居中 */
+    background-color: rgba(214,229,248,0.3); /* 无边框半透明磨砂圆点：胶囊描边是唯一线条，避免双线杂乱 */
     transition: all 0.3s;
     border-radius: 50%;
 }
 
 input:checked + .slider {
-    background-color: rgba(210,228,248,0.1);
-    border-color: rgba(224,238,252,0.55);
+    background-color: rgba(210,228,248,0.12);
+    border-color: rgba(226,240,252,0.6);
 }
 
 input:checked + .slider:before {
     transform: translate(16px, -50%);
-    background-color: rgba(228,240,252,0.14);
-    border-color: rgba(240,247,252,0.8);
-    box-shadow: 0 0 8px rgba(228,240,252,0.22);
+    background-color: rgba(236,244,252,0.55);
 }
 
 /* 快捷键提示 - 容器层玻璃 */
