@@ -711,8 +711,8 @@ body.wp-watch-mode .episodes-section.open .episodes-modal-body {
     left: 1px;
     top: 50%;
     transform: translate(0, -50%); /* top:50% + 反向位移：严格垂直居中（含自身边框） */
-    background-color: rgba(200,220,245,0.22);
-    border: 1px solid rgba(212,228,248,0.42);
+    background-color: rgba(200,220,245,0.08); /* 空心设计：近乎透明的填充，白色描边为主 */
+    border: 1px solid rgba(206,224,246,0.55);
     transition: all 0.3s;
     border-radius: 50%;
 }
@@ -724,8 +724,8 @@ input:checked + .slider {
 
 input:checked + .slider:before {
     transform: translate(16px, -50%);
-    background-color: rgba(228,240,252,0.42);
-    border-color: rgba(238,246,252,0.68);
+    background-color: rgba(228,240,252,0.14);
+    border-color: rgba(240,247,252,0.8);
     box-shadow: 0 0 8px rgba(228,240,252,0.22);
 }
 
