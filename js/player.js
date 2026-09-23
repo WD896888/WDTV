@@ -4444,8 +4444,9 @@ function addSpeedSettings() {
     if (!settingApi || typeof settingApi.add !== 'function') return;
     speedSettingsMenuAdded = true;
     // 24 视窗线性图标：描边风格与全站 heroicons 一致（勿用 fill 实心——会被
-    // .art-video-player svg{fill:none!important} 全局规则清空导致图标隐形）
-    const STEP_ICON_ATTRS = 'viewBox="0 0 24 24" style="width:100%;height:100%" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+    // .art-video-player svg{fill:none!important} 全局规则清空导致图标隐形）。
+    // 尺寸固定 14px：容器变量 --art-settings-icon-size 默认 24px，勿用 100% 会撑得过大
+    const STEP_ICON_ATTRS = 'viewBox="0 0 24 24" style="width:14px;height:14px" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
     const rewindStepIcon = '<svg ' + STEP_ICON_ATTRS + '><path d="M19.5 5.5v13l-8.6-6.5 8.6-6.5z"/><path d="M10.6 5.5v13L2 12l8.6-6.5z"/></svg>';
     const forwardStepIcon = '<svg ' + STEP_ICON_ATTRS + '><path d="M4.5 5.5v13l8.6-6.5-8.6-6.5z"/><path d="M13.4 5.5v13l8.6-6.5-8.6-6.5z"/></svg>';
     try {
