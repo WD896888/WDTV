@@ -45,7 +45,10 @@
 // v17（2026-09-25）：选色/粗细后面板保持展开（选中态即时可见，不再"点了没反应"）；
 //                    画笔按钮仅在橡皮切回时重置蓝·中等，平时开合面板保留选择；
 //                    二级面板背景改为与一级 dock 同款玻璃，样式统一
-const CACHE_VERSION = 'wdtv-sw-v17';
+// v18（2026-09-25）：弹幕匹配引擎大修（一步式/锁源拉弹幕/脏记忆自愈/同集链复用）；
+//                    升级缓存版本强制清空旧 danmu.js 缓存——stale-while-revalidate 曾把
+//                    旧脚本当新版本 URL 的响应供应，导致新逻辑不生效
+const CACHE_VERSION = 'wdtv-sw-v18';
 const ASSET_CACHE = `wdtv-assets-${CACHE_VERSION}`;
 const PAGE_CACHE = `wdtv-pages-${CACHE_VERSION}`;
 

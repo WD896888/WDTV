@@ -155,9 +155,12 @@
         while (Object.keys(obj).length > max) delete obj[keys.shift()];
     }
 
+    const MEMO_VERSION = 3; // v3：模糊匹配降权修复后引入，作废 v2 期间可能写错的记忆
+
     function lookupMap(titleKey) {
         const entry = readLSJSON(LS_MAP_KEY)[titleKey];
         if (!entry || !entry.episodeId) return null;
+        if (!entry.v2) return null; // 旧版记忆可能已被跨源同号弹幕污染，弃用（下次成功匹配后自动覆盖为 v2）
         if (Date.now() - (entry.ts || 0) > MAP_TTL) return null; // 过期视为未命中
         return entry;
     }
@@ -177,6 +180,7 @@
     function saveMap(titleKey, matched) {
         const map = readLSJSON(LS_MAP_KEY);
         map[titleKey] = {
+            v: MEMO_VERSION,
             episodeId: matched.episodeId,
             animeTitle: matched.animeTitle || '',
             episodeTitle: matched.episodeTitle || '',
@@ -190,12 +194,13 @@
     function readCache(episodeId) {
         const entry = readLSJSON(LS_CACHE_KEY)[episodeId];
         if (!entry || !Array.isArray(entry.list)) return null;
+        if (!entry.v2) return null; // 旧缓存可能含跨源污染的同号弹幕，弃用
         return entry.list;
     }
 
     function saveCache(episodeId, list) {
         const cache = readLSJSON(LS_CACHE_KEY);
-        cache[episodeId] = { list, ts: Date.now() };
+        cache[episodeId] = { v: MEMO_VERSION, list, ts: Date.now() };
         evictOldest(cache, CACHE_MAX);
         // 体积超限：整体淘汰最旧一半再试；仍失败则放弃本次缓存（try/catch 内静默）
         try {
@@ -356,7 +361,10 @@
     // 手动锁定源（pinnedBase）时只请求锁定端点，绝不静默降级到其他源——
     // 否则切换数据源会被这里的降级悄悄改回原源；锁定源已不在候选列表
     // （被移除/自定义端点变更）时解除锁定，恢复完整候选轮询
-    async function apiGet(pathAndQuery, timeoutMs) {
+    // restrictBase：限定只在指定源上请求（不轮换不降级）。弹幕拉取必须带上——
+    // LogVar 类源的集 ID 是实例本地 ID，同一数字在不同源上指向完全不同的剧集，
+    // 自建源的集 404 后拿同号去别的源取，取回的是别的剧的弹幕（实测踩坑）
+    async function apiGet(pathAndQuery, timeoutMs, restrictBase) {
         const eps = await resolveEndpoints();
         if (!eps.length) return null;
         let list = eps;
@@ -365,6 +373,12 @@
             if (pinned) list = [pinned];
             else pinnedBase = null;
         }
+        if (restrictBase) {
+            const fixed = list.find(e => e.base === restrictBase);
+            if (!fixed) return null; // 指定源已不在候选列表：直接失败，交给上层整链重搜
+            list = [fixed];
+        }
+        if (!list.length) return null;
         let start = activeEndpoint ? list.indexOf(activeEndpoint) : 0;
         if (start < 0) start = 0;
         for (let i = 0; i < list.length; i++) {
@@ -409,12 +423,10 @@
         }
     }
 
-    // 拉取某集原始弹幕（dandanplay 格式），失败返回 null
-    // withRelated=true 必带：官方 comment 接口缺省只返回主弹幕库（通常近乎为空），
-    // 弹幕主体在关联库（B站/腾讯等），实测芙莉莲第1话 131 条 → 7310 条；
-    // 兼容端点（danmu_api 等）对未知参数忽略，不受影响
-    async function getComments(episodeId) {
-        const data = await apiGet(`/api/v2/comment/${episodeId}?format=json&withRelated=true`);
+    // 拉取某集原始弹幕，失败返回 null。restrictBase=匹配发生的数据源——弹幕请求
+    // 绝不跨源轮换（集 ID 是各源本地 ID，跨源取同号 = 取到别的剧的弹幕）
+    async function getComments(episodeId, restrictBase) {
+        const data = await apiGet(`/api/v2/comment/${episodeId}?format=json&withRelated=true`, null, restrictBase);
         return (data && Array.isArray(data.comments)) ? data.comments : null;
     }
 
@@ -455,8 +467,8 @@
     }
 
     // ------------------------------------------------------------
-    // 自动匹配：记忆映射 → 一步式检索（search/episodes，直接带剧集）→
-    // 两步式兜底（search/anime + bangumi）→ 集数对齐
+    // 自动匹配：记忆映射 → 两步式主链路（search/anime + 紧邻 bangumi）→
+    // 一步式兜底（search/episodes）→ 集数对齐
     // 返回 {episodeId, animeTitle, episodeTitle} 或 null
     // ------------------------------------------------------------
     // 匹配用标题清洗：LogVar 类源的作品名带「【电视剧】from youku」等来源尾巴，
@@ -470,12 +482,12 @@
             .replace(/\s+(?:19|20)\d{2}$/, '');
     }
 
-    // 从候选作品列表中打分选最佳：bigram 相似度为主 + 类型小加成 + 标题等价大加分，
-    // 返回 {anime, score} 或 null
+    // 从候选作品列表中打分选最佳：bigram 相似度为主 + 类型小加成 + 标题等价大加分
+    // + 非包含关系降权，返回按分数降序的候选数组（调用方依次尝试）
     function pickBestAnime(animes, ctxTitle) {
         const nUser = normalizeTitle(ctxTitle);
         const cUser = cleanTitleForCompare(ctxTitle);
-        let best = null;
+        const scored = [];
         for (const anime of animes) {
             const raw = (anime && anime.animeTitle) || '';
             const nAnime = normalizeTitle(raw);
@@ -483,14 +495,22 @@
             // 标题等价大加分：清洗后完全一致（含年份差异，如 "东宫2019" vs "东宫(2019)"）
             // 视为同片，远高于仅包含关系的候选（嫁东宫/东宫皇子们）
             if (cUser && cleanTitleForCompare(raw) === cUser) score = Math.max(score, 0.9) + 0.2;
+            // 非包含关系降权：仅靠年份等零碎 bigram 撞上的候选（如"东宫2019"撞上
+            // "双层公寓：东京2019-2020"得 0.6）与用户标题毫无包含关系，减半后落入淘汰区；
+            // 真命中（标题互相包含或等价）不受影响
+            const cAnime = cleanTitleForCompare(raw);
+            if (cUser && cAnime && cAnime.indexOf(cUser) < 0 && cUser.indexOf(cAnime) < 0) {
+                score *= 0.5;
+            }
             // 类型小加成：无强偏好，片名匹配度已接近时最多 +0.05
             if (score >= 0.5 && /电视剧|动漫|番剧/.test((anime && anime.typeDescription) || '')) {
                 score += 0.05;
             }
             if (score < MATCH_MIN_SCORE) continue; // 低置信直接过滤
-            if (!best || score > best.score) best = { anime, score };
+            scored.push({ anime, score });
         }
-        return best;
+        scored.sort((a, b) => b.score - a.score);
+        return scored;
     }
 
     // 集数对齐选集：优先按集号，集号不可解析且总集数一致时按下标
@@ -545,28 +565,36 @@
             }
         }
 
-        // 2. 一步式检索（search/episodes 一次带出作品+剧集）：自建源（LogVar 类）在 CF
-        //    serverless 上搜索结果与集 ID 均为实例内存缓存性质，两步式的 search→bangumi
-        //    两次请求可能落在不同实例上，第二步 404 "Anime not found"——一步式规避该问题。
-        //    实测自建源一步式全源聚合耗时 30~40s，走 SLOW_TIMEOUT
-        const oneShot = await searchEpisodes(normalizeTitle(ctx.title));
-        if (oneShot && oneShot.length) {
-            const best = pickBestAnime(oneShot, ctx.title);
-            if (best) {
-                const matched = buildMatched(best.anime, alignEpisode(best.anime && best.anime.episodes, ctx));
-                if (matched) return matched;
+        // 2. 两步式主链路：search/anime 选作品 → 紧邻调用 bangumi 拉剧集（回连同一实例，
+        //    集 ID 才有效——LogVar 类源的 ID 是实例内存缓存，隔开就 404）。
+        //    注意不能用一步式 search/episodes 当主链路：实测其返回的集 ID 与 comment
+        //    接口不同空间（当轮即 404），只能当兜底。
+        //    依次尝试前 3 个候选：第一名 bangumi 偶发 404（实例路由）或无剧集时，
+        //    换下一名补救，而不是整轮失败
+        const animes = await searchAnime(normalizeTitle(ctx.title));
+        let matched = null;
+        if (animes && animes.length) {
+            const ranked = pickBestAnime(animes, ctx.title);
+            for (const cand of ranked.slice(0, 3)) {
+                const bangumi = await getBangumi(cand.anime && cand.anime.animeId);
+                const episodes = (bangumi && Array.isArray(bangumi.episodes)) ? bangumi.episodes : [];
+                matched = episodes.length ? buildMatched(cand.anime, alignEpisode(episodes, ctx)) : null;
+                if (matched) break;
             }
         }
 
-        // 3. 两步式兜底：一步式无结果或不支持该端点的源（旧版 danmu_api / 部分自定义端点）
-        const animes = await searchAnime(normalizeTitle(ctx.title));
-        if (!animes || !animes.length) return null;
-        const best = pickBestAnime(animes, ctx.title);
-        if (!best) return null;
-
-        const bangumi = await getBangumi(best.anime && best.anime.animeId);
-        const episodes = (bangumi && Array.isArray(bangumi.episodes)) ? bangumi.episodes : [];
-        if (!episodes.length) return null;
+        // 3. 一步式兜底：两步式无结果时的备用路径（部分端点仅支持该形态）
+        if (!matched) {
+            const oneShot = await searchEpisodes(normalizeTitle(ctx.title));
+            if (oneShot && oneShot.length) {
+                const ranked = pickBestAnime(oneShot, ctx.title);
+                for (const cand of ranked.slice(0, 3)) {
+                    matched = buildMatched(cand.anime, alignEpisode(cand.anime && cand.anime.episodes, ctx));
+                    if (matched) break;
+                }
+            }
+        }
+        if (!matched) return null;
 
         // 4. 时长校验（尽力而为）：弹幕侧规范不返回单集时长，校验恒跳过；
         //    保留钩子——未来数据源提供时长时，两侧时长差 > 300s 即降级为手动建议（不自动采用）
@@ -576,7 +604,7 @@
             return null;
         }
 
-        return buildMatched(best.anime, alignEpisode(episodes, ctx));
+        return matched;
     }
 
     // ------------------------------------------------------------
@@ -614,6 +642,11 @@
         if (!matched || !matched.episodeId) return { list: [], matched: null, fromMemo: false };
         if (!silent) currentEpisodeId = matched.episodeId;
 
+        // 弹幕必须从「产生匹配的那个源」拉取：集 ID 是各源本地 ID，跨源取同号会拿到
+        // 别的剧的弹幕（LogVar 类源实测踩坑）。autoMatch 内部最后一次成功的 apiGet
+        // 已把 activeEndpoint 停在匹配源上，此处定格为本次弹幕请求的唯一目标
+        const matchBase = (activeEndpoint && activeEndpoint.base) || null;
+
         // 缓存命中：零网络请求直接返回
         const cached = readCache(matched.episodeId);
         if (cached && cached.length) {
@@ -624,7 +657,9 @@
             return { list: cached, matched, fromMemo: false };
         }
 
-        const raw = await getComments(matched.episodeId);
+        // withRelated=true 必带：官方 comment 接口缺省只返回主弹幕库（近乎为空），
+        // 弹幕主体在关联库（B站/腾讯等），实测芙莉莲第1话 131 → 7310 条
+        const raw = await getComments(matched.episodeId, matchBase);
         if (token !== matchToken && !silent) return { list: [], matched: null, fromMemo: false };
         let list = raw ? sampleToMax(convertComments(raw)) : [];
         // danmu_api 冷启动特性：平台弹幕数据在后台异步构建，首次请求可能 404/空
@@ -636,7 +671,7 @@
             if (list.length || (token !== matchToken && !silent)) break;
             await new Promise(res => setTimeout(res, delay));
             if (token !== matchToken && !silent) return { list: [], matched: null, fromMemo: false };
-            const raw2 = await getComments(matched.episodeId);
+            const raw2 = await getComments(matched.episodeId, matchBase);
             if (token !== matchToken && !silent) return { list: [], matched: null, fromMemo: false };
             list = raw2 ? sampleToMax(convertComments(raw2)) : [];
         }
@@ -737,14 +772,16 @@
         try {
             if (!sel || sel.episodeId === undefined || sel.episodeId === null) return [];
             if (!isEnabled()) return [];
-            let raw = await getComments(sel.episodeId);
+            // 手动选择同样锁源：剧集列表来自哪个源，弹幕就只能从那个源取（集 ID 本地性）
+            const selBase = (activeEndpoint && activeEndpoint.base) || null;
+            let raw = await getComments(sel.episodeId, selBase);
             const retryDelays = [4000, 12000];
             for (const delay of retryDelays) {
                 if (raw && Array.isArray(raw.comments) && raw.comments.length) break;
                 if (token !== matchToken) return [];
                 await new Promise(res => setTimeout(res, delay));
                 if (token !== matchToken) return [];
-                raw = await getComments(sel.episodeId);
+                raw = await getComments(sel.episodeId, selBase);
             }
             if (!raw) return [];
             const list = sampleToMax(convertComments(raw));
