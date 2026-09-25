@@ -2,7 +2,7 @@
 // 职责：
 //   1. 状态探测：GET /danmu/ 返回 {configured, mode}，供前端启动时决定弹幕端点回退策略
 //   2. 弹弹play v2 规范透传：/danmu/<path>?<query> 原样转发到上游
-//      （official 模式自动附加 X-AppId/X-Timestamp/X-Signature 签名头；custom 模式直连自部署 danmu_api），
+//      （official 模式附加 X-AppId/X-AppSecret 凭证头；custom 模式直连自部署 danmu_api），
 //      并重建响应头（补 CORS 与 Cache-Control），供前端弹幕客户端直接复用
 //   3. 边缘缓存（caches.default，Cache API，无配额限制）：同一 colo 的重复弹幕请求直接命中，
 //      不回源、不消耗上游请求
@@ -12,7 +12,7 @@
 //   Cloudflare Pages 免费计划每次 Function 调用仅 10ms CPU，弹幕 JSON 动辄上万条，
 //   一旦读取/解析/改写上游响应 body 必然超时。因此本模块对 body 只做"流式搬运"
 //   （new Response(upstream.body, ...)），解析、匹配、格式转换全部在前端 js/danmu.js 完成；
-//   仅有的异步计算是 official 模式的 HMAC-SHA256 签名（只参与构造请求头，微秒级，与 body 无关）。
+//   （official 模式的鉴权头构造为纯同步计算，开销可忽略）。
 //
 // 环境变量（wrangler.toml [vars] 或 Dashboard，均为可选）：
 //   DANMU_BASE       数据源①：自部署 danmu_api（弹弹play 协议兼容）地址，如 https://xxx.workers.dev
@@ -71,26 +71,15 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
     return new Response(JSON.stringify(data), { status, headers });
 }
 
-// 计算弹弹play 官方 API 签名头：
-//   X-Signature = Base64( HMAC-SHA256( key=DANMU_APP_SECRET, message=DANMU_APP_ID + Timestamp ) )
-// 仅参与构造请求头（微秒级异步计算），不触碰任何响应 body
-async function buildOfficialHeaders(env) {
-    const timestamp = Math.floor(Date.now() / 1000).toString();
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-        'raw',
-        encoder.encode(env.DANMU_APP_SECRET),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-    );
-    const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(env.DANMU_APP_ID + timestamp));
-    // 签名恒为 32 字节，直接逐字节映射为 binary string 再 Base64
-    const base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(signature)));
+// 官方 API 回源请求头（凭证模式）：
+//   官方支持两种鉴权：签名模式 base64(sha256(AppId+Timestamp+Path+AppSecret)) 与
+//   凭证模式（X-AppId + X-AppSecret 头直传）。实测签名模式对本应用恒 403，
+//   凭证模式 200；官方文档明确服务器端应用（有能力保管 AppSecret）应使用凭证模式，故采用之。
+//   请求头不落日志、响应仅流式搬运，Secret 不会外泄。
+function buildOfficialHeaders(env) {
     return {
         'X-AppId': env.DANMU_APP_ID,
-        'X-Timestamp': timestamp,
-        'X-Signature': base64,
+        'X-AppSecret': env.DANMU_APP_SECRET,
         'User-Agent': CHROME_UA,
         'Referer': OFFICIAL_REFERER
     };
@@ -201,9 +190,9 @@ async function passthroughRequest(context, request, env, url, rawPath, waitUntil
         // 出错则继续回源，不影响功能
     }
 
-    // --- 回源请求头（放在缓存检查之后，命中时无需白白计算签名） ---
+    // --- 回源请求头（放在缓存检查之后，命中时无需白白构造鉴权头） ---
     const upstreamHeaders = (mode === 'official')
-        ? await buildOfficialHeaders(env)
+        ? buildOfficialHeaders(env)
         : { 'User-Agent': CHROME_UA };
 
     // --- 回源：30s 超时保护（AbortController，与 proxy 写法一致） ---
