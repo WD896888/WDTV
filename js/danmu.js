@@ -408,8 +408,11 @@
     }
 
     // 拉取某集原始弹幕（dandanplay 格式），失败返回 null
+    // withRelated=true 必带：官方 comment 接口缺省只返回主弹幕库（通常近乎为空），
+    // 弹幕主体在关联库（B站/腾讯等），实测芙莉莲第1话 131 条 → 7310 条；
+    // 兼容端点（danmu_api 等）对未知参数忽略，不受影响
     async function getComments(episodeId) {
-        const data = await apiGet(`/api/v2/comment/${episodeId}?format=json`);
+        const data = await apiGet(`/api/v2/comment/${episodeId}?format=json&withRelated=true`);
         return (data && Array.isArray(data.comments)) ? data.comments : null;
     }
 
