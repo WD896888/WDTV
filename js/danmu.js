@@ -24,6 +24,7 @@
     const LEGACY_PUBLIC_PROXY = 'https://ddplay.retr0.xyz|8TUf1AYTwQFjGv';
 
     const FETCH_TIMEOUT = 12000;            // 单次请求超时（毫秒）
+    const SLOW_TIMEOUT = 45000;             // 搜索/剧集请求超时（毫秒）：自建源聚合全平台时单次搜索实测 30~40s
     const MAP_TTL = 30 * 24 * 60 * 60 * 1000; // 记忆映射有效期：30 天
     const MAP_MAX = 60;                     // 记忆映射最大条目数（超出按 ts 最旧淘汰）
     const CACHE_MAX = 15;                   // 弹幕缓存最大集数（超出按 ts 最旧淘汰）
@@ -208,10 +209,11 @@
     // ------------------------------------------------------------
     // 网络层：统一 12s 超时 + 全 try/catch，失败返回 null，绝不抛错
     // （proxyToken 为可选防滥用口令，经 X-Proxy-Token 头携带——部分公共代理以此限流）
-    // ------------------------------------------------------------
-    async function fetchJSON(url, proxyToken) {
+    // timeoutMs：可选覆盖超时。搜索/剧集请求须传 SLOW_TIMEOUT（自建源聚合 20+ 平台，
+    // 实测一次搜索 30~40s，默认 12s 会把正常搜索掐死在超时上，导致浏览器端永远轮换到劣质源）
+    async function fetchJSON(url, proxyToken, timeoutMs) {
         const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const timer = setTimeout(() => { if (controller) controller.abort(); }, FETCH_TIMEOUT);
+        const timer = setTimeout(() => { if (controller) controller.abort(); }, timeoutMs || FETCH_TIMEOUT);
         try {
             const headers = { 'Accept': 'application/json' };
             if (proxyToken) headers['X-Proxy-Token'] = proxyToken;
@@ -354,7 +356,7 @@
     // 手动锁定源（pinnedBase）时只请求锁定端点，绝不静默降级到其他源——
     // 否则切换数据源会被这里的降级悄悄改回原源；锁定源已不在候选列表
     // （被移除/自定义端点变更）时解除锁定，恢复完整候选轮询
-    async function apiGet(pathAndQuery) {
+    async function apiGet(pathAndQuery, timeoutMs) {
         const eps = await resolveEndpoints();
         if (!eps.length) return null;
         let list = eps;
@@ -367,7 +369,7 @@
         if (start < 0) start = 0;
         for (let i = 0; i < list.length; i++) {
             const ep = list[(start + i) % list.length];
-            const data = await fetchJSON(ep.base + pathAndQuery, ep.token);
+            const data = await fetchJSON(ep.base + pathAndQuery, ep.token, timeoutMs);
             if (data && data.success !== false) { activeEndpoint = ep; return data; }
         }
         return null;
@@ -381,7 +383,7 @@
     // 此接口保留作为规范客户端完整性的一部分
     async function searchEpisodes(keyword) {
         if (!keyword) return null;
-        const data = await apiGet(`/api/v2/search/episodes?keyword=${encodeURIComponent(keyword)}`);
+        const data = await apiGet(`/api/v2/search/episodes?keyword=${encodeURIComponent(keyword)}`, SLOW_TIMEOUT);
         return (data && Array.isArray(data.animes)) ? data.animes : null;
     }
 
@@ -389,7 +391,7 @@
     async function searchAnime(keyword) {
         try {
             if (!keyword) return [];
-            const data = await apiGet(`/api/v2/search/anime?keyword=${encodeURIComponent(keyword)}`);
+            const data = await apiGet(`/api/v2/search/anime?keyword=${encodeURIComponent(keyword)}`, SLOW_TIMEOUT);
             return (data && Array.isArray(data.animes)) ? data.animes : [];
         } catch (e) {
             return [];
@@ -400,7 +402,7 @@
     async function getBangumi(animeId) {
         try {
             if (animeId === undefined || animeId === null) return null;
-            const data = await apiGet(`/api/v2/bangumi/${encodeURIComponent(animeId)}`);
+            const data = await apiGet(`/api/v2/bangumi/${encodeURIComponent(animeId)}`, SLOW_TIMEOUT);
             return (data && data.bangumi) ? data.bangumi : null;
         } catch (e) {
             return null;
