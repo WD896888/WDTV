@@ -323,6 +323,11 @@ function initializePageContent() {
             if (title) {
                 currentVideoTitle = String(title);
                 try { localStorage.setItem('currentVideoTitle', currentVideoTitle); } catch (e) { }
+                // 同步刷新视频下方大标题与页面标题（共看/换源同页起播时标题行是唯一片名展示处）
+                try {
+                    document.getElementById('videoTitle').textContent = currentVideoTitle;
+                    document.title = currentVideoTitle + ' - WDTV播放器';
+                } catch (e) { }
             }
             if (typeof epIndex === 'number' && epIndex >= 0) currentEpisodeIndex = epIndex;
             syntheticTiers = [];

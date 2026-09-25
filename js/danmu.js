@@ -2,7 +2,7 @@
 // 弹幕数据模块（弹弹play v2 规范客户端 + 匹配引擎 + 缓存）
 // ------------------------------------------------------------
 // 职责（只负责"取数据"，渲染由 artplayer-plugin-danmuku 插件完成）：
-//   1. 端点解析：同源转发层 /danmu/ 探测 → 自定义端点 → 内置默认端点（均不可用则静默禁用）
+//   1. 端点解析：自定义端点 → 同源转发层 /danmu/ 探测（弹弹play官方 API，首选）→ 内置自建源 → 旧公共代理（均不可用则静默禁用）
 //   2. 弹弹play v2 客户端：search/episodes（自动匹配）、search/anime + bangumi（手动匹配）、
 //      comment/{episodeId}（弹幕拉取）；请求统一 12s 超时，任何失败返回空值、绝不向上抛错
 //   3. 自动匹配引擎：标题规范化（去噪声词）→ bigram 相似度打分 → 集数对齐 → 记忆映射
@@ -246,8 +246,8 @@
     }
 
     // 端点解析（lazy：首次用到弹幕时才发起探测，不在页面加载即发）
-    // 返回候选端点列表（按优先级）：设置面板自定义端点 → 内置自建源 →
-    // 同源转发层 /danmu/（探测可用才列入，自建源不可达时的回退）→ 旧公共代理
+    // 返回候选端点列表（按优先级）：设置面板自定义端点 → 同源转发层 /danmu/（弹弹play
+    // 官方 API，探测可用才列入，首选数据源）→ 内置自建源 → 旧公共代理
     // 全部不可用返回 []（弹幕静默禁用）
     function resolveEndpoints() {
         const custom = getCustomApi();
@@ -256,16 +256,17 @@
         endpointUsedCustom = custom;
         endpointListPromise = (async () => {
             const list = [];
-            // 1. 设置面板自定义端点（支持「地址|口令」格式）
+            // 1. 设置面板自定义端点（支持「地址|口令」格式；用户显式选择，永远最高优先）
             const customEp = parseEndpoint(custom);
             if (customEp) list.push(customEp);
-            // 2. 内置默认端点：自建源（CF Workers 自定义域，国内直连，无跨国风控）
-            const cfEp = parseEndpoint(DEFAULT_DANMU_API);
-            if (cfEp) list.push(cfEp);
-            // 3. 同源转发层探测：Cloudflare Pages Functions 配置 DANMU_BASE/官方凭据时返回 {configured:true}
-            //    （自建源直连失败时经 CF Pages Function 回源兜底）
+            // 2. 同源转发层探测：Cloudflare Pages Function 配置 DANMU_APP_ID/DANMU_APP_SECRET
+            //    （official 模式）时返回 {configured:true, mode:'official'} → 弹弹play官方 API，
+            //    经 CF 边缘缓存回源 api.dandanplay.net（搜索 30min / 弹幕 6h）
             const probe = await fetchJSON('/danmu/');
             if (probe && probe.configured === true) list.push({ base: '/danmu', token: null, mode: probe.mode || 'custom' });
+            // 3. 内置自建源（CF Workers 自定义域，国内直连，无跨国风控）：官方源之后的备用源
+            const cfEp = parseEndpoint(DEFAULT_DANMU_API);
+            if (cfEp) list.push(cfEp);
             // 4. 旧公共代理兜底
             const legacyEp = parseEndpoint(LEGACY_PUBLIC_PROXY);
             if (legacyEp) list.push(legacyEp);

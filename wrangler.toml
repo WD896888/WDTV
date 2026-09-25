@@ -15,17 +15,17 @@ CACHE_TTL = "86400"
 M3U8_CACHE_TTL = "120"
 # 是否开放注册（设为 "false" 关闭；缺省或其它值均视为开放）
 ALLOW_REGISTER = "true"
-# 弹幕转发层（已停用数据源）：主数据源已回迁至 Cloudflare Workers 自定义域（工程 danmu-api-worker），
-# 前端 js/danmu.js 内置默认端点直连：
-#   https://danmu.wdmatch1.dpdns.org/zrt1ym8hlfq6  （TOKEN=zrt1ym8hlfq6）
-# 转发层 /danmu/ 保留但未配置数据源（探测返回 configured:false，前端自动跳过）。
+# 弹幕转发层（official 模式）：弹弹play 官方 API（api.dandanplay.net）经同源转发层 /danmu/ 接入，
+# 前端 js/danmu.js 的首选数据源（启动探测 /danmu/ 返回 {configured:true, mode:'official'} 后自动启用）。
+# AppId 非敏感（随每次请求 X-AppId 头明文携带）放 [vars]；AppSecret 为敏感凭据，必须用 secret 设置：
+#   npx wrangler pages secret put DANMU_APP_SECRET --project-name=wdtv
+DANMU_APP_ID = "ejwvjhghym"
 # 历史教训（勿恢复旧配置）：
 #   1) DANMU_BASE 指向 workers.dev —— CF 平台禁止 Worker/Pages Function 回源 *.workers.dev
 #      （上游返回 CF error code: 1042），此路本就不通；
 #   2) DANMU_BASE 指向 fcapp.run —— CF 海外边缘 → 阿里云 FC（中国）跨境连接受阻（20~30s 超时 502）；
-#   3) 如需重新启用转发层，可配置弹弹play 官方 AppId 模式（api.dandanplay.net 海外可达）：
-#      npx wrangler pages secret put DANMU_APP_ID --project-name=wdtv
-#      npx wrangler pages secret put DANMU_APP_SECRET --project-name=wdtv
+#   3) 2026-09 起主数据源切换为弹弹play官方 API；原 CF Workers 自建源（工程 danmu-api-worker，
+#      https://danmu.wdmatch1.dpdns.org/zrt1ym8hlfq6，前端内置直连）降为官方源之后的备用源。
 # DANMU_BASE = "https://danmu-api.1936371568.workers.dev/zrt1ym8hlfq6"
 
 # M3U8 代理缓存（已创建并绑定）

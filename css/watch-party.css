@@ -3,8 +3,10 @@
    （--glass-bg rgba(200,220,245,0.13) / blur(32px) saturate(1.5) / --glass-border rgba(200,220,245,0.42)）
    全部类名 wp- 前缀，避免与宿主页样式冲突。
    正常模式：剧集工具栏「共同观影」入口按钮 + 右侧滑出抽屉（原版交互）；
-   观影模式（body.wp-watch-mode，进入房间后）：页面重排为双栏——左播放区 / 右共同观影 UI，
-   两者都是页面内容直接坐在背景上（无覆盖层无面板外观，.wp-sec 无卡片底板）；
+   观影模式（body.wp-watch-mode，进入房间后）：页面重排为双栏——左栏播放区（视频+片名+共同观影信息区）/
+   右栏纯聊天（撑满视口，消息列表为唯一滚动区）。#wpInline 以 display:contents 拆壳，
+   头部工具条与房态/选片信息区落位到视频下方；
+   两侧都是页面内容直接坐在背景上（无覆盖层无面板外观，.wp-sec 无卡片底板）；
    剧集区折叠为「剧集选单」按钮并入资源信息栏顶替「切换资源」位置（见 player.css）。 */
 
 /* ============================================================
@@ -117,15 +119,13 @@ body.wp-watch-mode #episodesSection {
   grid-column: 1;
   grid-row: 3;
 }
-/* 右栏：无内部滚动——内容自然展开，全部直接显示在页面上（随页面滚动查看） */
+/* 右栏基础落位（≤768px 时 main.container 已改 block，栅格定位不生效）；
+   桌面端（≥769px）见下方媒体查询：#wpInline 拆散为「视频下方信息区 + 右侧纯聊天栏」，
+   text-shadow 经 display:contents 仍可被子区继承 */
 body.wp-watch-mode #wpInline {
   grid-column: 2;
   grid-row: 1 / span 3;
-  width: auto;
-  max-width: none;
-  margin: 0;
   text-shadow: 0 1px 8px rgba(10, 18, 36, 0.5); /* 背景上直接可读 */
-  animation: wpFadeIn 0.35s ease;
 }
 @keyframes wpFadeIn {
   from { opacity: 0; }
@@ -150,37 +150,166 @@ body.wp-watch-mode footer {
     box-sizing: border-box;
   }
   /* 主容器占满整屏（100% 链基于 html/body，避免 vh 基准偏差）；
-     三行：播放器（吃剩余高度）/ 片名 / 剧集 */
+     四行：播放器（自然高度）/ 片名 / 头部工具条 / 房态信息区（吃剩余高度） */
   body.wp-watch-mode main.container {
     height: 100%;
     margin-bottom: 0;
     overflow: hidden;
-    grid-template-rows: minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
   }
-  body.wp-watch-mode #playerContainer {
-    min-height: 0;
+  /* 拆壳：#wpInline 与 .wp-body 仅作容器不生成盒子（display:contents），
+     头部工具条 / 房态信息区 / 聊天区升格为 main.container 的直接栅格项：
+     左栏 = 视频 → 片名 → 共同观影信息区；右栏 = 纯聊天 */
+  body.wp-watch-mode #wpInline:not([hidden]),
+  body.wp-watch-mode #wpInline .wp-body {
+    display: contents;
   }
-  /* 右栏：拉伸至与左列等高（撑满剩余视口） */
-  body.wp-watch-mode #wpInline {
+  /* 左栏：片名行与正常观影同宽（居中 1200，内部左对齐） */
+  body.wp-watch-mode .player-title-row {
+    width: 100%;
+    max-width: 1200px;
+    justify-self: center;
+  }
+  /* 左栏：头部（「共同观影」标签 + 剧集/画布/共享/退出工具条）紧跟片名行，
+     与视频/片名行同宽撑满左栏（严禁限宽居中——宽屏下会与上下行左右错位） */
+  body.wp-watch-mode #wpInline .wp-head {
+    grid-column: 1;
+    grid-row: 3;
+    width: 100%;
+    max-width: 1200px; /* 与视频/片名行同一限宽居中规则，超宽屏也对齐 */
+    margin: 0 auto;
+  }
+  /* 左栏：共同观影信息区（房态 + 当前影片/选片操作），随视频下方自然展开；
+     内容过高（如影院收藏列表）时在剩余空间内滚动，不挤压右栏 */
+  body.wp-watch-mode #wpInline .wp-main {
+    grid-column: 1;
+    grid-row: 4;
+    width: 100%;
+    max-width: 1200px; /* 与视频/片名行同一限宽居中规则，超宽屏也对齐 */
+    margin: 0 auto;
     align-self: stretch;
-    height: 100%;
     min-height: 0;
-    max-height: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
-  body.wp-watch-mode .wp-body {
-    flex: 1;
-    min-height: 0;
-  }
-  /* 聊天区吃掉剩余空间，消息列表内部滚动（页面唯一滚动处） */
-  body.wp-watch-mode .wp-chat {
-    flex: 1 1 0;
+  /* 右栏：纯聊天，独占整列并撑满视口剩余高度 */
+  body.wp-watch-mode #wpInline .wp-chat {
+    grid-column: 2;
+    grid-row: 1 / span 4;
+    align-self: stretch;
     min-height: 0;
   }
+  /* 消息列表：右栏唯一滚动区；消息不满一屏时贴底靠近输入框（常规聊天习惯），
+     首条消息 margin-top:auto 吸收空闲空间（溢出时归零，历史消息仍可滚动查看） */
   body.wp-watch-mode .wp-msgs {
     flex: 1 1 0;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
+  }
+  body.wp-watch-mode .wp-msgs > :first-child {
+    margin-top: auto;
+  }
+  /* 入场动画移到拆散后的三个子区（#wpInline 自身已无盒子） */
+  body.wp-watch-mode #wpInline .wp-head,
+  body.wp-watch-mode #wpInline .wp-main,
+  body.wp-watch-mode #wpInline .wp-chat {
+    animation: wpFadeIn 0.35s ease;
+  }
+  /* ── 信息区密度优化：组件不再横向拉伸整行 ──
+     左子列 = 房态（房间码/复制/成员/连接提示），右子列 = 影片信息与操作；
+     两个视图块各占一列，单块视图（错误/连接中）自动占满整行 */
+  body.wp-watch-mode .wp-main {
+    display: grid;
+    grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+    column-gap: 36px;
+    align-items: start;
+    align-content: start;
+  }
+  /* 信息折叠态必须在观影模式下仍然生效：上面 body.wp-watch-mode .wp-main 的
+     display:grid 特异性 (0,2,1) 高于全局折叠规则 .wp-info-collapsed .wp-main (0,2,0)，
+     会把 display:none 顶掉，导致「收起房间信息」按钮失效——此处提权覆盖 */
+  body.wp-watch-mode .wp-info-collapsed .wp-main {
+    display: none;
+  }
+  body.wp-watch-mode .wp-main > :first-child {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  body.wp-watch-mode .wp-main > :not(:first-child) {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  body.wp-watch-mode .wp-main > :only-child {
+    grid-column: 1 / -1;
+  }
+  /* 房态块：不再参与整行布局（房间码行 space-between 收敛到子列宽度内） */
+  body.wp-watch-mode .wp-main > .wp-top {
+    margin-bottom: 0;
+  }
+  body.wp-watch-mode .wp-code {
+    font-size: 19px;
+    letter-spacing: 4px;
+  }
+  /* 影片块：收紧纵向留白 */
+  body.wp-watch-mode .wp-sec {
+    margin: 2px 0 8px;
+  }
+  body.wp-watch-mode .wp-sec-title {
+    margin-bottom: 4px;
+  }
+  body.wp-watch-mode .wp-film-name {
+    margin: 0 0 6px;
+  }
+  body.wp-watch-mode .wp-hint {
+    margin: 4px 0;
+  }
+  /* 双缓存进度条并排各半（progHtml 连续输出无空白节点，恰好铺满不拉伸） */
+  body.wp-watch-mode .wp-prog {
+    display: inline-block;
+    vertical-align: top;
+    width: calc(50% - 5px);
+    margin: 2px 0 4px;
+  }
+  body.wp-watch-mode .wp-prog + .wp-prog {
+    margin-left: 10px;
+  }
+  /* 选片入口卡：改横排紧凑胶囊（图标左、标题/副标题右），按内容取宽不拉伸 */
+  body.wp-watch-mode .wp-src-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 4px 0 6px;
+  }
+  body.wp-watch-mode .wp-src-card {
+    flex: 0 1 auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 16px 9px 13px;
+    text-align: left;
+  }
+  body.wp-watch-mode .wp-src-card svg {
+    margin-bottom: 0;
+    flex: none;
+  }
+  body.wp-watch-mode .wp-src-card-txt {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  /* 通栏主按钮/指纹条限宽，避免在宽子列里拉伸成超长条 */
+  body.wp-watch-mode .wp-btn-block {
+    max-width: 420px;
+  }
+  /* 影院收藏列表：封面卡多列网格，充分利用宽度 */
+  body.wp-watch-mode .wp-cinema-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 8px;
   }
 }
 
@@ -438,6 +567,55 @@ body.wp-watch-mode footer {
   flex: 1;
   height: 1px;
   background: rgba(200, 220, 245, 0.18);
+}
+
+/* ============================================================
+   登录门禁（面板内直接登录/注册，无需跳回首页）
+   ============================================================ */
+.wp-login-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 10px 0 8px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(155, 180, 218, 0.1);
+  border: 1px solid rgba(200, 220, 245, 0.16);
+}
+.wp-tab-btn {
+  flex: 1;
+  padding: 7px 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary, rgba(180, 200, 230, 0.75));
+  font-size: 13px;
+  font-family: 'Noto Sans SC', sans-serif;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.wp-tab-btn:active {
+  transform: scale(0.97);
+}
+.wp-tab-btn.active {
+  background: rgba(74, 168, 255, 0.28);
+  color: #fff;
+}
+.wp-login-input {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(200, 220, 245, 0.3);
+  background: rgba(155, 180, 218, 0.1);
+  color: var(--text-primary, rgba(236, 244, 255, 0.96));
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.wp-login-input:focus {
+  border-color: rgba(122, 180, 255, 0.6);
 }
 
 /* ============================================================
@@ -1085,86 +1263,236 @@ body.wp-watch-mode footer {
 
 /* ============================================================
    画布工具条（播放器容器内浮动，底部居中，控制栏上方）
+   两级折叠 dock：一级常驻（画笔/橡皮/撤销/清空/关闭），
+   二级面板（色板+粗细）点画笔开合。子项尺寸全部 em 化随设备缩放。
    ============================================================ */
 .wp-canvas-bar {
   position: absolute; /* 挂载于播放器容器内：底部居中悬浮（--fixed 变体用于 body 兜底） */
   left: 50%;
   bottom: 70px;
-  transform: translateX(-50%);
-  display: none;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 16px;
-  background: rgba(24, 30, 50, 0.72);
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  border: 1px solid rgba(200, 220, 245, 0.3);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  z-index: 90; /* 高于画布层（60）与 ArtPlayer 控件层，工具条必须可见可点 */
+  gap: 0.23em;
+  padding: 0.31em 0.54em;
+  border-radius: 0.92em;
+  font-size: 13px; /* 基准字号：子项尺寸全部 em 化，随断点整体缩放（见文件尾设备适配） */
+  background: var(--glass-bg, rgba(200, 220, 245, 0.13));
+  backdrop-filter: blur(32px) saturate(1.5);
+  -webkit-backdrop-filter: blur(32px) saturate(1.5);
+  border: 1px solid var(--glass-border, rgba(200, 220, 245, 0.42));
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: var(--text-primary, rgba(236, 244, 255, 0.96));
+  font-family: 'Noto Sans SC', sans-serif;
+  white-space: nowrap;
+  z-index: 90; /* 高于画布层（55）与 ArtPlayer 控件层（60），工具条必须可见可点 */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(8px) scale(0.96);
+  transition: opacity 0.22s ease,
+    transform 0.26s cubic-bezier(0.34, 1.3, 0.64, 1),
+    visibility 0s linear 0.26s;
 }
 .wp-canvas-bar.show {
-  display: flex;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0) scale(1);
+  transition: opacity 0.22s ease,
+    transform 0.26s cubic-bezier(0.34, 1.3, 0.64, 1);
 }
 .wp-canvas-bar--fixed {
   position: fixed;
-  left: 50%;
   bottom: 96px;
-  transform: translateX(-50%);
   z-index: 9001;
 }
-.wp-canvas-btn.active {
-  background: rgba(106, 154, 224, 0.55);
-  border-color: rgba(200, 220, 245, 0.6);
-  color: #fff;
+/* 严格横向：子项与分组全部锁死行方向、禁止收缩换行 */
+.wp-canvas-bar > *,
+.wp-canvas-tray,
+.wp-canvas-tray-row,
+.wp-canvas-sizes {
+  flex: none;
 }
+
+/* ============================================================
+   二级折叠面板（色板 + 粗细）：默认收起，点画笔按钮展开于 dock 上方，
+   选中后自动收起——一级 dock 常驻仅 ~140px，移动端不遮画面
+   ============================================================ */
+.wp-canvas-tray {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.62em);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.46em;
+  padding: 0.62em;
+  border-radius: 0.92em;
+  background: var(--glass-bg, rgba(200, 220, 245, 0.13)); /* 与一级 dock 同款玻璃，视觉一致 */
+  backdrop-filter: blur(32px) saturate(1.5);
+  -webkit-backdrop-filter: blur(32px) saturate(1.5);
+  border: 1px solid var(--glass-border, rgba(200, 220, 245, 0.42));
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(4px) scale(0.96);
+  transition: opacity 0.18s ease,
+    transform 0.2s cubic-bezier(0.34, 1.3, 0.64, 1),
+    visibility 0s linear 0.2s;
+}
+.wp-canvas-tray.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0) scale(1);
+  transition: opacity 0.18s ease,
+    transform 0.2s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+.wp-canvas-tray-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.23em;
+}
+
+/* 颜色色板（二级面板内）：视觉圆点 1.08em + 命中区 1.7em */
 .wp-canvas-dot {
-  width: 18px;
-  height: 18px;
+  width: 1.7em;
+  height: 1.7em;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
   border-radius: 50%;
+  background: transparent;
   cursor: pointer;
-  border: 2px solid transparent;
+  transition: transform 0.15s, opacity 0.15s;
+}
+.wp-canvas-dot::before {
+  content: '';
+  width: 1.08em;
+  height: 1.08em;
+  border-radius: 50%;
+  background: var(--c);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   box-sizing: border-box;
-  transition: transform 0.15s, border-color 0.15s;
 }
 .wp-canvas-dot:hover {
   transform: scale(1.15);
 }
-.wp-canvas-dot.active {
-  border-color: #fff;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+.wp-canvas-dot.active::before {
+  box-shadow: 0 0 0 1.5px rgba(16, 22, 38, 0.55), 0 0 0 3px rgba(255, 255, 255, 0.9);
+}
+/* 橡皮模式：色板弱化，提示当前不使用颜色 */
+.wp-canvas-bar.mode-erase .wp-canvas-dot {
+  opacity: 0.35;
+}
+
+/* 粗细：胶囊内三档圆点，命中区 1.55em，档位视觉直径 0.385/0.538/0.769em（JS 内联 --d） */
+.wp-canvas-sizes {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.15em;
+  padding: 0.15em;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(200, 220, 245, 0.14);
 }
 .wp-canvas-size {
+  width: 1.55em;
+  height: 1.55em;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
   border-radius: 50%;
-  background: rgba(236, 244, 255, 0.75);
+  background: transparent;
   cursor: pointer;
-  transition: transform 0.15s, background 0.15s;
+  transition: background 0.15s;
 }
-.wp-canvas-size:hover {
-  transform: scale(1.15);
+.wp-canvas-size::before {
+  content: '';
+  width: var(--d, 0.385em);
+  height: var(--d, 0.385em);
+  border-radius: 50%;
+  background: rgba(236, 244, 255, 0.8);
 }
 .wp-canvas-size.active {
+  background: rgba(74, 168, 255, 0.28);
+}
+.wp-canvas-size.active::before {
   background: #fff;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 5px rgba(74, 168, 255, 0.9);
 }
-.wp-canvas-btn {
-  border: none;
+
+/* 动作图标（橡皮/撤销/清空/关闭）：与 wp-tool-btn 同语言 */
+.wp-canvas-icon {
+  width: 1.7em;
+  height: 1.7em;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 0.54em;
   background: transparent;
-  color: rgba(236, 244, 255, 0.85);
-  font-size: 12px;
-  font-family: 'Noto Sans SC', sans-serif;
-  padding: 3px 8px;
-  border-radius: 8px;
+  color: rgba(200, 220, 245, 0.8);
   cursor: pointer;
-  transition: background 0.2s;
+  line-height: 1;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
 }
-.wp-canvas-btn:hover {
-  background: rgba(200, 220, 245, 0.15);
+.wp-canvas-icon svg {
+  display: block;
+  width: 1em;
+  height: 1em;
 }
-.wp-canvas-sep {
-  width: 1px;
-  height: 16px;
-  background: rgba(200, 220, 245, 0.25);
+.wp-canvas-icon:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.wp-canvas-icon.active {
+  background: rgba(74, 168, 255, 0.18);
+  border-color: rgba(74, 168, 255, 0.55);
+  color: #a8d0ff;
+}
+/* 画笔按钮：笔尖始终染成当前颜色（自带预览），兼作二级面板开关 */
+.wp-canvas-pen,
+.wp-canvas-bar .wp-canvas-pen:hover {
+  color: var(--c, rgba(236, 244, 255, 0.92));
+}
+.wp-canvas-pen[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(200, 220, 245, 0.35);
+}
+/* 清空：两段式确认——待确认态转红，二次点击生效 */
+.wp-canvas-bar.confirm-clear .wp-canvas-icon[data-act="clear"] {
+  background: rgba(255, 90, 90, 0.16);
+  border-color: rgba(255, 90, 90, 0.55);
+  color: #ffb0b0;
+}
+
+/* ============================================================
+   设备适配：子项尺寸全部随基准字号（em）整体等比缩放
+   桌面 13px 基准（约 140×32px）；
+   平板（≤1024px，触屏为主）放大一档，命中区约 25px；
+   手机（≤640px）介于两者之间，宽度约 150px 不遮挡竖屏画面
+   ============================================================ */
+@media (max-width: 1024px) {
+  .wp-canvas-bar {
+    font-size: 15px;
+  }
+}
+@media (max-width: 640px) {
+  .wp-canvas-bar {
+    font-size: 14px;
+  }
 }
 
 /* ============================================================
@@ -1190,8 +1518,11 @@ body.wp-watch-mode footer {
   .wp-prog-fill,
   .wp-slider,
   .wp-slider::after,
+  .wp-canvas-bar,
+  .wp-canvas-tray,
   .wp-canvas-dot,
   .wp-canvas-size,
+  .wp-canvas-icon,
   .wp-btn,
   .wp-entry-btn {
     transition: none !important;

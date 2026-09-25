@@ -506,10 +506,16 @@
         break;
       case 'src': applySrcMsg(m); break;
       case 'shared':
-        // 控制权共享开关（房主切换）：guest 端更新本地权限并提示
+        // 控制权共享开关（房主切换）：guest 端更新本地权限并提示。
+        // 服务端全量广播（含房主回显），提示语按「是否本人操作」区分措辞：
+        // 房主回显 → 第一人称；嘉宾收到 → 提示其获得/失去控制权
         st.shared = !!m.on;
         emit('shared', { on: st.shared, by: m.by });
-        emit('toast', { text: m.on ? '房主已开放控制权：你也可以控制播放与选片' : '房主已收回控制权' });
+        emit('toast', {
+          text: m.by !== undefined && String(m.by) === String(myUid())
+            ? (m.on ? '已开放控制权：对方也可以控制播放与选片' : '已收回控制权：对方不再能控制播放')
+            : (m.on ? '房主已开放控制权：你也可以控制播放与选片' : '房主已收回控制权')
+        });
         emit('role', { role: st.role });
         break;
       case 'chat':
@@ -1213,7 +1219,8 @@
     el.style.inset = '0';
     el.style.width = '100%';
     el.style.height = '100%';
-    el.style.zIndex = '60'; // 覆盖视频画面、位于播放器控件之下
+    el.style.zIndex = '55'; // 层级夹缝：高于视频(10)/弹幕(30)/遮罩(50)，低于控制栏(60)/设置(90)——
+    // 画笔开启时拦截视频区手势，但不挡播放器按钮（此前取 60 与 .art-bottom 同层且后挂载，控制栏全被盖住无法点击）
     el.style.pointerEvents = 'none'; // 常态穿透：不挡双击 seek 等手势
     host.appendChild(el);
     canvasLayer.host = host;

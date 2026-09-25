@@ -420,10 +420,16 @@ body.wp-watch-mode .episodes-section:not(.open) {
     display: none;
 }
 
-/* 观影模式：展开为玻璃弹窗（与换源弹窗同基调） */
+/* 观影模式：展开为玻璃弹窗（与换源弹窗同基调）
+   注意：.episodes-section 常态带 max-width:1200px + margin:auto，
+   此处必须显式解除，否则 fixed 弹窗蒙层被压缩成 1200px 居中块，
+   backdrop-filter 模糊画布无法覆盖全屏 */
 body.wp-watch-mode .episodes-section.open {
     position: fixed;
     inset: 0;
+    width: 100%;
+    max-width: none;
+    margin: 0;
     z-index: 9600;
     display: flex;
     align-items: center;
@@ -960,10 +966,16 @@ input:checked + .slider:before {
 }
 
 
-/* ===== 控制栏防溢出：右侧按钮较多（倍速/下载/缓存/设置/全屏）时，
-   压缩整体间距与时间字号，保证最右侧的全屏按钮始终留在屏幕内 ===== */
+/* ===== 控制栏防溢出 ===== */
+/* 右侧按钮组允许整体收缩（min-width:0），收缩量全部由倍速按钮吸收（其余按钮 flex-shrink:0）：
+   长文案（如"进度保护中..."）出现时，倍速文字向中间延伸，空间不足即自动省略号截断；
+   既不把右侧设置/全屏等按钮挤出屏幕，也不会向左覆盖左侧的时间/进度显示 */
 .art-video-player .art-controls{min-width:0}
 .art-video-player .art-controls .art-control{flex-shrink:0}
+.art-video-player .art-controls .art-controls-left{flex-shrink:0}
+.art-video-player .art-controls .art-controls-right{min-width:0}
+.art-video-player .art-controls .art-control-rateQuickButton{flex-shrink:1;min-width:0}
+.art-video-player .art-controls .art-control-rateQuickButton .rate-btn-text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* 控制栏按钮水平内边距收紧（与页面工具行同语言）。
    注意：进度条 .art-control-progress 不在 .art-controls 内（在 .art-bottom>.art-progress 下），
    本规则不会命中它，其 padding 保持库默认（seek 行为与历史版本一致） */

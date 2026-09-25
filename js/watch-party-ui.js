@@ -103,7 +103,13 @@
     seenSeq: {},          // 服务端 seq 去重（断线重连历史回放不重复）
     roomSig: '',         // 房内主区渲染签名（相同则跳过，避免重渲染丢状态）
     lockNotified: false, // 纯观看锁定提示去重
-    restoreWatch: false  // 刷新/后台归来恢复中：连接期间保持观影模式布局（消除两段式闪变）
+    restoreWatch: false, // 刷新/后台归来恢复中：连接期间保持观影模式布局（消除两段式闪变）
+    loginTab: 'login',    // 登录门禁当前 Tab：login | register
+    loginSubmitting: false, // 登录/注册提交中
+    loginError: '',       // 登录表单错误信息
+    loginUserDraft: '',   // 用户名输入草稿（重渲染时保留）
+    regAllowed: null,     // null = 未知；由 isRegisterAllowed() 异步获取
+    regFetching: false    // 注册开关探测中
   };
 
   var CANVAS_COLORS = ['#ff5a5a', '#ffb020', '#41d08a', '#4aa8ff', '#b06aff', '#ffffff'];
@@ -278,17 +284,13 @@
   }
 
   // ============================================================
-  // idle 视图（未建房）：登录门禁 → 创建 / 加入
+  // idle 视图（未建房）：登录门禁（面板内直接登录/注册，无需跳回首页）→ 创建 / 加入
   // ============================================================
   function renderIdle() {
     stopM2Timer();
     var html;
     if (!isLoggedIn()) {
-      html = '<div class="wp-idle">' +
-        '<p class="wp-hint wp-hint-center">共同观影需要登录后使用</p>' +
-        '<button type="button" class="wp-btn wp-btn-primary wp-btn-block" id="wpGoLogin">去首页登录</button>' +
-        '<p class="wp-hint wp-hint-center">player 页无账号入口，登录完成后回到本页即可</p>' +
-      '</div>';
+      html = loginHtml();
     } else if (ui.busy) {
       html = '<div class="wp-idle"><p class="wp-hint wp-hint-center">' +
         (ui.busy === 'create' ? '正在创建房间...' : '正在加入房间...') + '</p></div>';
@@ -303,8 +305,7 @@
       '</div>';
     }
     ui.body.innerHTML = html;
-    var goLogin = $('#wpGoLogin', ui.body);
-    if (goLogin) goLogin.addEventListener('click', function () { location.href = '/'; });
+    if (!isLoggedIn()) { bindLogin(); return; }
     var create = $('#wpCreate', ui.body);
     if (create) create.addEventListener('click', onCreate);
     var input = $('#wpJoinInput', ui.body);
@@ -324,6 +325,118 @@
       try { input.focus(); } catch (e) { }
     }
     if (join) join.addEventListener('click', onJoin);
+  }
+
+  // ---------- 面板内登录门禁：登录/注册表单（复用 window.CloudSync，与首页账号区同源） ----------
+  function loginHtml() {
+    var allowReg = ui.regAllowed;
+    if (allowReg === false && ui.loginTab === 'register') ui.loginTab = 'login';
+    var isReg = ui.loginTab === 'register' && allowReg !== false;
+    var h = '<div class="wp-idle">' +
+      '<p class="wp-hint wp-hint-center">共同观影需要登录后使用，可在本面板直接登录</p>';
+    if (allowReg !== false) {
+      h += '<div class="wp-login-tabs">' +
+        '<button type="button" class="wp-tab-btn' + (ui.loginTab === 'login' ? ' active' : '') + '" data-tab="login">登录</button>' +
+        '<button type="button" class="wp-tab-btn' + (isReg ? ' active' : '') + '" data-tab="register">注册</button>' +
+        '</div>';
+    }
+    h += '<form id="wpLoginForm" autocomplete="off">' +
+        '<input class="wp-login-input" id="wpLoginUser" type="text" maxlength="40" autocomplete="username" placeholder="用户名" value="' + esc(ui.loginUserDraft) + '">' +
+        '<input class="wp-login-input" id="wpLoginPass" type="password" maxlength="72" autocomplete="' + (isReg ? 'new-password' : 'current-password') + '" placeholder="密码（至少 6 位）">' +
+        '<button type="submit" class="wp-btn wp-btn-primary wp-btn-block" id="wpLoginSubmit"' + (ui.loginSubmitting ? ' disabled' : '') + '>' +
+        (ui.loginSubmitting ? '请稍候…' : (isReg ? '注 册' : '登 录')) + '</button>' +
+      '</form>';
+    if (ui.loginError) h += '<p class="wp-err-line">' + esc(ui.loginError) + '</p>';
+    h += '<p class="wp-hint wp-hint-center">登录后观影记录、进度与收藏自动跨设备同步</p>' +
+      '</div>';
+    return h;
+  }
+
+  function bindLogin() {
+    // Tab 切换
+    var tabs = ui.body.querySelectorAll('.wp-tab-btn');
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].addEventListener('click', function () {
+        var tab = this.getAttribute('data-tab');
+        if (ui.loginTab === tab) return;
+        ui.loginTab = tab;
+        ui.loginError = '';
+        render();
+      });
+    }
+    // 保留用户名草稿
+    var userInput = $('#wpLoginUser', ui.body);
+    if (userInput) userInput.addEventListener('input', function () { ui.loginUserDraft = this.value; });
+    // 提交（回车也可触发）
+    var form = $('#wpLoginForm', ui.body);
+    if (form) form.addEventListener('submit', onSubmitAuth);
+    // 异步探测是否允许开放注册（仅探测一次；输入中不重渲染，避免打断输入）
+    if (ui.regAllowed === null && !ui.regFetching) {
+      var cs = window.CloudSync;
+      if (cs && typeof cs.isRegisterAllowed === 'function') {
+        ui.regFetching = true;
+        cs.isRegisterAllowed().then(function (v) {
+          ui.regAllowed = v !== false;
+        }).catch(function () {
+          ui.regAllowed = true;
+        }).then(function () {
+          ui.regFetching = false;
+          var ae = document.activeElement;
+          if (ae && (ae.id === 'wpLoginUser' || ae.id === 'wpLoginPass')) return;
+          if (isLoggedIn() || ui.error) return;
+          var rs = wp() ? wp().roomState() : null;
+          if (ui.open && rs && !rs.code) render();
+        });
+      } else {
+        ui.regAllowed = true; // SDK 缺席时按开放注册渲染，提交时再兜底提示
+      }
+    }
+  }
+
+  function onSubmitAuth(e) {
+    e.preventDefault();
+    if (ui.loginSubmitting) return;
+    var userInput = $('#wpLoginUser', ui.body);
+    var passInput = $('#wpLoginPass', ui.body);
+    var u = userInput ? userInput.value.trim() : '';
+    var p = passInput ? passInput.value : '';
+    if (!u || !p) {
+      ui.loginError = '请输入用户名和密码';
+      render();
+      return;
+    }
+    var cs = window.CloudSync;
+    if (!cs || typeof cs.login !== 'function' || typeof cs.register !== 'function') {
+      ui.loginError = '账号服务未加载，请刷新页面后重试';
+      render();
+      return;
+    }
+    ui.loginSubmitting = true;
+    ui.loginError = '';
+    ui.loginUserDraft = u;
+    var isReg = ui.loginTab === 'register' && ui.regAllowed !== false;
+    var btn = $('#wpLoginSubmit', ui.body);
+    if (btn) { btn.disabled = true; btn.textContent = '请稍候…'; } // 就地进入加载态（不整块重渲染，保留已输入密码）
+    var action;
+    try {
+      action = isReg ? cs.register(u, p) : cs.login(u, p);
+    } catch (err) {
+      ui.loginSubmitting = false;
+      ui.loginError = err && err.message ? err.message : '操作失败，请稍后再试';
+      render();
+      return;
+    }
+    Promise.resolve().then(function () { return action; }).then(function () {
+      ui.loginSubmitting = false;
+      ui.loginUserDraft = '';
+      ui.loginError = '';
+      toast(isReg ? '注册成功' : '登录成功');
+      render(); // 登录态生效：本次渲染直接切到创建/加入视图
+    }).catch(function (err) {
+      ui.loginSubmitting = false;
+      ui.loginError = err && err.message ? err.message : '操作失败，请稍后再试';
+      render();
+    });
   }
 
   function onCreate() {
@@ -473,7 +586,11 @@
   // 共享控制开关同步：仅房主可见可点；状态随 snap/shared 广播回填（工具条位于面板头部）
   function syncShareUI(rs) {
     var wrap = document.getElementById('wpShareWrap');
-    if (wrap) wrap.hidden = rs.role !== 'host';
+    if (wrap) {
+      wrap.hidden = rs.role !== 'host';
+      // tooltip 随状态区分：未开放 → 引导开放；已开放 → 提示可收回
+      wrap.title = rs.shared ? '收回控制权：恢复仅你可控制播放与选片' : '开放后对方也可以控制播放与选片';
+    }
     var t = document.getElementById('wpShareToggle');
     if (t) {
       if (t.checked !== !!rs.shared) t.checked = !!rs.shared;
@@ -601,11 +718,12 @@
   }
 
   // 选片入口卡片网格（图标 + 标题 + 副标题，紧凑并排）
+  // 标题/副标题包一层 .wp-src-card-txt：桌面观影模式卡片改横排胶囊（图标左、文字右）所需
   function srcCard(id, icon, title, sub, extraCls) {
     return '<button type="button" class="wp-src-card ' + (extraCls || '') + '" id="' + id + '">' +
       '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg>' +
-      '<span class="wp-src-card-title">' + title + '</span>' +
-      '<span class="wp-src-card-sub">' + sub + '</span>' +
+      '<span class="wp-src-card-txt"><span class="wp-src-card-title">' + title + '</span>' +
+      '<span class="wp-src-card-sub">' + sub + '</span></span>' +
     '</button>';
   }
   var SRC_ICONS = {
@@ -901,9 +1019,9 @@
     var cur = null;
     try { cur = env && typeof env.getVideoKey === 'function' ? env.getVideoKey() : null; } catch (e) { }
     var roomUrl = ui.lastVideo && ui.lastVideo.url;
-    var title = rs.title || (ui.lastVideo && ui.lastVideo.title) || '未知片名';
-    var h = '<div class="wp-sec"><div class="wp-sec-title">当前影片（M1 在线共看）</div>' +
-      '<p class="wp-film-name">' + esc(title) + '</p>';
+    // 片名展示已合并到视频下方大标题行（#videoTitle，WDTVPlayDirect 起播时同步刷新）；
+    // 模式状态由成员区「M1 在线」徽标标示，小节不再重复（内容：缓存进度/换片操作自解释）
+    var h = '<div class="wp-sec">';
     // 双方本地缓存进度：双方 ≥99% 后房主自动无缝切换 M2 缓存模式（零网络流量）
     var own = ownCoverage();
     var peer = peerReady(rs);
@@ -943,7 +1061,7 @@
     var ownPct = own && typeof own.percent === 'number' ? Math.round(own.percent) : null;
     var peerPct = peer && typeof peer.percent === 'number' ? Math.round(peer.percent)
       : (typeof ui.lastPeerCached === 'number' ? Math.round(ui.lastPeerCached) : null);
-    var h = '<div class="wp-sec"><div class="wp-sec-title">缓存就绪度（M2 预缓存共看）</div>';
+    var h = '<div class="wp-sec"><div class="wp-sec-title">缓存就绪度</div>';
     h += progHtml('我', ownPct) + progHtml('对方', peerPct);
     if (mismatch || peerMismatch) {
       h += '<p class="wp-err-line">双方不是同一集，无法进入缓存共看（可改用在线模式）</p>';
@@ -1003,7 +1121,7 @@
     var fpKnown = !!(ownFp && peer && peer.fp);
     var fpOk = fpKnown && String(ownFp) === String(peer.fp);
     var fpBad = fpKnown && !fpOk;
-    var h = '<div class="wp-sec"><div class="wp-sec-title">本地文件共看（M3）</div>';
+    var h = '<div class="wp-sec"><div class="wp-sec-title">本地文件共看</div>';
     if (!hasLocal) h += '<p class="wp-hint">本地播放模块未加载，本地共看不可用</p>';
     if (!compact) {
       h += '<button type="button" class="wp-btn wp-btn-ghost wp-btn-block" id="wpM3Pick">' +
@@ -1142,10 +1260,22 @@
   // 错误视图
   // ============================================================
   function showError(code) {
-    ui.error = code;
     try { if (wp()) wp().leave(); } catch (e) { } // 错误即断开：清理半连接状态与本地凭证
     stopM2Timer();
     hideCanvasBar();
+    if (code === 'unauthorized' || code === 'authFailed') {
+      // 登录凭证缺失/过期：不进错误视图，直接回到登录门禁（面板内可直接重新登录）
+      ui.error = null;
+      if (isLoggedIn()) {
+        // 本地有会话但服务端判定失效：清掉本地会话以回到登录表单（logout 仅清本地，不发请求）
+        try { window.CloudSync.logout(); } catch (e) { }
+        ui.loginError = '登录凭证已失效，请重新登录';
+      }
+      render();
+      if (!ui.open) showDrawer(); // 抽屉未展开时（如重连失败路径）展开呈现登录表单
+      return;
+    }
+    ui.error = code;
     render();
   }
 
@@ -1330,27 +1460,43 @@
     try { return !!(w && w.canvas && w.canvas.isEnabled()); } catch (e) { return false; }
   }
 
+  // 图标（与头部工具条同风格：线性、1.8 描边、圆角端点）
+  var CANVAS_ICONS = {
+    pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    erase: '<path d="M20 20H9L4.5 15.5a2 2 0 0 1 0-2.8l8.2-8.2a2 2 0 0 1 2.8 0l5 5a2 2 0 0 1 0 2.8L14 19"/><path d="M8.5 11.5l5 5"/>',
+    undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+    clear: '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
+    close: '<path d="M18 6L6 18M6 6l12 12"/>'
+  };
+  function canvasIcon(name) {
+    // width/height 写死在属性上：即使 CSS 未加载也不会被撑成默认 300×150
+    return '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + CANVAS_ICONS[name] + '</svg>';
+  }
+
   function ensureCanvasBar() {
     if (ui.cbar) return;
     var bar = document.createElement('div');
     bar.className = 'wp-canvas-bar';
-    var h = '';
+    // 一级 dock：画笔（兼二级面板开关，笔尖染当前色）/ 橡皮 / 撤销 / 清空 / 关闭
+    var h =
+      '<button type="button" class="wp-canvas-icon wp-canvas-pen" data-act="pen" title="画笔（点击开合选色面板；橡皮模式下点击取蓝色·中等画笔）" aria-expanded="false" aria-haspopup="true" aria-label="画笔：蓝色，中等粗细">' + canvasIcon('pen') + '</button>' +
+      '<button type="button" class="wp-canvas-icon" data-act="erase" title="橡皮擦（再点一次切回画笔）" aria-label="橡皮擦">' + canvasIcon('erase') + '</button>' +
+      '<button type="button" class="wp-canvas-icon" data-act="undo" title="撤销上一笔" aria-label="撤销">' + canvasIcon('undo') + '</button>' +
+      '<button type="button" class="wp-canvas-icon" data-act="clear" title="清空画布" aria-label="清空画布">' + canvasIcon('clear') + '</button>' +
+      '<button type="button" class="wp-canvas-icon" data-act="close" title="关闭画布" aria-label="关闭画布">' + canvasIcon('close') + '</button>' +
+      // 二级折叠面板：默认收起，悬于 dock 上方
+      '<div class="wp-canvas-tray" role="group" aria-label="画笔颜色与粗细">' +
+        '<span class="wp-canvas-tray-row" role="group" aria-label="画笔颜色">';
     for (var i = 0; i < CANVAS_COLORS.length; i++) {
-      h += '<span class="wp-canvas-dot" data-c="' + CANVAS_COLORS[i] + '" style="background:' + CANVAS_COLORS[i] + '"></span>';
+      h += '<button type="button" class="wp-canvas-dot" data-c="' + CANVAS_COLORS[i] + '" style="--c:' + CANVAS_COLORS[i] + '" title="颜色" aria-label="画笔颜色"></button>';
     }
-    h += '<span class="wp-canvas-sep"></span>';
+    h += '</span><span class="wp-canvas-sizes" role="group" aria-label="画笔粗细">';
+    var SIZE_NAMES = ['细', '中', '粗'];
     for (var j = 0; j < CANVAS_SIZES.length; j++) {
-      var d = CANVAS_SIZES[j] + 4; // 视觉直径：6/8/11
-      h += '<span class="wp-canvas-size" data-w="' + CANVAS_SIZES[j] + '" style="width:' + d + 'px;height:' + d + 'px"></span>';
+      // 视觉直径 (w+3)px 折算为 em（基准 13px），随工具栏整体缩放：细0.385/中0.538/粗0.769
+      h += '<button type="button" class="wp-canvas-size" data-w="' + CANVAS_SIZES[j] + '" style="--d:' + ((CANVAS_SIZES[j] + 3) / 13).toFixed(3) + 'em" title="画笔粗细：' + (SIZE_NAMES[j] || CANVAS_SIZES[j]) + '" aria-label="画笔粗细：' + (SIZE_NAMES[j] || CANVAS_SIZES[j]) + '"></button>';
     }
-    h += '<span class="wp-canvas-sep"></span>' +
-      '<button type="button" class="wp-canvas-btn" data-act="erase" title="橡皮擦">' +
-        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H9L4.5 15.5a2 2 0 0 1 0-2.8l8.2-8.2a2 2 0 0 1 2.8 0l5 5a2 2 0 0 1 0 2.8L14 19"/><path d="M8.5 11.5l5 5"/></svg>' +
-        '<span>擦</span>' +
-      '</button>' +
-      '<button type="button" class="wp-canvas-btn" data-act="undo">撤销</button>' +
-      '<button type="button" class="wp-canvas-btn" data-act="clear">清空</button>' +
-      '<button type="button" class="wp-canvas-btn" data-act="close">关闭</button>';
+    h += '</span></div>';
     bar.innerHTML = h;
     bar.addEventListener('click', function (e) {
       var t = e.target;
@@ -1361,6 +1507,7 @@
         ui.cColor = dot.getAttribute('data-c');
         try { w.canvas.setColor(ui.cColor); w.canvas.setMode('draw'); } catch (err) { }
         markCanvasActive();
+        // 面板保持展开：选中态（白圈+笔尖变色）即时可见，由画笔按钮或点击面板外收起
         return;
       }
       var size = t.closest ? t.closest('.wp-canvas-size') : null;
@@ -1370,46 +1517,104 @@
         markCanvasActive();
         return;
       }
-      var btn = t.closest ? t.closest('.wp-canvas-btn') : null;
+      var btn = t.closest ? t.closest('.wp-canvas-icon') : null;
       if (btn) {
         var act = btn.getAttribute('data-act');
-        if (act === 'erase') {
+        if (act === 'pen') {
+          var wasErase = false;
+          try { wasErase = w.canvas.getMode() === 'erase'; } catch (err) { }
+          if (wasErase) {
+            // 橡皮 → 画笔：取出标准画笔（蓝·中等粗细），展开面板直接看到选择
+            ui.cColor = CANVAS_COLORS[3]; // 蓝
+            ui.cWidth = CANVAS_SIZES[1];  // 中等粗细
+            try { w.canvas.setColor(ui.cColor); w.canvas.setWidth(ui.cWidth); w.canvas.setMode('draw'); } catch (err) { }
+            markCanvasActive();
+            setCanvasTray(true);
+          } else {
+            // 已是画笔模式：仅开合面板，保留用户当前选的颜色/粗细
+            var tray = ui.cbar.querySelector('.wp-canvas-tray');
+            setCanvasTray(!(tray && tray.classList.contains('open')));
+          }
+        }
+        else if (act === 'erase') {
           // 橡皮与画笔互斥：再点一次切回画笔
           var toErase = w.canvas.getMode() !== 'erase';
           try { w.canvas.setMode(toErase ? 'erase' : 'draw'); } catch (err) { }
           markCanvasActive();
         }
         else if (act === 'undo') { try { w.canvas.undo(); } catch (err) { } }
-        else if (act === 'clear') { try { w.canvas.clear(); } catch (err) { } }
+        else if (act === 'clear') {
+          // 破坏性操作两段式确认：首次点击进入待确认态（变红），2.6s 内再点才清空
+          if (bar.classList.contains('confirm-clear')) {
+            disarmClearConfirm();
+            try { w.canvas.clear(); } catch (err) { }
+            toast('画布已清空');
+          } else {
+            bar.classList.add('confirm-clear');
+            btn.title = '再点一次确认清空';
+            toast('再点一次确认清空画布');
+            clearTimeout(ui.cClearT);
+            ui.cClearT = setTimeout(disarmClearConfirm, 2600);
+          }
+        }
         else if (act === 'close') { setCanvas(false); }
       }
     });
     document.body.appendChild(bar);
     ui.cbar = bar;
-    if (ui.cColor === undefined) ui.cColor = CANVAS_COLORS[0];
-    if (ui.cWidth === undefined) ui.cWidth = 4;
+    // 点击工具条以外区域时收起二级面板（bar 复用，监听只绑一次）
+    document.addEventListener('click', function (e) {
+      if (!ui.cbar || !ui.cbar.classList.contains('show')) return;
+      var tray = ui.cbar.querySelector('.wp-canvas-tray');
+      if (!tray || !tray.classList.contains('open')) return;
+      if (ui.cbar.contains(e.target)) return;
+      setCanvasTray(false);
+    });
+    if (ui.cColor === undefined) ui.cColor = CANVAS_COLORS[3]; // 默认蓝
+    if (ui.cWidth === undefined) ui.cWidth = CANVAS_SIZES[1];  // 默认中等粗细
     try { wp().canvas.setColor(ui.cColor); wp().canvas.setWidth(ui.cWidth); } catch (e) { }
     markCanvasActive();
   }
 
-  // 工具条选中态：颜色/粗细高亮 + 橡皮激活态（橡皮模式时颜色点半透明）
+  // 退出清空待确认态
+  function disarmClearConfirm() {
+    clearTimeout(ui.cClearT);
+    ui.cClearT = null;
+    if (!ui.cbar) return;
+    ui.cbar.classList.remove('confirm-clear');
+    var btn = ui.cbar.querySelector('[data-act="clear"]');
+    if (btn) btn.title = '清空画布';
+  }
+
+  // 二级折叠面板（色板+粗细）开合
+  function setCanvasTray(open) {
+    if (!ui.cbar) return;
+    var tray = ui.cbar.querySelector('.wp-canvas-tray');
+    var pen = ui.cbar.querySelector('[data-act="pen"]');
+    if (tray) tray.classList.toggle('open', !!open);
+    if (pen) pen.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  // 工具条选中态：颜色/粗细高亮、橡皮激活态（橡皮模式色板弱化）
   function markCanvasActive() {
     if (!ui.cbar) return;
     var w = wp();
     var mode = '';
     try { mode = w && w.canvas ? w.canvas.getMode() : 'draw'; } catch (e) { }
+    var erase = mode === 'erase';
+    ui.cbar.classList.toggle('mode-erase', erase);
     var dots = ui.cbar.querySelectorAll('.wp-canvas-dot');
     for (var i = 0; i < dots.length; i++) {
-      var isCur = mode !== 'erase' && dots[i].getAttribute('data-c') === ui.cColor;
-      dots[i].classList.toggle('active', isCur);
-      dots[i].style.opacity = mode === 'erase' ? '0.35' : '';
+      dots[i].classList.toggle('active', !erase && dots[i].getAttribute('data-c') === ui.cColor);
     }
     var sizes = ui.cbar.querySelectorAll('.wp-canvas-size');
     for (var j = 0; j < sizes.length; j++) {
       sizes[j].classList.toggle('active', Number(sizes[j].getAttribute('data-w')) === ui.cWidth);
     }
     var eraser = ui.cbar.querySelector('[data-act="erase"]');
-    if (eraser) eraser.classList.toggle('active', mode === 'erase');
+    if (eraser) eraser.classList.toggle('active', erase);
+    var pen = ui.cbar.querySelector('[data-act="pen"]');
+    if (pen) pen.style.setProperty('--c', ui.cColor); // 笔尖染当前颜色，兼作预览
   }
 
   // 挂载进播放器容器（随全屏移动）；播放器未就绪则退化为 body 固定定位
@@ -1452,6 +1657,8 @@
   }
 
   function hideCanvasBar() {
+    disarmClearConfirm(); // 收起时退出清空待确认态，避免下次展开残留
+    setCanvasTray(false);
     if (ui.cbar) ui.cbar.classList.remove('show');
   }
 
@@ -1534,7 +1741,24 @@
       render();
     });
     w.on('role', function () { ui.roomSig = ''; render(); });
-    w.on('shared', function (p) { if (p && p.by !== undefined) pushSystem(p.on ? '房主开放了控制权：双方均可控制播放与选片' : '房主收回了控制权'); ui.roomSig = ''; render(); });
+    w.on('shared', function (p) {
+      if (p && p.by !== undefined) {
+        // 措辞按角色区分：房主本人操作 → 第一人称；嘉宾收到 → 「房主」第三人称
+        var self = String(p.by) === String(w.uid());
+        var text = p.on
+          ? (self ? '你开放了控制权：双方均可控制播放与选片' : '房主开放了控制权：双方均可控制播放与选片')
+          : (self ? '你收回了控制权：播放控制回到你手中' : '房主收回了控制权');
+        var now = Date.now();
+        // 房主端本地乐观触发与服务端回显各触发一次（by/on 相同→文本相同）：2s 窗口去重防双条
+        if (text !== ui.lastSharedText || now - (ui.lastSharedAt || 0) > 2000) {
+          ui.lastSharedText = text;
+          ui.lastSharedAt = now;
+          pushSystem(text);
+        }
+      }
+      ui.roomSig = '';
+      render();
+    });
     w.on('applySrc', onApplySrc);
     w.on('toast', function (p) { if (p && p.text) toast(p.text); });
     w.on('slowpeer', function () { toast('对方网络较慢，播放可能不同步'); });
