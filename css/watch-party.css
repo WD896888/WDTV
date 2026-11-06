@@ -100,9 +100,15 @@ body.wp-watch-mode .wp-entry-btn {
 /* 观影模式：页面自身重排为双栏——左侧播放区（视频+剧集按钮行+剧集），
    右侧共同观影 UI（房态/按钮/聊天）。两侧都是页面内容、直接坐在背景上，
    无任何覆盖层：不遮挡、不悬浮、随页面滚动 */
+/* 三栏最低尺寸契约：左栏（视频+信息区）526px（= 房态子列 250 + 子列间距 36 +
+   缓存/操作子列 240）、右栏聊天 320px。缓存/操作子列的 240px 是「一排内容完整
+   展示」的最低保障：双缓存进度条并排 230px、选片卡片横排胶囊 2×109+8=226px，
+   低于该宽度按钮就会一个换一行。视口宽度能同时满足两栏最低尺寸
+   （≥900px = 内边距 32 + 左栏 526 + 栏间距 16 + 聊天 320）才启用多栏排列；
+   放不下则退化为移动端竖向堆叠（见文件底部 ≤899px 媒体查询） */
 body.wp-watch-mode main.container {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 384px;
+  grid-template-columns: minmax(526px, 1fr) 384px;
   column-gap: 22px;
   align-items: start;
 }
@@ -119,8 +125,8 @@ body.wp-watch-mode #episodesSection {
   grid-column: 1;
   grid-row: 3;
 }
-/* 右栏基础落位（≤768px 时 main.container 已改 block，栅格定位不生效）；
-   桌面端（≥769px）见下方媒体查询：#wpInline 拆散为「视频下方信息区 + 右侧纯聊天栏」，
+/* 右栏基础落位（≤899px 时 main.container 已改 block，栅格定位不生效）；
+   桌面端（≥900px）见下方媒体查询：#wpInline 拆散为「视频下方信息区 + 右侧纯聊天栏」，
    text-shadow 经 display:contents 仍可被子区继承 */
 body.wp-watch-mode #wpInline {
   grid-column: 2;
@@ -141,7 +147,7 @@ body.wp-watch-mode #wpInline {
 body.wp-watch-mode footer {
   display: none !important;
 }
-@media (min-width: 769px) {
+@media (min-width: 900px) {
   /* 页面锁定：html/body 均禁止滚动（页眉已移除，无 padding-top 让位需求） */
   html.wp-watch-mode,
   body.wp-watch-mode {
@@ -220,10 +226,13 @@ body.wp-watch-mode footer {
   }
   /* ── 信息区密度优化：组件不再横向拉伸整行 ──
      左子列 = 房态（房间码/复制/成员/连接提示），右子列 = 影片信息与操作；
-     两个视图块各占一列，单块视图（错误/连接中）自动占满整行 */
+     两个视图块各占一列，单块视图（错误/连接中）自动占满整行。
+     右子列保底 240px——「一排内容完整展示」的最低保障（双缓存进度条并排
+     230px、选片卡片横排 226px），防止被房态子列挤压成逐字换行/按钮一个一行；
+     三栏总宽不足时由外层断点（<900px）整体切竖向堆叠，不会走到挤压状态 */
   body.wp-watch-mode .wp-main {
     display: grid;
-    grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+    grid-template-columns: minmax(250px, 320px) minmax(240px, 1fr);
     column-gap: 36px;
     align-items: start;
     align-content: start;
@@ -395,17 +404,16 @@ body.wp-watch-mode footer {
   display: none;
 }
 
-/* 中窄屏（769–1099px）：右栏收窄，为视频尽量让宽 */
-@media (max-width: 1099px) and (min-width: 769px) {
+/* 中窄屏（900–1099px）：右栏收窄，为视频尽量让宽（左栏仍保住 526px 最低尺寸） */
+@media (max-width: 1099px) and (min-width: 900px) {
   body.wp-watch-mode main.container {
-    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-columns: minmax(526px, 1fr) 320px;
     column-gap: 16px;
   }
 }
 
 /* ============================================================
-   移动端（≤768px）：抽屉改底部上滑；观影 UI 改为视频下方单列堆叠
-   （同样是页面内容直接坐在背景上，自然展开无内部滚动）
+   移动端（≤768px）：抽屉改底部上滑
    ============================================================ */
 @media (max-width: 768px) {
   .wp-panel {
@@ -423,6 +431,16 @@ body.wp-watch-mode footer {
   .wp-panel.open {
     transform: translateY(0);
   }
+}
+
+/* ============================================================
+   观影模式竖向堆叠（≤899px）：视口宽度不足以满足三栏最低尺寸
+   （视频+信息区 526 + 缓存/操作子列 240 + 聊天 320 + 间距）时，
+   放弃多栏排列，按手机竖向方式单列堆叠：视频在上，房态/操作与
+   聊天依次向下自然展开；桌面端视口锁定随 ≥900px 断点一并解除，
+   页面恢复滚动（同样是页面内容直接坐在背景上，无内部滚动）
+   ============================================================ */
+@media (max-width: 899px) {
   body.wp-watch-mode main.container {
     display: block;
   }
@@ -645,7 +663,7 @@ body.wp-watch-mode footer {
   color: #c4dcff;
 }
 
-/* 成员区：首字彩色气泡 + 昵称 + 状态点 + 徽标 */
+/* 成员区：人形剪影头像（无背景色） + 昵称 + 状态点 + 徽标 */
 .wp-members {
   display: flex;
   align-items: center;
@@ -667,9 +685,16 @@ body.wp-watch-mode footer {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  color: rgba(214, 231, 252, 0.9);
+}
+.wp-avatar svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.8;
+}
+/* 等待加入的对端：剪影淡显 */
+.wp-avatar.wp-avatar-ph {
+  color: rgba(155, 180, 218, 0.4);
 }
 .wp-name {
   font-size: 12px;
@@ -1069,12 +1094,24 @@ body.wp-watch-mode footer {
   user-select: none;
   transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
-/* 中窄屏（≤1099px）右栏较窄：仅显示图标，悬停/焦点仍有 title 提示 */
+/* 工具按钮可读性：图标+文字并列，一眼可读（此前 ≤1099px 隐藏文字只剩图标，
+   图标语义不够直白，用户必须逐个试才知道功能）。
+   仅在放不下的两处退回纯图标（悬停/焦点仍有 title 提示）：
+   1) 抽屉壳（.wp-panel 定宽 340px，装不下六个带字按钮）
+   2) ≤640px 手机窄屏（堆叠头部横向空间不足） */
+.wp-panel .wp-head-tools .wp-tool-btn span {
+  display: none;
+}
 @media (max-width: 1099px) {
-  .wp-head-tools .wp-tool-btn span {
+  .wp-inline .wp-head-tools .wp-tool-btn {
+    padding: 5px 7px; /* 中窄屏文字标签保留，仅收窄内边距 */
+  }
+}
+@media (max-width: 640px) {
+  .wp-inline .wp-head-tools .wp-tool-btn span {
     display: none;
   }
-  .wp-head-tools .wp-tool-btn {
+  .wp-inline .wp-head-tools .wp-tool-btn {
     padding: 5px 7px;
   }
 }
@@ -1221,44 +1258,58 @@ body.wp-watch-mode footer {
   color: var(--text-muted, rgba(180, 200, 230, 0.5));
   margin: 6px 0;
 }
+/* 聊天输入行：玻璃胶囊外壳，发送按钮内嵌右端（圆形纸飞机图标） */
 .wp-chat-input-row {
   flex: none;
   display: flex;
-  gap: 8px;
-  padding: 6px 2px 6px;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 4px 4px 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(200, 220, 245, 0.25);
+  background: rgba(155, 180, 218, 0.1);
+  transition: border-color 0.2s;
+}
+.wp-chat-input-row:focus-within {
+  border-color: rgba(122, 180, 255, 0.6);
 }
 .wp-chat-input {
   flex: 1;
   min-width: 0;
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(200, 220, 245, 0.25);
-  background: rgba(155, 180, 218, 0.1);
+  padding: 7px 0;
+  border: none;
+  background: transparent;
   color: var(--text-primary, rgba(236, 244, 255, 0.96));
   font-size: 13px;
   font-family: 'Noto Sans SC', sans-serif;
   outline: none;
-  transition: border-color 0.2s;
-}
-.wp-chat-input:focus {
-  border-color: rgba(122, 180, 255, 0.6);
 }
 .wp-send {
   flex: none;
-  padding: 0 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(122, 180, 255, 0.55);
-  background: rgba(74, 168, 255, 0.75);
-  color: #fff;
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0 7px 0 0; /* 图标与右缘留呼吸空隙 */
+  border-radius: 50%;
+  border: none;
+  /* 内嵌发送钮：无底色，仅保留纸飞机图形（悬浮时轻微显底作反馈） */
+  background: transparent;
+  color: rgba(214, 231, 252, 0.88);
   cursor: pointer;
   transition: background 0.2s, transform 0.1s;
 }
+.wp-send svg {
+  width: 15px;
+  height: 15px;
+}
 .wp-send:hover {
-  background: rgba(94, 182, 255, 0.9);
+  background: rgba(88, 195, 255, 0.16);
 }
 .wp-send:active {
-  transform: scale(0.97);
+  transform: scale(0.92);
 }
 
 /* ============================================================

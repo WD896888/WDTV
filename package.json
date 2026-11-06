@@ -1,14 +1,20 @@
 {
   "name": "wdtv",
   "type": "module",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "免费在线视频搜索与观看平台",
   "author": "bestZwei",
   "license": "Apache-2.0",
   "scripts": {
     "dev": "nodemon server.mjs",
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "test": "node scripts/run-tests.mjs",
+    "version:check": "node scripts/bump-version.mjs check",
+    "version:sync": "node scripts/bump-version.mjs sync",
+    "version:bump": "node scripts/bump-version.mjs bump",
+    "version:changelog": "node scripts/bump-version.mjs changelog",
+    "selfcheck": "node scripts/selfcheck.mjs"
   },
   "dependencies": {
     "axios": "^1.9.0",

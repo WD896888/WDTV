@@ -1,12 +1,19 @@
 # Cloudflare Pages 项目配置（Git 集成部署与 `npx wrangler pages deploy` 均读取本文件）
 # 注意：存在本文件后，非敏感环境变量以 [vars] 为准，Dashboard 中的同名变量将被忽略；
 # 敏感变量（AUTH_SECRET）请用 secret：npx wrangler pages secret put AUTH_SECRET --project-name=wdtv
-
+# ⚠️ AUTH_SECRET 关键警告：它同时决定 JWT 签名与所有账号的密码哈希。
+#    1) 请在首个账号注册【之前】设置好，设置后【永远不要更改或删除】——
+#       任何变动都会使全部已注册账号立即无法登录（只能重新注册）；
+#    2) 未设置时系统回退到公开默认值（与本地开发一致，可用但不安全），
+#       部署后可访问 /api/config 检查 authSecretSet 字段自检。
 name = "wdtv"
 compatibility_date = "2025-09-01"
-pages_build_output_dir = "."
+# 部署暂存目录：由 deploy-pages.mjs 按白名单构建（严禁直接设为 "." ——
+# wrangler pages deploy 不读 .assetsignore，直接部署根目录会把 server.mjs、
+# data/（本地账号库）、日志、测试脚本等全部公开）
+pages_build_output_dir = "deploy-dist"
 
-# 代理函数使用的环境变量（与 Vercel 版语义一致）
+# 代理函数使用的环境变量
 [vars]
 DEBUG = "false"
 # 二进制内容（ts 分片、图片等）缓存时长（秒）

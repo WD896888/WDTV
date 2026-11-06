@@ -104,6 +104,9 @@ let currentVideoTitle = '';
 let currentEpisodeIndex = 0;
 let art = null; // 用于 ArtPlayer 实例
 let currentHls = null; // 跟踪当前HLS实例
+// 播放器实例代次：每次 initPlayer 递增，用于让已销毁的旧 art 实例残留的 video:error 静默失效。
+// 取代原先恒为 false 的 window.isSwitchingVideo（全项目 1 读 0 写，保护从未生效）。
+let wdtvPlayerGeneration = 0;
 let resolutionBadgeEl = null; // 播放器下方分辨率显示元素
 let playingLevelBitrate = null; // 当前实际播放档位的声明码率（bps，null 表示未知/单档位/非HLS）
 let measuredLevelBitrate = null; // 实测媒体码率（分片字节/时长估算，bps）：单档源常无声明 BANDWIDTH，用它兜底显示
@@ -126,6 +129,30 @@ let isUserSeeking = false; // 用户是否正在拖拽进度条（拖到结尾�
 let userClickedPosition = null; // 记录用户点击的位置
 let shortcutHintTimeout = null; // 用于控制快捷键提示显示时间
 let adFilteringEnabled = true; // 默认开启广告过滤
+// ===== 多机制广告过滤（js/ad-filter.js 共享引擎）运行态 =====
+let adAutoSkipEnabled = false;  // 低置信度可疑区域播放时自动 seek 跳过（默认关，设置可开）
+let adSkipRegions = null;       // 当前档位可疑区域 [{start,end,reason,confidence}]（输出时间轴坐标）
+let adSkipToastShown = false;   // 本集是否已弹过剔除摘要
+let adSkipLastAt = 0;           // 上次自动跳过的 performance.now()（1s 冷却防 seek 循环）
+const filterStatsByUrl = new Map(); // 清单 URL → { removed, regions, stats }（LEVEL_LOADED 时按 details.url 取用）
+// ===== 批次4 A2：跳过标记运行态 =====
+// 存储键与默认开关统一取自 PLAYER_CONFIG（config.js 在 player.js 之前加载），
+// 否则 config.js 的两个键会成为「改了也不生效」的死配置。
+const WDTV_SKIP_STORAGE = (typeof PLAYER_CONFIG !== 'undefined' && PLAYER_CONFIG.skipMarksStorage) || 'wdtvSkipMarks';
+const WDTV_SKIP_UNDO_MS = 12000;           // 12s 撤销窗
+let skipMarksEnabled = (typeof PLAYER_CONFIG !== 'undefined' && PLAYER_CONFIG.skipMarksEnabled === true); // 默认关；随后由 wdtvRefreshSkipMarksState() 用存储值覆盖
+let wdtvSkipStore = { enabled: false, marks: {} };
+let skipMarksKey = '';                     // 当前剧的存储键（t:归一片名 或 fallback）
+let skipSuppressedThisEpisode = new Set(); // 撤销后的片段本集不再自动跳，换集清空
+let skipUndoState = null;                  // { from, target, skipKey, timer }；12s 内可撤销
+let skipMiddlePending = null;              // Shift+S 记录的中段起点
+let skipLastPosition = 0;                  // 上次 timeupdate 的位置，供片尾连续播放判定
+let skipToastEl = null, skipPanelEl = null;
+// ===== 批次4 深度审查修复：跨函数共享的运行态（统一 wdtv 前缀，避免经典脚本全局词法重名）=====
+let wdtvEndingSkipPending = false; // 本次 video:ended 是否由「标记自动跳到片尾」触发（对齐 12s 撤销窗）
+let wdtvAutoPlayNextTimer = 0;     // video:ended 排队换集的 setTimeout 句柄（可取消 / 防重复排队）
+let wdtvHlsRetryTimer = 0;         // A3 退避 retry timer 的模块级镜像（换集 destroy 时跨闭包清理）
+let wdtvForceErrorVisible = false; // force 致命错误层保持标志（timeupdate/playing 不自动隐藏）
 const RACE_HEDGE_STORAGE = 'wdtvRaceHedge'; // 关键路径竞速兜底开关（流量下直连慢但在流时代理并行竞速；默认关闭）
 let currentVideoUrl = ''; // 记录当前实际的视频URL
 let wdtvWatchParty = null; // 双人共同观影控制器（js/watch-party.js，建房前仅有事件监听不发包）
@@ -135,7 +162,6 @@ let syntheticTiers = []; // 单档源探测到的同级清晰度目录 [{ label,
 let qualitySwapSeek = null; // 清晰度目录切换后待恢复的播放位置
 let tierProbeToken = 0; // 探测竞态令牌：换集/换源后旧探测结果作废
 let tierSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加探测档位清晰度菜单
-let bitrateSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加画质模式菜单
 let speedSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加长按倍速/区域与双击快退快进秒数菜单
 let tierProbeInfo = null; // 最近一次探测结果摘要 { host, probed, trials, real }（面板透出探测透明度）
 const tierZeroToastHosts = new Set(); // 本页会话内已弹过"0 档可用"提示的源主机（避免每集重复打扰）
@@ -160,21 +186,119 @@ function getErrorEl() {
     return cachedErrorEl;
 }
 
+// force 致命错误层（switch-source）必须一直可见，不能被 timeupdate / playing 自动隐藏。
+// 主动关闭错误层的统一入口（换集 / 换源 / 用户手动换源重试成功）：同时清掉保持标志，
+// 让随后的 timeupdate / playing 自动隐藏恢复原有语义。
+function wdtvHideErrorLayer() {
+    wdtvForceErrorVisible = false;
+    const errEl = getErrorEl();
+    if (errEl) errEl.style.display = 'none';
+}
+
 // 绑定"播放后隐藏错误提示"监听（同一 video 元素只绑一次）
 function ensureErrorHideListeners(video) {
     if (errorListenerVideos.has(video)) return;
     errorListenerVideos.add(video);
     video.addEventListener('playing', function () {
         videoPlaybackStarted = true;
+        if (wdtvForceErrorVisible) return;
         const errEl = getErrorEl();
         if (errEl) errEl.style.display = 'none';
     });
     video.addEventListener('timeupdate', function () {
-        if (video.currentTime > 1) {
+        if (video.currentTime > 1 && !wdtvForceErrorVisible) {
             const errEl = getErrorEl();
             if (errEl) errEl.style.display = 'none';
         }
     });
+}
+
+// ===== 批次4 A7-b：进度保存监听随 video 重建而重挂 =====
+// 原实现在 initializePageContent 里用 setInterval(waitForVideo,200) 绑一次后 clearInterval，
+// WebKit 换集走 initPlayer 重建 <video> 后新元素没有 pause/timeupdate 监听，进度不再自动保存。
+// 改为具名函数 + WeakSet 防重绑，由 initPlayer 的 customType.m3u8 每次拿到新 video 时调用。
+const progressListenerVideos = new WeakSet();
+function bindProgressListeners(video) {
+    if (!video || progressListenerVideos.has(video)) return;
+    progressListenerVideos.add(video);
+    video.addEventListener('pause', saveCurrentProgress);
+    let lastSave = 0;
+    video.addEventListener('timeupdate', function () {
+        const now = Date.now();
+        if (now - lastSave > 10000) { // 每 10 秒最多保存一次
+            saveCurrentProgress();
+            lastSave = now;
+        }
+    });
+}
+
+// ===== 批次4：程序自动 seek 统一入口（A7-b 进度恢复 / A2 跳过标记共用）=====
+// 自动跳过、进度恢复、换档恢复、撤销等「非用户主动」的进度跳变，会触发 video:seeking，
+// 被共看模块 onLocalSeeking 误判成用户拖进度条并广播给整个房间（房主尤其明显）。
+// 写 currentTime 前先打 600ms 抑制标记，复用 watch-party.js 既有 suppress()（不改同步协议）。
+// 用户主动 seek（进度条点击 / 手势 / 方向键）绝不走这里，保持房主拖动可同步给 guest 的语义。
+function applyProgrammaticSeek(video, target) {
+    if (!video || !Number.isFinite(target)) return false;
+    try {
+        if (wdtvWatchParty && typeof wdtvWatchParty.suppressLocalSeek === 'function') {
+            wdtvWatchParty.suppressLocalSeek();
+        }
+    } catch (e) { /* 模块未加载时静默降级 */ }
+    try { video.currentTime = target; return true; } catch (e) { return false; }
+}
+
+// ===== 批次4 B1：URL 状态局部子集 —— 统一写入口 =====
+// 全项目换集用 replaceState（不污染历史），本 helper 只按 patch 覆盖指定参数：
+//   · patch 值为 null/undefined 表示删除该参数；removes 为额外要删的参数名数组
+//   · 绝不删除 room（共看刷新重连依赖它透传）
+//   · 不做 pushState、不把进度写进 URL、不改 goBack() 语义
+function replaceUrlState(patch, removes) {
+    try {
+        const u = new URL(window.location.href);
+        Object.keys(patch || {}).forEach(function (k) {
+            if (k === 'room') return; // room 只允许透传，不允许被改写
+            const v = patch[k];
+            if (v === null || v === undefined) u.searchParams.delete(k);
+            else u.searchParams.set(k, String(v));
+        });
+        (removes || []).forEach(function (k) {
+            if (k === 'room') return; // 关键：绝不删除 room
+            u.searchParams.delete(k);
+        });
+        window.history.replaceState({}, '', u.toString());
+    } catch (e) { /* URL 构造失败时保持原状 */ }
+}
+
+// ===== 批次4 A7-b：进度恢复（有效 duration 才 seek，换集自动失效）=====
+// 按当前视频 URL 记录「本集已尝试恢复」，避免 durationchange/canplay/loadedmetadata 重复 seek；
+// 换集后 currentVideoUrl 变化，标记自然失效，无需在每条换集路径里手动重置。
+let progressRestoreAttemptedFor = '';
+function tryRestoreProgress() {
+    if (!art || !art.video) return;
+    // 关键：duration 未就绪 / NaN / Infinity 时不消费进度标记，也不 seek，等后续事件再试
+    const duration = art.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const key = currentVideoUrl || '';
+    if (progressRestoreAttemptedFor === key) return;
+    progressRestoreAttemptedFor = key;
+
+    // 优先 URL 的 position 参数，其次 localStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    const savedPosition = parseInt(urlParams.get('position') || '0', 10);
+    if (Number.isFinite(savedPosition) && savedPosition > 10 && savedPosition < duration - 2) {
+        if (applyProgrammaticSeek(art.video, savedPosition)) showPositionRestoreHint(savedPosition);
+        return;
+    }
+    try {
+        const progressStr = localStorage.getItem('videoProgress_' + getVideoId());
+        if (!progressStr) return;
+        const progress = JSON.parse(progressStr);
+        if (progress && typeof progress.position === 'number' &&
+            Number.isFinite(progress.position) &&
+            progress.position > 10 && progress.position < duration - 2) {
+            if (applyProgrammaticSeek(art.video, progress.position)) showPositionRestoreHint(progress.position);
+        }
+    } catch (e) { }
 }
 
 // 视频是否已开始播放（模块级：换集/换实例时重置，供错误处理判断）
@@ -212,19 +336,12 @@ function initializePageContent() {
             if (nestedVideoUrl) {
                 videoUrl = nestedVideoUrl;
 
-                // 更新当前URL参数
-                const url = new URL(window.location.href);
-                if (!urlParams.has('position') && nestedPosition) {
-                    url.searchParams.set('position', nestedPosition);
-                }
-                if (!urlParams.has('index') && nestedIndex) {
-                    url.searchParams.set('index', nestedIndex);
-                }
-                if (!urlParams.has('title') && nestedTitle) {
-                    url.searchParams.set('title', nestedTitle);
-                }
-                // 替换当前URL
-                window.history.replaceState({}, '', url);
+                // 更新当前URL参数（批次4 B1：收敛到统一 helper，room 保持透传）
+                const nestedPatch = {};
+                if (!urlParams.has('position') && nestedPosition) nestedPatch.position = nestedPosition;
+                if (!urlParams.has('index') && nestedIndex) nestedPatch.index = nestedIndex;
+                if (!urlParams.has('title') && nestedTitle) nestedPatch.title = nestedTitle;
+                replaceUrlState(nestedPatch);
             } else {
                 showError('历史记录链接无效，请返回首页重新访问');
             }
@@ -246,6 +363,11 @@ function initializePageContent() {
 
     // 获取广告过滤设置
     adFilteringEnabled = localStorage.getItem(PLAYER_CONFIG.adFilteringStorage) !== 'false'; // 默认为true
+    // 广告自动跳过（低置信度可疑区域进入时 seek 跳走）：默认关
+    adAutoSkipEnabled = localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) === 'true';
+    // 批次4 A2：片头/中段/片尾跳过标记（默认关）。与「广告自动跳过」是两个独立开关，
+    // 但共用 adAutoSkipCheck 的 1s 冷却 / isUserSeeking 避让 / 共看 guest 避让，杜绝双 seek 循环。
+    wdtvRefreshSkipMarksState();
 
     // 初始化整集后台缓存模块（IndexedDB + hls loader 读写穿透 + LRU + 缓存管理器）
     VideoCache.init({
@@ -301,7 +423,9 @@ function initializePageContent() {
                 getEpisodes: () => currentEpisodes,
                 getEpisodeNames: () => currentEpisodeNames,
                 getTitle: () => currentVideoTitle,
-                getEpisode: () => currentEpisodeIndex
+                getEpisode: () => currentEpisodeIndex,
+                // 始终最高画质策略：共看模块解锁档位时经此重新钳到最高档（不再恢复 ABR 自动档）
+                lockHighestLevel: () => lockHighestLevel()
             });
         }
     } catch (e) { wdtvWatchParty = null; }
@@ -339,16 +463,13 @@ function initializePageContent() {
             nextDanmuPrefetched = false;
             userClickedPosition = null;
             clearVideoProgress();
-            const errElDirect = getErrorEl();
-            if (errElDirect) errElDirect.style.display = 'none';
-            try {
-                const u = new URL(window.location.href);
-                u.searchParams.set('url', url);
-                u.searchParams.set('index', String(currentEpisodeIndex));
-                if (title) u.searchParams.set('title', title);
-                u.searchParams.delete('position');
-                window.history.replaceState({}, '', u.toString());
-            } catch (e) { }
+            wdtvHideErrorLayer();
+            // 批次4 B1：统一 helper；room 透传由 helper 保证。
+            // 原实现仅「title 非空才 set」，空标题时保留 URL 里已有的 title，这里保持同样语义：
+            // 不把 undefined 放进 patch（helper 会把 undefined 视为删除）。
+            const directPatch = { url: url, index: String(currentEpisodeIndex) };
+            if (title) directPatch.title = title;
+            replaceUrlState(directPatch, ['position']);
             if (isWebkit || !art) {
                 initPlayer(url);
             } else {
@@ -398,10 +519,9 @@ function initializePageContent() {
                 index = 0;
             }
 
-            // 更新URL以反映修正后的索引
-            const newUrl = new URL(window.location.href);
-            newUrl.searchParams.set('index', index);
-            window.history.replaceState({}, '', newUrl);
+            // 批次4 B1：越界 index 钳位也走统一 helper（原实现把 URL 对象直接传给 replaceState，
+            // 在部分浏览器上会因非字符串参数被隐式转换，这里显式 String 化且保留 room）
+            replaceUrlState({ index: String(index) });
         }
 
         // 更新当前索引为验证过的值
@@ -478,6 +598,30 @@ function initializePageContent() {
     // 添加键盘快捷键事件监听
     document.addEventListener('keydown', handleKeyboardShortcuts);
 
+    // 批次4 B1：浏览器前进/后退时只做最小 UI 状态对齐（index / 标题 / 集数信息）。
+    // 换集全用 replaceState 不产生历史条目，popstate 主要来自首页 /s= 的双推已去除后的残留导航。
+    // 刻意不调 initPlayer / art.switch / 不重新起播，否则后退=重载视频会断共看；room 只透传不消费。
+    window.addEventListener('popstate', function () {
+        try {
+            const p = new URLSearchParams(window.location.search);
+            const idx = parseInt(p.get('index') || '', 10);
+            if (Number.isFinite(idx) && idx >= 0 && currentEpisodes.length > 0 && idx < currentEpisodes.length) {
+                currentEpisodeIndex = idx;
+            }
+            const popTitle = p.get('title');
+            if (popTitle) {
+                currentVideoTitle = popTitle;
+                const titleEl = document.getElementById('videoTitle');
+                if (titleEl) titleEl.textContent = popTitle;
+            }
+            updateEpisodeInfo();
+            // B1：补上选集网格高亮与页面标题，仅做 UI 对齐，不重新起播 / initPlayer / art.switch
+            renderEpisodes();
+            document.title = (currentVideoTitle || '') + ' - WDTV播放器';
+            updateOrderButton();
+        } catch (e) { /* 状态对齐失败不影响播放 */ }
+    });
+
     // 添加页面离开事件监听，保存播放位置
     window.addEventListener('beforeunload', saveCurrentProgress);
 
@@ -488,30 +632,18 @@ function initializePageContent() {
         }
     });
 
-    // 视频暂停时也保存
-    const waitForVideo = setInterval(() => {
-        if (art && art.video) {
-            art.video.addEventListener('pause', saveCurrentProgress);
-
-            // 播放进度变化时节流保存（10s 一次，写历史为轻量瘦身后开销可控）
-            let lastSave = 0;
-            art.video.addEventListener('timeupdate', function() {
-                const now = Date.now();
-                if (now - lastSave > 10000) { // 每10秒最多保存一次
-                    saveCurrentProgress();
-                    lastSave = now;
-                }
-            });
-
-            clearInterval(waitForVideo);
-        }
-    }, 200);
+    // 批次4 A7-b：pause/timeupdate 进度保存监听改由 initPlayer 的 video:ready / customType.m3u8
+    // 每次拿到 <video> 时经 bindProgressListeners() 重挂（WeakSet 防重绑）。
+    // 原来这里的一次性 setInterval(waitForVideo,200) 只绑首个 video，WebKit 换集重建后监听丢失，已移除。
 }
 
 // 处理键盘快捷键
 function handleKeyboardShortcuts(e) {
     // 忽略输入框中的按键事件
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    // 批次4 A2：标记类快捷键一律 Shift（I/O/S/E/P），关闭状态下直接放行不劫持
+    if (wdtvHandleSkipShortcut(e)) return;
 
     // Alt + 左箭头 = 上一集
     if (e.altKey && e.key === 'ArrowLeft') {
@@ -584,6 +716,23 @@ function handleKeyboardShortcuts(e) {
             e.preventDefault();
         }
     }
+
+    // 批次4 A7-b：M = 静音/取消静音（README 有、原实现缺失）
+    if (e.key === 'm' || e.key === 'M') {
+        if (art) {
+            art.muted = !art.muted;
+            showShortcutHint(art.muted ? '已静音' : '取消静音', 'volume');
+            e.preventDefault();
+        }
+    }
+
+    // 批次4 A7-b：Esc = 退出全屏（仅在全屏时接管，避免干扰剧集弹窗自身的 Esc 关闭）
+    if (e.key === 'Escape') {
+        if (art && art.fullscreen) {
+            art.fullscreen = false;
+            e.preventDefault();
+        }
+    }
 }
 
 // 显示快捷键提示
@@ -612,6 +761,9 @@ function showShortcutHint(text, direction) {
         iconElement.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5"></path>';
     } else if (direction === 'play') {
         iconElement.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3l14 9-14 9V3z"></path>';
+    } else if (direction === 'volume') {
+        // 批次4 A7-b：M 静音提示用喇叭图标，避免沿用上一次方向箭头
+        iconElement.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5L6 9H3v6h3l5 4V5zM15.5 8.5a5 5 0 010 7M18 6a8.5 8.5 0 010 12"></path>';
     }
 
     // 显示提示
@@ -749,17 +901,19 @@ function setupQualityMenu(levels) {
         (b.level.height || 0) - (a.level.height || 0) ||
         (b.level.bitrate || 0) - (a.level.bitrate || 0)
     );
-    const selector = [{ html: '自动', level: -1, default: true }].concat(
-        withIndex.map(({ level, idx }) => ({
-            html: levelLabel(level),
-            level: idx
-        }))
-    );
+    // 已取消 ABR 自动档：菜单只保留手动档位，默认选中最高档（排序后第一项）。
+    // 每次换集/换源重建 hls 后由 lockHighestLevel() 重新锁回最高档，
+    // 用户手动切到的低档仅在当集有效，不会延续到下一集。
+    const selector = withIndex.map(({ level, idx }, i) => ({
+        html: levelLabel(level),
+        level: idx,
+        default: i === 0
+    }));
     try {
         settingApi.add({
             html: '清晰度',
             width: 200,
-            tooltip: '自动',
+            tooltip: levelLabel(withIndex[0].level),
             selector,
             onSelect(item) {
                 if (currentHls) {
@@ -788,8 +942,9 @@ async function resolvePlayableUrl(videoUrl) {
 // 这里对单档源做目录探测：替换清晰度目录段逐一试探，探到的档位进入"清晰度"菜单；
 // 切换 = 整条 URL 换源重建播放器（进度无缝恢复）；探不到的档位自动剔除（向下兼容）。
 const TIER_LADDER_STORE_KEY = 'wdtvTierLadderV1'; // 每源主机名 → 档位目录存在性（永久缓存，避免每集重复探测）
-const TIER_PREF_PREFIX = 'wdtvTierPref:';         // 每源主机名 → 用户选定档位（换集自动延续）
+const TIER_PREF_PREFIX = 'wdtvTierPref:';         // 每源主机名 → 用户选定档位（仅在它本身是最高档时延续）
 const TIER_HINT_PREFIX = 'wdtvTierHint:';         // 每源主机名 → "发现更多档位"提示只弹一次
+const TIER_AUTOMAX_HINT_PREFIX = 'wdtvTierAutoMaxHint:'; // 每源主机名 → "已自动切最高档"提示只弹一次
 
 // 解包同源代理 URL：/proxy/<encodeURIComponent(目标)> → 内层真实 URL；
 // 非代理形式（直连播放）原样返回。HTTPS 站点播放 HTTP 源时 hls.js 看到的
@@ -928,6 +1083,12 @@ function makeSyntheticTier(info, variantUrl, token, dur) {
     return { label: tierLabel(kbps, height), url, kbps, height, dur: dur || null };
 }
 
+// 始终最高画质策略：探测档位是否高于当前档（双方都有分辨率后缀比高度，否则比码率）
+function isHigherTierThanCurrent(tier, curInfo) {
+    if (tier.height && curInfo.height) return tier.height > curInfo.height;
+    return tier.kbps > curInfo.token;
+}
+
 // 单档源入口：从 hls.js 解析出的唯一变体地址里找清晰度目录，再探测同级档位
 async function maybeStartTierDiscovery() {
     try {
@@ -979,15 +1140,31 @@ async function maybeStartTierDiscovery() {
             showToast(`同级目录已探测 ${tokens.length} 个，未发现可用清晰度档位`, 'error');
         }
 
-        // 自动延续用户在该源的记忆档位；首次发现更多档位时提示一次
+        // 始终最高画质策略：探测到比当前档更高的档位时自动切过去（整条 URL 换源重建，进度无缝恢复）。
+        // 用户记忆档位仅在它本身就是当前可用的最高档时才延续，避免低档记忆把画质压下去；
+        // 手动切过的低档仅在当集有效，换集重新探测后仍回到最高档。
         const pref = getTierPref(info.host);
         if (pref) {
             const t = syntheticTiers.find(t => t.kbps === pref.kbps && (t.height || null) === (pref.height || null));
-            if (t && t.url !== currentVideoUrl) {
+            if (t && t.url !== currentVideoUrl && isHigherTierThanCurrent(t, info)) {
                 switchToTier(t, true);
                 return;
             }
-        } else if (syntheticTiers.length) {
+        }
+        if (syntheticTiers.length) {
+            const top = syntheticTiers[0]; // 已按高度/码率降序，第一个即探测到的最高档
+            if (top.url !== currentVideoUrl && isHigherTierThanCurrent(top, info)) {
+                // 每源主机只提示一次，避免每集重复打扰
+                try {
+                    if (localStorage.getItem(TIER_AUTOMAX_HINT_PREFIX + info.host) !== '1') {
+                        localStorage.setItem(TIER_AUTOMAX_HINT_PREFIX + info.host, '1');
+                        showToast(`已自动切换到最高画质 ${top.label}`, 'success');
+                    }
+                } catch (e) { }
+                switchToTier(top, true);
+                return;
+            }
+            // 当前已是最高档：保留"发现更多档位"的一次性提示（用户仍可手动向下切换）
             let hinted = false;
             try { hinted = localStorage.getItem(TIER_HINT_PREFIX + info.host) === '1'; } catch (e) { }
             if (!hinted) {
@@ -1047,7 +1224,7 @@ function setupTierSettingsMenu() {
             }
         };
         if (tierSettingsMenuAdded) {
-            // 探测出新档位：原位更新（update 保持行位置，清晰度仍紧随画质模式）
+            // 探测出新档位：原位更新（update 保持行位置，清晰度菜单位置不变）
             if (typeof settingApi.update === 'function') {
                 settingApi.update(option);
             } else {
@@ -1061,40 +1238,6 @@ function setupTierSettingsMenu() {
         }
     } catch (e) {
         tierSettingsMenuAdded = false;
-    }
-}
-
-// 设置面板（齿轮）中的画质模式菜单（自动 ABR / 强制最高锁定最高画质档位）
-function setupBitrateSettingsMenu() {
-    if (!art || bitrateSettingsMenuAdded) return;
-    const settingApi = art.setting || art.settings; // 兼容不同版本 ArtPlayer 的设置API命名
-    if (!settingApi || typeof settingApi.add !== 'function') return;
-    bitrateSettingsMenuAdded = true;
-    const cap = getBitrateCap();
-    try {
-        settingApi.add({
-            html: '画质模式',
-            width: 200,
-            tooltip: cap === 'max' ? '强制最高' : '自动',
-            selector: [
-                { html: '自动', cap: 'auto', default: cap !== 'max' },
-                { html: '强制最高', cap: 'max', default: cap === 'max' }
-            ],
-            onSelect(item) {
-                const val = item.cap === 'max' ? 'max' : Infinity;
-                const prev = getBitrateCap();
-                try { localStorage.setItem(BITRATE_CAP_KEY, String(val)); } catch (err) { }
-                applyBitrateCap(val);
-                // 从"强制最高"（手动锁档）切回自动时，恢复 ABR 自动挡
-                try {
-                    if (prev === 'max' && val !== 'max' && currentHls) currentHls.currentLevel = -1;
-                    else if (currentHls && currentHls.currentLevel === -1) currentHls.nextLevel = -1; // 自动挡下让 hls 立即重新选档
-                } catch (err) { }
-                return item.html;
-            }
-        });
-    } catch (e) {
-        bitrateSettingsMenuAdded = false;
     }
 }
 
@@ -1807,13 +1950,18 @@ async function initPlayer(videoUrl) {
     if (!videoUrl) {
         return
     }
+    // 本次实例代次：旧实例（换集 / 换源后已 destroy）残留的 error 事件不应弹错误层。
+    const playerGeneration = ++wdtvPlayerGeneration;
     videoUrl = await resolvePlayableUrl(videoUrl);
 
     // 重建播放器前中止旧集的后台缓存下载（换源/换集由 customType.m3u8 重新拉起）
     try { VideoCache.abortDownload('rebuild'); } catch (e) { }
 
-    // 销毁旧实例
+    // 销毁旧实例：先清掉可能仍在退避排队中的 A3 retry timer（换集/换源后旧闭包不得再 startLoad）
     if (art) {
+        try {
+            if (wdtvHlsRetryTimer) { clearTimeout(wdtvHlsRetryTimer); wdtvHlsRetryTimer = 0; }
+        } catch (e) { }
         art.destroy();
         art = null;
     }
@@ -1824,8 +1972,12 @@ async function initPlayer(videoUrl) {
     measuredLevelBitrate = null; // 同步重置实测码率，避免上一集的数值串台
     qualityMenuAdded = false;
     tierSettingsMenuAdded = false; // 设置面板随播放器实例销毁重建，重置探测档位菜单标记
-    bitrateSettingsMenuAdded = false; // 同步重置画质模式菜单标记
     speedSettingsMenuAdded = false; // 同步重置长按倍速/区域菜单标记
+    // 广告过滤运行态重置：换集后可疑区域/遥测标记全部作废（引擎按新清单重新产出）
+    adSkipRegions = null;
+    adSkipToastShown = false;
+    adSkipLastAt = 0;
+    filterStatsByUrl.clear();
     playerLocked = false; // 播放器实例重建后解锁（锁定遮罩随旧实例销毁）
     nextManifestPrefetched = false; // 重置下一集预取标志
     nextDanmuPrefetched = false; // 同步重置下一集弹幕预热标志（新集起播 30 秒后预热其下一集）
@@ -1859,13 +2011,10 @@ async function initPlayer(videoUrl) {
         manifestLoadingRetryDelay: 1000,
         levelLoadingMaxRetry: 4,
         levelLoadingRetryDelay: 1000,
+        // 画质策略：始终播放最高画质，取消"网络卡顿自动降画质"（ABR 自动选档）机制。
+        // startLevel:-1 只决定清单解析后、MANIFEST_PARSED 锁定最高档之前的起始档，
+        // 随即由 lockHighestLevel() 钳到最高档并锁定，ABR 不再参与选档。
         startLevel: -1,
-        // 初始带宽估计抬高：首屏更快选到合理档位，弱网不至于先锁死低档
-        // （配合 abrBandWidthUpFactor=0.7 的保守升档，估高后也会快速回落）
-        abrEwmaDefaultEstimate: 2000000,
-        abrBandWidthFactor: 0.95,
-        abrBandWidthUpFactor: 0.7,
-        abrMaxWithRealBitrate: true,
         stretchShortVideoTrack: true,
         appendErrorMaxRetry: 5,  // 增加尝试次数
         liveSyncDurationCount: 3,
@@ -1958,8 +2107,11 @@ async function initPlayer(videoUrl) {
         },
         customType: {
             m3u8: function (video, url) {
-                // 清理之前的HLS实例
+                // 清理之前的HLS实例：先清掉上一个闭包遗留的退避 retry timer
                 if (currentHls && currentHls.destroy) {
+                    try {
+                        if (wdtvHlsRetryTimer) { clearTimeout(wdtvHlsRetryTimer); wdtvHlsRetryTimer = 0; }
+                    } catch (e) { }
                     try {
                         currentHls.destroy();
                     } catch (e) {
@@ -1978,14 +2130,19 @@ async function initPlayer(videoUrl) {
 
                 // 跟踪是否已经显示错误
                 let errorDisplayed = false;
-                // 跟踪是否有错误发生
-                let errorCount = 0;
-                // 跟踪视频是否出现bufferAppendError
+                // A3 退避 retry 的 timer 句柄：本闭包持有，retry 前先 clear 旧的，避免重复排队
+                let recoveryRetryTimer = 0;
+                // 批次4 A3：恢复计数外置为 state，由纯决策模块 WDTVPlaybackRecovery 计算新 state。
+                // 原 errorCount 与决策模块的 networkRetries/mediaRecoveries 语义重复，已合并消除。
+                let recoveryState = { networkRetries: 0, mediaRecoveries: 0, lastActionAt: 0 };
+                // 跟踪视频是否出现bufferAppendError（保留原独立分支，不并入决策模块）
                 let bufferAppendErrorCount = 0;
 
                 // 播放/进度监听（WeakSet 防重复绑定：换集不销毁 video 时监听器不再累积）
                 videoPlaybackStarted = false;
                 ensureErrorHideListeners(video);
+                // 批次4 A7-b：每个新 <video> 都重挂进度保存监听（WebKit 换集重建实例的关键）
+                bindProgressListeners(video);
 
                 hls.loadSource(url);
                 hls.attachMedia(video);
@@ -2027,8 +2184,8 @@ async function initPlayer(videoUrl) {
                     setupTierSettingsMenu();
                     // 长按倍速/区域菜单排在清晰度之后（设置面板按添加顺序渲染）
                     addSpeedSettings();
-                    // 应用用户设置的画质模式（新 hls 实例需重新钳制）
-                    applyBitrateCap(getBitrateCap());
+                    // 始终锁定最高画质：取消 ABR 自动降档，新 hls 实例需重新钳制
+                    lockHighestLevel();
                     // 换源/换档重建 hls 后重新应用倍速带宽/缓冲策略：
                     // 同一 video 元素倍速未变不会触发 ratechange，但新 hls 实例是默认缓冲配置
                     applyRatePlaybackStrategy((art && art.video) ? art.video.playbackRate : 1);
@@ -2072,12 +2229,12 @@ async function initPlayer(videoUrl) {
                 });
 
                 hls.on(Hls.Events.ERROR, function (event, data) {
-                    // 增加错误计数
-                    errorCount++;
+                    // ===== 批次4 A3：错误恢复改为「纯决策 + 闭包副作用」=====
+                    // WDTVPlaybackRecovery 只算决策与新计数；所有 hls 调用、timer、DOM 提示都留在此闭包。
+                    // 模块缺失时静默回退为原有同步恢复，保证老页面不崩。
+                    const R = window.WDTVPlaybackRecovery;
 
-                    // 坏缓存自愈：分片解析/追加失败且该分片来自本地缓存时，删除缓存记录强制重新走网络下载。
-                    // （截断分片一旦入库会被缓存永久秒回，表现为白色缓存区域内固定几秒无法播放、seek 跳过即正常；
-                    //   未缓存分片为无害 no-op）
+                    // 坏缓存自愈（保留原逻辑，一字未改）：分片解析/追加失败且来自本地缓存时删除缓存记录。
                     try {
                         if (data && data.frag && typeof VideoCache.invalidateFragment === 'function' &&
                             (data.details === Hls.ErrorDetails.FRAG_PARSING_ERROR ||
@@ -2087,58 +2244,103 @@ async function initPlayer(videoUrl) {
                         }
                     } catch (e) { }
 
-                    // 处理bufferAppendError
-                    if (data.details === 'bufferAppendError') {
+                    // bufferAppendError 独立分支（保留原语义，不并入决策模块的计数）。
+                    // 关键：fatal 的 bufferAppendError 不能在这里提前 return——旧实现只要
+                    // videoPlaybackStarted 为真就吞掉整个 handler，播放中致命错误既不提示、
+                    // 也不进入 A3 决策（不换源/不恢复），表现为静默卡死。fatal 一律交给
+                    // 下面的单一决策分支处理。
+                    if (data.details === 'bufferAppendError' && !data.fatal) {
                         bufferAppendErrorCount++;
-                        // 如果视频已经开始播放，则忽略这个错误
-                        if (videoPlaybackStarted) {
+                        if (videoPlaybackStarted) return;
+                        if (bufferAppendErrorCount >= 3) hls.recoverMediaError();
+                    }
+
+                    if (!data.fatal) return;
+
+                    // 模块缺失：回退原有的同步恢复（不改变行为）
+                    if (!R || typeof R.onFatal !== 'function') {
+                        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+                        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+                        else if (!errorDisplayed) {
+                            errorDisplayed = true;
+                            showError('视频加载失败，可能是格式不兼容或源不可用');
+                        }
+                        return;
+                    }
+
+                    const out = R.onFatal({
+                        type: data.type,
+                        details: data.details,
+                        fatal: true,
+                        state: recoveryState,
+                        now: Date.now()
+                    });
+                    recoveryState = out.state;
+                    const d = out.decision;
+
+                    switch (d.action) {
+                        case 'ignore':
                             return;
-                        }
-
-                        // 如果出现多次bufferAppendError但视频未播放，尝试恢复
-                        if (bufferAppendErrorCount >= 3) {
-                            hls.recoverMediaError();
-                        }
-                    }
-
-                    // 如果是致命错误，且视频未播放
-                    if (data.fatal && !videoPlaybackStarted) {
-                        // 尝试恢复错误
-                        switch (data.type) {
-                            case Hls.ErrorTypes.NETWORK_ERROR:
-                                hls.startLoad();
-                                break;
-                            case Hls.ErrorTypes.MEDIA_ERROR:
-                                hls.recoverMediaError();
-                                break;
-                            default:
-                                // 仅在多次恢复尝试后显示错误
-                                if (errorCount > 3 && !errorDisplayed) {
-                                    errorDisplayed = true;
-                                    showError('视频加载失败，可能是格式不兼容或源不可用');
-                                }
-                                break;
-                        }
-                    } else if (data.fatal) {
-                        // 播放中致命错误同样必须恢复：此前被静默吞掉后 hls 彻底停摆，
-                        // 表现为"卡住一直加载不出来、只能手动 seek 才能恢复"
-                        switch (data.type) {
-                            case Hls.ErrorTypes.NETWORK_ERROR:
-                                hls.startLoad();
-                                break;
-                            case Hls.ErrorTypes.MEDIA_ERROR:
-                                hls.recoverMediaError();
-                                break;
-                        }
+                        case 'recover-media':
+                            // hls.js 官方链：第 2 次先换音轨再恢复媒体错误
+                            if (d.swapAudio && typeof hls.swapAudioCodec === 'function') {
+                                try { hls.swapAudioCodec(); } catch (e) { }
+                            }
+                            try { hls.recoverMediaError(); } catch (e) { }
+                            break;
+                        case 'retry':
+                            // 退避 timer 由 player.js 闭包持有，模块只给 delayMs
+                            // 每次排队前清掉本闭包旧 timer 与模块级镜像（覆盖换集后残留的旧实例 timer）
+                            clearTimeout(recoveryRetryTimer);
+                            if (wdtvHlsRetryTimer) clearTimeout(wdtvHlsRetryTimer);
+                            recoveryRetryTimer = setTimeout(function () {
+                                // 换集 / 换源后 currentHls 已指向新实例，旧闭包的 timer 直接放弃，
+                                // 绝不对已 destroy 的 hls 调 startLoad
+                                if (currentHls !== hls) return;
+                                try { hls.startLoad(); } catch (e) { }
+                            }, d.delayMs);
+                            wdtvHlsRetryTimer = recoveryRetryTimer;
+                            break;
+                        case 'switch-source':
+                            // 明确提示 + 手动换源按钮；不自动弹面板（会并发搜索所有源、新增请求）
+                            if (!errorDisplayed) {
+                                errorDisplayed = true;
+                                showError(R.describeHlsError(data.type, data.details) + '，请更换视频源或稍后重试', { switchSource: true, force: true });
+                            }
+                            break;
                     }
                 });
 
-                // 监听分段加载事件
+                // 监听分段加载事件：分片成功加载说明链路恢复，交给决策模块做 3s 静默窗清零
                 hls.on(Hls.Events.FRAG_LOADED, function () {
+                    try {
+                        const R = window.WDTVPlaybackRecovery;
+                        if (R && typeof R.onHealthy === 'function') {
+                            recoveryState = R.onHealthy({ state: recoveryState, now: Date.now() });
+                        }
+                    } catch (e) { }
                 });
 
-                // 监听级别加载事件
-                hls.on(Hls.Events.LEVEL_LOADED, function () {
+                // 监听级别加载事件：把广告过滤产出的可疑区域映射到本档时间轴（运行时跳过层数据源），
+                // 并对删除区缝合点后的首个分片做预热（消除跳时间线空洞前的可见卡顿）
+                hls.on(Hls.Events.LEVEL_LOADED, function (event, data) {
+                    try {
+                        // 档位口径与 video-cache.js attachHls 一致：hls.loadLevel 优先，回退当前档
+                        var lv = (typeof hls.loadLevel === 'number' && hls.loadLevel >= 0 && hls.levels && hls.levels[hls.loadLevel])
+                            ? hls.levels[hls.loadLevel]
+                            : (hls.levels && hls.levels[hls.currentLevel]);
+                        var details = (data && data.details) || (lv && lv.details);
+                        if (!details || !details.url) return;
+                        var entry = filterStatsByUrl.get(details.url);
+                        if (entry) {
+                            // details.fragments 的 start/end 与 region 同处输出时间轴，直接采用
+                            adSkipRegions = (entry.regions && entry.regions.length) ? entry.regions : null;
+                            warmAdSeamFrags(details, entry.removed);
+                        } else {
+                            adSkipRegions = null;
+                        }
+                        maybeToastAdFilterSummary();
+                    } catch (e) { }
                 });
             }
         }
@@ -2225,6 +2427,8 @@ async function initPlayer(videoUrl) {
     // 播放器加载完成后初始隐藏工具栏
     art.on('ready', () => {
         hideControls();
+        // 批次4 A7-b：非 m3u8（customType 不走）时也确保进度保存监听挂上，WeakSet 幂等
+        try { bindProgressListeners(art.video); } catch (e) { }
     });
 
     // 全屏模式处理
@@ -2234,6 +2438,8 @@ async function initPlayer(videoUrl) {
 
     art.on('video:loadedmetadata', function() {
         videoHasEnded = false; // 视频加载时重置结束标志
+        // 批次4 A2：换集/换源清空「本集不再跳」抑制、重算剧键、重绘色带
+        try { wdtvResetSkipEpisode(); } catch (e) { }
 
         // 弹幕跟随换集：非 WebKit 换集走 art.switch（不重建实例、插件不会自动重新匹配），
         // 元数据到达时若弹幕数据仍停留在旧集则重载；重建实例路径集键一致，此处为空操作
@@ -2259,44 +2465,20 @@ async function initPlayer(videoUrl) {
         updateResolutionBadgeFromVideo();
 
         // 清晰度目录切换后的播放位置恢复（换档是整条 URL 重建播放器）
+        // 批次4：走程序自动 seek 入口，避免共看把换档恢复当成用户拖动广播
         if (qualitySwapSeek != null) {
-            try {
-                if (art.duration && art.duration > qualitySwapSeek + 2) art.currentTime = qualitySwapSeek;
-            } catch (e) { }
+            if (Number.isFinite(art.duration) && art.duration > qualitySwapSeek + 2) {
+                applyProgrammaticSeek(art.video, qualitySwapSeek);
+            }
             qualitySwapSeek = null;
         }
 
         // 单档源（伪主列表/媒体列表）：探测同级清晰度目录，向下兼容补充多档位
         maybeStartTierDiscovery();
 
-        // 优先使用URL传递的position参数
-        const urlParams = new URLSearchParams(window.location.search);
-        const savedPosition = parseInt(urlParams.get('position') || '0');
-
-        if (savedPosition > 10 && savedPosition < art.duration - 2) {
-            // 如果URL中有有效的播放位置参数，直接使用它
-            art.currentTime = savedPosition;
-            showPositionRestoreHint(savedPosition);
-        } else {
-            // 否则尝试从本地存储恢复播放进度
-            try {
-                const progressKey = 'videoProgress_' + getVideoId();
-                const progressStr = localStorage.getItem(progressKey);
-                if (progressStr && art.duration > 0) {
-                    const progress = JSON.parse(progressStr);
-                    if (
-                        progress &&
-                        typeof progress.position === 'number' &&
-                        progress.position > 10 &&
-                        progress.position < art.duration - 2
-                    ) {
-                        art.currentTime = progress.position;
-                        showPositionRestoreHint(progress.position);
-                    }
-                }
-            } catch (e) {
-            }
-        }
+        // 批次4 A7-b：进度恢复抽成 tryRestoreProgress()（URL position 优先，其次 localStorage），
+        // duration 无效时不消费标记；由 loadedmetadata / durationchange / canplay 三处触发，幂等。
+        tryRestoreProgress();
 
         // 设置进度条点击监听
         setupProgressBarPreciseClicks();
@@ -2308,25 +2490,45 @@ async function initPlayer(videoUrl) {
         try { if (wdtvWatchParty) wdtvWatchParty.onMetadata(); } catch (e) { }
     })
 
+    // 批次4 A7-b：弱网/部分源在 loadedmetadata 时 duration 仍是 NaN 或 0，
+    // 补 durationchange / canplay 兜底重试进度恢复（tryRestoreProgress 内部幂等，本集只 seek 一次）。
+    // A2：durationchange 同时重绘跳过标记色带（duration 变化后百分比需重算）。
+    art.on('video:durationchange', function () {
+        try { tryRestoreProgress(); } catch (e) { }
+        try { wdtvRenderSkipBand(); } catch (e) { }
+    });
+    art.on('video:canplay', function () { try { tryRestoreProgress(); } catch (e) { } });
+    // 全屏 / 窗口尺寸变化时进度条宽度改变，色带用百分比定位，仍需重绘确保容器存在
+    art.on('fullscreen', function () { try { setTimeout(wdtvRenderSkipBand, 120); } catch (e) { } });
+    // resize / fullscreenchange 绑在全局，initPlayer 换集重建时不能重复挂载；
+    // fullscreenchange 只在此处注册一次，进出原生全屏时迁移撤销条/标记面板到当前宿主
+    if (!window.__wdtvSkipResizeBound) {
+        window.__wdtvSkipResizeBound = true;
+        window.addEventListener('resize', function () { try { wdtvRenderSkipBand(); } catch (e) { } });
+        document.addEventListener('fullscreenchange', function () {
+            try { wdtvRelocateSkipOverlays(); } catch (e) { }
+        });
+    }
+
     // 错误处理
     art.on('video:error', function (error) {
-        // 如果正在切换视频，忽略错误
-        if (window.isSwitchingVideo) {
+        // 换集 / 换源后已销毁的旧实例残留错误：代次不匹配则忽略。
+        // 旧实现读 window.isSwitchingVideo（全项目 1 读 0 写，恒 false），保护从未生效。
+        if (playerGeneration !== wdtvPlayerGeneration) {
             return;
         }
 
         // 隐藏所有加载指示器
-        showError('视频播放失败: ' + (error.message || '未知错误'));
+        showError('视频播放失败: ' + (error && (error.message || (error.error && error.error.message)) || '未知错误'));
     });
 
-    // 控制栏快捷功能：选集 / 倍速 / 缓存；清晰度、画质模式与双击快退快进秒数在设置面板（齿轮）内
-    // 画质模式先于清晰度添加（面板按添加顺序渲染，清晰度在其下方）；长按倍速/区域在清单解析后添加
+    // 控制栏快捷功能：选集 / 倍速 / 缓存；清晰度与双击快退快进秒数在设置面板（齿轮）内
+    // 长按倍速/区域在清单解析后添加
     setupEpisodeControlButton();
     setupRateControlButton();
     setupCacheControlButton();
     setupDownloadControlButton();
     setupCinemaFavoriteButton();
-    setupBitrateSettingsMenu();
     // 弹幕设置浮层 + 右上角按钮组（浮层先建好，详情按钮通过 entry 打开它）
     setupDanmuQuickPanel();
     // 右上角弹幕按钮组常驻：开关按钮即时生效，数据加载后由 danmu:loaded 校正确认
@@ -2491,6 +2693,8 @@ async function initPlayer(videoUrl) {
         isUserSeeking = false;
         // 精细化倍速恢复评估：后 12 秒缓存齐 → 全速恢复；后 7 秒 → 半速过渡（无时间兜底）
         try { evaluateStallGuardRestore(); } catch (e) { }
+        // 广告兜底：进入低置信度可疑区域时自动 seek 跳过（设置默认关，adAutoSkipCheck 内部全量避让）
+        try { adAutoSkipCheck(); } catch (e) { }
         // 剩余时长不足 60 秒（或不足 10%）时预取下一集 m3u8 文本，实现无缝连播
         if (art && art.video && isFinite(art.video.duration) && art.video.duration > 0) {
             const remaining = art.video.duration - art.video.currentTime;
@@ -2521,6 +2725,8 @@ async function initPlayer(videoUrl) {
                 stallRateGuard.half = false;
             }
         } catch (e) { }
+        // 批次4 A7-b：用户倍速变化时同步 defaultPlaybackRate（归位/长按由 helper 内部排除）
+        syncDefaultPlaybackRate(art.video.playbackRate);
         applyRatePlaybackStrategy(art.video.playbackRate);
     });
 
@@ -2528,17 +2734,24 @@ async function initPlayer(videoUrl) {
     art.on('video:ended', function () {
         // M3 本地播放：无"下一集"概念，拦截自动连播
         if (window.WDTVNoAutoplay) {
+            wdtvEndingSkipPending = false;
             try { art.pause(); } catch (e) { }
             return;
         }
         videoHasEnded = true;
+        // 消费「片尾自动跳过」标志：本次 ended 由标记跳片尾触发时，把换集延迟对齐到
+        // 12s 撤销窗，给用户留出撤销时间；正常自然结束保持 1000ms。读后立即清零。
+        const endingSkip = wdtvEndingSkipPending;
+        wdtvEndingSkipPending = false;
 
         clearVideoProgress();
 
         // 如果自动播放下一集开启，且确实有下一集（综艺模式按综艺列表顺序判断）
         if (autoplayEnabled && hasNextEpisode()) {
-            // 稍长延迟以确保所有事件处理完成
-            setTimeout(() => {
+            // 稍长延迟以确保所有事件处理完成；句柄统一存模块级，排队前先清避免重复排队
+            clearTimeout(wdtvAutoPlayNextTimer);
+            wdtvAutoPlayNextTimer = setTimeout(() => {
+                wdtvAutoPlayNextTimer = 0;
                 // 用户拖拽到结尾触发的假结束事件不应自动连播
                 if (isUserSeeking) {
                     videoHasEnded = false;
@@ -2546,7 +2759,7 @@ async function initPlayer(videoUrl) {
                 }
                 playNextEpisode();
                 videoHasEnded = false; // 重置标志
-            }, 1000);
+            }, endingSkip ? WDTV_SKIP_UNDO_MS : 1000);
         } else {
             art.fullscreen = false;
         }
@@ -2616,7 +2829,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 const cached = nextManifestCache.get(context.url);
                 if (cached) {
                     const onSuccess = callbacks.onSuccess;
-                    const filtered = normalizeM3U8(cached);
+                    const filtered = normalizeM3U8(cached, context.url);
                     const now = performance.now();
                     // 构造 hls.js 期望的 LoadStats 形状：其内部会读取 loading/parsing/buffer
                     // 等嵌套字段做统计计算，形状缺失会抛 TypeError 导致换集失败
@@ -2640,7 +2853,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 callbacks.onSuccess = function (response, stats, context) {
                     // 如果是m3u8文件，处理内容以移除广告分段
                     if (response.data && typeof response.data === 'string') {
-                        response.data = normalizeM3U8(response.data);
+                        response.data = normalizeM3U8(response.data, response.url || context.url);
                     }
                     return onSuccess(response, stats, context);
                 };
@@ -2651,10 +2864,30 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     }
 }
 
-// 清单后处理统一入口：广告过滤开启时摘除 DISCONTINUITY 标记（并连带 VOD 归一化），
-// 关闭时也必须保留 VOD 归一化（补 ENDLIST），杜绝直播窗口语义误用于点播清单
-function normalizeM3U8(m3u8Content) {
-    return adFilteringEnabled ? filterAdsFromM3U8(m3u8Content) : ensureVodEndList(m3u8Content);
+// 清单后处理统一入口（多机制广告过滤 + VOD 归一化）：
+// 开 → WDTVAdFilter.analyze 做分片级广告移除（DISCONTINUITY 区间评分 / URL 黑名单 /
+//       SCTE35·CUE 标准标记），产出 removed/regions/stats 供运行时兜底层与遥测使用；
+// 关 → 仅 VOD 归一化。两条路径都会注入 #WDTV-ADF 版本标记（VideoCache 缓存签名失效机制）。
+// 引擎缺失或内部异常时自动回退原文 + ENDLIST，播放零感知（防误伤硬规则）。
+function normalizeM3U8(m3u8Content, baseUrl) {
+    const url = baseUrl || currentVideoUrl || '';
+    if (typeof WDTVAdFilter !== 'undefined' && WDTVAdFilter.analyze) {
+        try {
+            // 主开关以 localStorage 为唯一事实来源：初始化时的 adFilteringEnabled 是快照，
+            // 云同步可能在页面会话内改写该键。若沿用快照，产出模式与缓存签名校验（只读存储）
+            // 会分裂 → 每次命中都删缓存回源。这里每次刷新一次，零网络/零阻塞 I/O。
+            const storageKey = (typeof PLAYER_CONFIG !== 'undefined' && PLAYER_CONFIG.adFilteringStorage) || 'adFilteringEnabled';
+            try { adFilteringEnabled = localStorage.getItem(storageKey) !== 'false'; } catch (e) { /* 存储不可用沿用快照 */ }
+            const r = WDTVAdFilter.analyze(m3u8Content, url, { enabled: adFilteringEnabled, storageKey: storageKey });
+            if (adFilteringEnabled && r.stats) {
+                filterStatsByUrl.set(url, { removed: r.removed, regions: r.regions, stats: r.stats });
+            }
+            return r.text;
+        } catch (e) {
+            console.warn('[ad-filter] 引擎异常，回退原始清单', e);
+        }
+    }
+    return ensureVodEndList(m3u8Content);
 }
 
 // VOD 语义保证：给缺失 #EXT-X-ENDLIST 的媒体清单补上结束标记。
@@ -2686,38 +2919,441 @@ function ensureVodEndList(m3u8Content) {
     return lines.join('\n');
 }
 
-// 过滤可疑的广告内容（移除 #EXT-X-DISCONTINUITY 不连续标记，掐断广告段拼接）
-function filterAdsFromM3U8(m3u8Content) {
-    if (!m3u8Content) return '';
+// ===== 多机制广告过滤：遥测与运行时兜底 =====
 
-    // 按行分割M3U8内容
-    const lines = m3u8Content.split('\n');
-    const filteredLines = [];
+// 每集一次剔除摘要 toast + console 详情（LEVEL_LOADED 时调用）
+function maybeToastAdFilterSummary() {
+    if (adSkipToastShown) return;
+    let st = null;
+    try {
+        filterStatsByUrl.forEach(function (v) {
+            if (v && v.stats && v.stats.removedSegs > 0) st = v.stats;
+        });
+    } catch (e) { }
+    if (!st) return;
+    adSkipToastShown = true;
+    try {
+        if (typeof showToast === 'function') {
+            showToast('已剔除 ' + st.removedSegs + ' 段广告（约 ' + Math.round(st.removedSecs) + ' 秒）', 'info');
+        }
+        console.info('[ad-filter] 本集剔除摘要', JSON.stringify(st));
+    } catch (e) { }
+}
 
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-
-        // 只过滤#EXT-X-DISCONTINUITY标识
-        if (!line.includes('#EXT-X-DISCONTINUITY')) {
-            filteredLines.push(line);
+// 广告删除缝合点预热：把每个删除区之后的首个分片提前抓入 VideoCache(IDB)，
+// 播放头到达缝合点时 hls.js 跳时间线空洞直接命中缓存，避免"现取分片"的可见卡顿。
+// 坐标口径：removed[].start（缝合点）与 details.fragments[].start 同为过滤后清单的
+// EXTINF 累计输出轴；0.5s 容差吸收浮点累加误差，限幅 4 个缝合点防突发流量。
+function warmAdSeamFrags(details, removed) {
+    if (!removed || !removed.length) return;
+    if (typeof VideoCache === 'undefined' || !VideoCache.warmFrags) return;
+    var frags = details && details.fragments;
+    if (!frags || !frags.length) return;
+    var items = [];
+    for (var r = 0; r < removed.length && items.length < 4; r++) {
+        var seam = removed[r].start;
+        for (var i = 0; i < frags.length; i++) {
+            var f = frags[i];
+            if (f.url && f.start >= seam - 0.5) {
+                items.push({
+                    url: f.url,
+                    rs: f.rangeStart != null ? f.rangeStart : null,
+                    re: f.rangeEnd != null ? f.rangeEnd : null
+                });
+                break;
+            }
         }
     }
+    if (items.length) {
+        try { VideoCache.warmFrags(items); } catch (e) { }
+    }
+}
 
-    // 广告过滤后统一补 VOD 结束标记（无 ENDLIST 的清单正是直播语义时长坍缩的源头）
-    return ensureVodEndList(filteredLines.join('\n'));
+// 运行时兜底（设置默认关）：播放进入低置信度可疑区域即 seek 到区域末端。
+// 共存约束：仅房主/未共同观影时执行（房主 seek 自然广播，观影方跟随）；用户拖拽中不抢；
+// 首尾 0.5s 禁跳；1s 冷却防 seek 循环；自动 seek 经 video 'seeking'（__endedSeekKick 幂等无害）。
+// ===== 批次4 A2：片头 / 中段 / 片尾跳过标记（默认关闭）=====
+// 设计要点：两套自动 seek（既有广告区 + 新的跳过标记）共用同一个 adAutoSkipCheck 入口、
+// 同一个 1s 冷却 adSkipLastAt、同一组 isUserSeeking / guest 避让，由纯函数 decideAutoSkip
+// 返回「至多一个」目标，杜绝两处各自写 currentTime 形成来回跳循环。
+
+function wdtvSkipModule() {
+    return (window.WDTVSkipMarks && typeof window.WDTVSkipMarks.decideAutoSkip === 'function')
+        ? window.WDTVSkipMarks : null;
+}
+
+// 读取单一存储键并做结构迁移（缺省 enabled 视为 false，脏数据不抛错）
+function wdtvReadSkipStore() {
+    const S = wdtvSkipModule();
+    try {
+        const raw = localStorage.getItem(WDTV_SKIP_STORAGE);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return S ? S.migrateSkipMarks(parsed) : { enabled: false, marks: {} };
+    } catch (e) { return { enabled: false, marks: {} }; }
+}
+
+function wdtvWriteSkipStore(store) {
+    try {
+        store.updatedAt = Date.now();
+        localStorage.setItem(WDTV_SKIP_STORAGE, JSON.stringify(store));
+    } catch (e) { /* 存储不可用静默降级 */ }
+}
+
+function wdtvRefreshSkipMarksState() {
+    wdtvSkipStore = wdtvReadSkipStore();
+    skipMarksEnabled = wdtvSkipStore.enabled === true;
+    if (!skipMarksEnabled) wdtvHideSkipToast();
+    wdtvRenderSkipBand();
+}
+
+// 按剧共享键：标题有效走 t:归一片名（跨源同剧），否则 fallback 到 source_id（对齐 saveToHistory）
+function wdtvComputeSkipKey() {
+    const S = wdtvSkipModule();
+    if (!S) return '';
+    const p = new URLSearchParams(window.location.search);
+    const fallback = (p.get('source') || '') + '_' + (p.get('id') || '');
+    return S.skipMarkKey(currentVideoTitle, fallback);
+}
+
+function wdtvCurrentSegments(duration) {
+    const S = wdtvSkipModule();
+    if (!S || !skipMarksEnabled || !skipMarksKey) return [];
+    try { return S.resolveSegments(wdtvSkipStore.marks[skipMarksKey], duration); }
+    catch (e) { return []; }
+}
+
+// 换集/换源：清空「本集不再跳」抑制、重算剧键、重绘色带；同时撤掉上一集残留的撤销条
+function wdtvResetSkipEpisode() {
+    skipSuppressedThisEpisode.clear();
+    skipMiddlePending = null;
+    skipLastPosition = 0;
+    wdtvEndingSkipPending = false; // 换集/换源：撤销残留的片尾自动跳过标志
+    wdtvHideSkipToast();
+    skipMarksKey = skipMarksEnabled ? wdtvComputeSkipKey() : '';
+    wdtvRenderSkipBand();
+    wdtvRenderSkipPanel();
+}
+
+// ---- 12s 撤销条 ----
+// 原生全屏（artplayer 把 requestFullscreen 打在 .art-video-player）会让 body 下的
+// position:fixed 元素被 fullscreen top layer 盖住（css z-index 再高也无效）。撤销条与标记
+// 侧栏统一挂到当前「可见宿主」：全屏时挂 fullscreenElement，否则挂 art.$player，都没有回退 body。
+function wdtvSkipOverlayHost() {
+    return document.fullscreenElement || document.webkitFullscreenElement ||
+        (art && art.template && art.template.$player) || document.body;
+}
+// 进出全屏时把已存在的两个 DOM 直接移动（appendChild 会迁移节点，不重建、不丢事件绑定）
+function wdtvRelocateSkipOverlays() {
+    try {
+        const host = wdtvSkipOverlayHost();
+        if (skipToastEl && skipToastEl.parentNode !== host) host.appendChild(skipToastEl);
+        if (skipPanelEl && skipPanelEl.parentNode !== host) host.appendChild(skipPanelEl);
+    } catch (e) { }
+}
+// keepEndingFlag：wdtvShowSkipToast 内部重建 toast 时保留 adAutoSkipCheck 预置的片尾标志
+function wdtvHideSkipToast(keepEndingFlag) {
+    if (skipUndoState && skipUndoState.timer) clearTimeout(skipUndoState.timer);
+    skipUndoState = null;
+    if (!keepEndingFlag) wdtvEndingSkipPending = false;
+    if (skipToastEl) { skipToastEl.remove(); skipToastEl = null; }
+}
+
+function wdtvShowSkipToast(from, decision) {
+    try {
+        // 保留 adAutoSkipCheck 预置的「片尾自动跳过」标志（内部重建 toast 不清它）
+        wdtvHideSkipToast(true);
+        const el = document.createElement('div');
+        el.className = 'wdtv-skip-toast';
+        const text = document.createElement('span');
+        text.className = 'wdtv-skip-toast__text';
+        // 片尾标记跳到 duration 会立刻触发 ended 并排队换集：文案对齐 12s 撤销窗
+        const isEndingSkip = !!(decision && decision.kind === 'mark' && art && art.video &&
+            Number.isFinite(art.video.duration) && decision.target >= art.video.duration - 0.5);
+        text.textContent = isEndingSkip
+            ? '已跳过片尾 · 12 秒后播放下一集，可撤销'
+            : (decision.reason || '已自动跳过');
+        const undo = document.createElement('button');
+        undo.type = 'button';
+        undo.className = 'wdtv-skip-toast__undo';
+        undo.textContent = '撤销';
+        el.appendChild(text);
+        el.appendChild(undo);
+        wdtvSkipOverlayHost().appendChild(el);
+        skipToastEl = el;
+        const state = { from: from, target: decision.target, skipKey: decision.skipKey, timer: null, endingSkip: isEndingSkip };
+        undo.addEventListener('click', function () {
+            // 片尾撤销：先取消排队中的自动换集并清除片尾标志，再回到跳前位置
+            if (state.endingSkip) {
+                clearTimeout(wdtvAutoPlayNextTimer);
+                wdtvAutoPlayNextTimer = 0;
+                wdtvEndingSkipPending = false;
+            }
+            const v = art && art.video;
+            // 回到跳前位置 + 本集不再自动跳该片段 + 刷新冷却（防撤销后的 seeking 立即再触发）
+            if (v) applyProgrammaticSeek(v, state.from);
+            if (state.skipKey) skipSuppressedThisEpisode.add(state.skipKey);
+            adSkipLastAt = performance.now();
+            wdtvHideSkipToast();
+        });
+        state.timer = setTimeout(function () {
+            if (skipUndoState === state) wdtvHideSkipToast();
+        }, WDTV_SKIP_UNDO_MS);
+        skipUndoState = state;
+    } catch (e) { /* 提示条失败不影响跳过本身 */ }
+}
+
+// ---- 进度条色带（仅事件触发时重绘，timeupdate 不逐帧重绘）----
+function wdtvRenderSkipBand() {
+    try {
+        const host = document.querySelector('.art-progress-highlight');
+        if (!host) return;
+        let band = host.querySelector('.wdtv-skip-band');
+        const mark = wdtvSkipStore.marks[skipMarksKey];
+        // 总开关 / 当前剧条目关闭时：不新建、不 append 空色带（默认关闭零 DOM 写入），
+        // 只清理可能残留的旧色带内容
+        if (!skipMarksEnabled || (mark && mark.enabled === false)) {
+            if (band) band.innerHTML = '';
+            return;
+        }
+        if (!band) {
+            band = document.createElement('div');
+            band.className = 'wdtv-skip-band';
+            host.appendChild(band);
+        }
+        band.innerHTML = '';
+        const v = art && art.video;
+        if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return;
+        const segs = wdtvCurrentSegments(v.duration);
+        segs.forEach(function (s) {
+            const span = document.createElement('span');
+            span.setAttribute('data-skip-type', s.type);
+            const start = Math.max(0, s.start);
+            const end = Math.min(v.duration, s.end);
+            span.style.left = (start / v.duration * 100) + '%';
+            span.style.width = Math.max(0, (end - start) / v.duration * 100) + '%';
+            band.appendChild(span);
+        });
+    } catch (e) { }
+}
+
+// ---- 非模态标记面板 ----
+function wdtvRenderSkipPanel() {
+    if (!skipPanelEl) return;
+    const S = wdtvSkipModule();
+    const mark = wdtvSkipStore.marks[skipMarksKey];
+    const segs = (mark && Array.isArray(mark.segments)) ? mark.segments : [];
+    const labels = S ? S.SEGMENT_LABELS : { opening: '片头', middle: '中段', ending: '片尾' };
+    let html = '<div class="wdtv-skip-panel__row"><strong>跳过标记</strong><span style="flex:1"></span></div>';
+    html += '<div class="wdtv-skip-panel__row">当前剧：' + (currentVideoTitle || '未命名') + '</div>';
+    if (!segs.length) {
+        html += '<div class="wdtv-skip-panel__row">暂无标记</div>';
+    } else {
+        segs.forEach(function (s, i) {
+            html += '<div class="wdtv-skip-panel__row"><span style="flex:1">' +
+                (labels[s.type] || s.type) + ' ' + Math.round(s.start) + 's → ' +
+                (s.end === -1 ? '结尾' : Math.round(s.end) + 's') + '</span>' +
+                '<button type="button" class="wdtv-skip-panel__btn" data-skip-del="' + i + '">删除</button></div>';
+        });
+    }
+    html += '<div class="wdtv-skip-panel__row">Shift+I 标片头 · Shift+O 标片尾<br>Shift+S 中段起点 · Shift+E 中段终点 · Shift+P 面板</div>';
+    html += '<div class="wdtv-skip-panel__row"><button type="button" class="wdtv-skip-panel__btn" data-skip-close="1">关闭</button>' +
+        '<button type="button" class="wdtv-skip-panel__btn" data-skip-clear="1">清空本剧</button></div>';
+    skipPanelEl.innerHTML = html;
+}
+
+function wdtvToggleSkipPanel() {
+    try {
+        if (skipPanelEl) {
+            skipPanelEl.remove(); skipPanelEl = null; return;
+        }
+        const el = document.createElement('aside');
+        el.className = 'wdtv-skip-panel';
+        skipPanelEl = el;
+        el.addEventListener('click', function (e) {
+            const b = e.target.closest('[data-skip-del],[data-skip-close],[data-skip-clear]');
+            if (!b) return;
+            if (b.hasAttribute('data-skip-close')) { el.remove(); skipPanelEl = null; return; }
+            const mark = wdtvSkipStore.marks[skipMarksKey];
+            if (!mark || !Array.isArray(mark.segments)) return;
+            if (b.hasAttribute('data-skip-clear')) mark.segments = [];
+            else {
+                const idx = parseInt(b.getAttribute('data-skip-del'), 10);
+                if (Number.isFinite(idx) && idx >= 0 && idx < mark.segments.length) mark.segments.splice(idx, 1);
+            }
+            mark.updatedAt = Date.now();
+            wdtvWriteSkipStore(wdtvSkipStore);
+            wdtvRenderSkipBand();
+            wdtvRenderSkipPanel();
+        });
+        wdtvSkipOverlayHost().appendChild(el);
+        wdtvRenderSkipPanel();
+    } catch (e) { }
+}
+
+// ---- 标记写入（写侧校验 + 保存 + 重绘）----
+function wdtvSaveSkipSegment(seg) {
+    const S = wdtvSkipModule();
+    const v = art && art.video;
+    if (!S || !v || !skipMarksKey) return false;
+    const mark = wdtvSkipStore.marks[skipMarksKey] || { segments: [], enabled: true, updatedAt: 0 };
+    // 同类型只保留一条：必须先剔除旧的同类型段再校验，否则重标片头/片尾/中段时
+    // 新段会与自己的旧段被判「重叠或间隔不足 5 秒」而 100% 失败。
+    const existing = mark.segments.filter(function (x) { return x.type !== seg.type; });
+    const err = S.validateSegment(seg, v.duration, existing);
+    if (err) { try { showToast(err, 'warning'); } catch (e) { } return false; }
+    mark.segments = existing;
+    mark.segments.push(seg);
+    mark.enabled = true;
+    mark.updatedAt = Date.now();
+    wdtvSkipStore.marks[skipMarksKey] = mark;
+    wdtvWriteSkipStore(wdtvSkipStore);
+    wdtvRenderSkipBand();
+    wdtvRenderSkipPanel();
+    try { showToast('已标记' + (S.SEGMENT_LABELS[seg.type] || '片段') + '，本剧各集自动跳过', 'success'); } catch (e) { }
+    return true;
+}
+
+// ---- 标记类快捷键（一律要求 Shift，避免与 f/方向键/空格冲突）----
+function wdtvHandleSkipShortcut(e) {
+    if (!e.shiftKey || !skipMarksEnabled) return false;
+    const key = (e.key || '').toUpperCase();
+    if (['I', 'O', 'S', 'E', 'P'].indexOf(key) === -1) return false;
+    const v = art && art.video;
+    if (!v) return true;
+    const t = Math.floor(v.currentTime * 10) / 10;
+    if (key === 'I') wdtvSaveSkipSegment({ type: 'opening', start: 0, end: t });
+    else if (key === 'O') wdtvSaveSkipSegment({ type: 'ending', start: t, end: -1 });
+    else if (key === 'S') {
+        skipMiddlePending = t;
+        try { showToast('已记录中段起点 ' + t + 's，播放到终点按 Shift+E', 'info'); } catch (err) { }
+    } else if (key === 'E') {
+        if (skipMiddlePending == null) {
+            try { showToast('请先按 Shift+S 记录中段起点', 'warning'); } catch (err) { }
+        } else {
+            wdtvSaveSkipSegment({ type: 'middle', start: skipMiddlePending, end: t });
+            skipMiddlePending = null;
+        }
+    } else if (key === 'P') {
+        wdtvToggleSkipPanel();
+    }
+    e.preventDefault();
+    return true;
+}
+
+// 唯一的自动跳过入口：广告区（既有）与跳过标记（新增）共用一次避让 + 一次 seek
+function adAutoSkipCheck() {
+    const v = art && art.video;
+    if (!v) return;
+    // 两个开关都关时完全不介入：不读存储、不 resolveSegments、不写 currentTime、零请求
+    if (!adAutoSkipEnabled && !skipMarksEnabled) return;
+    const S = wdtvSkipModule();
+
+    // 统一前置避让（只跑一次）：paused / 无效 duration / 拖拽 / 首尾 0.5s / 共看 guest / 1s 冷却
+    if (v.paused || !isFinite(v.duration) || v.duration <= 0) return;
+    if (isUserSeeking) return;
+    const t = v.currentTime;
+    if (t < 0.5 || t > v.duration - 0.5) return;
+    let guestActive = false;
+    try {
+        if (wdtvWatchParty && typeof wdtvWatchParty.isActive === 'function') {
+            const a = wdtvWatchParty.isActive();
+            guestActive = !!(a && a.connected && a.role === 'guest');
+        }
+    } catch (e) { }
+    if (guestActive) return;
+    const now = performance.now();
+    if (now - adSkipLastAt < 1000) return;
+
+    let decision = null;
+    if (S) {
+        // 纯决策函数内部再做一层同样的避让（幂等），并返回至多一个 target：
+        // 优先广告区，未命中再查跳过标记；suppressedKeys 内（撤销过）的段跳过。
+        decision = S.decideAutoSkip({
+            now: now,
+            lastSkipAt: adSkipLastAt,
+            cooldownMs: 1000,
+            paused: v.paused,
+            duration: v.duration,
+            position: t,
+            previousPosition: skipLastPosition,
+            isUserSeeking: isUserSeeking,
+            guestActive: guestActive,
+            adRegions: adAutoSkipEnabled ? adSkipRegions : null,
+            segments: wdtvCurrentSegments(v.duration),
+            suppressedKeys: Array.from(skipSuppressedThisEpisode)
+        });
+    } else if (adAutoSkipEnabled && adSkipRegions && adSkipRegions.length) {
+        // 模块未加载：回退原有广告区逻辑，行为与改前一致
+        for (let i = 0; i < adSkipRegions.length; i++) {
+            const r = adSkipRegions[i];
+            if (t >= r.start - 0.25 && t < r.end - 0.25) {
+                decision = { target: r.end, reason: '自动跳过广告区', kind: 'ad', skipKey: 'ad:' + r.start };
+                break;
+            }
+        }
+    }
+    skipLastPosition = t;
+    if (!decision) return;
+
+    adSkipLastAt = now;
+    // 片尾标记自动跳到 duration 会触发 video:ended 并排队换集：先置标志，让 ended
+    // 把换集延迟对齐到 12s 撤销窗（正常自然结束仍保持 1000ms）。非片尾/广告区会清成 false。
+    wdtvEndingSkipPending = (decision.kind === 'mark' && decision.target >= v.duration - 0.5);
+    // 程序自动 seek：先打共看抑制标记，避免房主把自动跳广播给整个房间
+    if (applyProgrammaticSeek(v, decision.target)) {
+        // 仅跳过标记给 12s 撤销条；广告区沿用原来的静默跳过（不打扰）
+        if (decision.kind === 'mark') wdtvShowSkipToast(t, decision);
+    } else {
+        wdtvEndingSkipPending = false;
+    }
 }
 
 
 // 显示错误
-function showError(message) {
-    // 在视频已经播放的情况下不显示错误
-    if (art && art.video && art.video.currentTime > 1) {
+function showError(message, options) {
+    // 在视频已经播放的情况下不显示错误；switch-source 是「彻底挂掉需明确提示换源」，
+    // 用 force 绕过早退（清单 A3 要求彻底失败时不能静默卡死）。
+    if (!(options && options.force) && art && art.video && art.video.currentTime > 1) {
         return;
     }
+    // 只有真正要显示错误层时才重设保持标志：force 致命错误禁止 timeupdate/playing 自动隐藏；
+    // 普通错误（含起播期错误）清回 false，恢复原有「播放后自动消失」行为。
+    wdtvForceErrorVisible = !!(options && options.force);
     const errorEl = document.getElementById('error');
     if (errorEl) errorEl.style.display = 'flex';
     const errorMsgEl = document.getElementById('error-message');
     if (errorMsgEl) errorMsgEl.textContent = message;
+
+    // 批次4 A3：switch-source 决策时提供一个「手动换源」入口。
+    // 刻意不自动弹换源面板——showSwitchResourceModal() 会并发搜索所有选中源，
+    // 播放已致命失败时自动触发等于再打 N 个请求。用户点击才发起，零自动新增请求。
+    // 单参调用（既有全部调用点）行为完全不变。
+    try {
+        let btn = document.getElementById('wdtvErrorSwitchBtn');
+        if (options && options.switchSource) {
+            if (!btn) {
+                btn = document.createElement('button');
+                btn.id = 'wdtvErrorSwitchBtn';
+                btn.type = 'button';
+                btn.className = 'wdtv-error-switch';
+                btn.textContent = '手动换源';
+                // 克制内联样式：半透明低饱和玻璃、极淡边框、无白描边/白底/重投影
+                btn.style.cssText = 'margin-top:12px;padding:6px 14px;border-radius:8px;' +
+                    'border:1px solid rgba(200,220,245,0.20);background:rgba(155,185,232,0.14);' +
+                    'color:rgba(230,238,252,0.92);font:inherit;cursor:pointer;outline:none;box-shadow:none;';
+                btn.addEventListener('click', function () {
+                    // 用户主动点击才发起换源搜索
+                    if (typeof showSwitchResourceModal === 'function') {
+                        Promise.resolve(showSwitchResourceModal()).catch(function () { });
+                    }
+                });
+                if (errorEl) errorEl.appendChild(btn);
+            }
+            btn.style.display = '';
+        } else if (btn) {
+            btn.style.display = 'none';
+        }
+    } catch (e) { /* 按钮创建失败不影响错误提示本身 */ }
 }
 
 // 集显示名：真实集名优先，无集名降级「第N集」；单集视频返回空串（无需集标签）
@@ -2964,6 +3600,10 @@ function playEpisode(index) {
         return;
     }
 
+    // 手动换集时取消仍在排队的自动连播（尤其片尾跳过后的 12s 撤销窗），避免多跳一集
+    clearTimeout(wdtvAutoPlayNextTimer);
+    wdtvAutoPlayNextTimer = 0;
+
     // 剧集选单弹窗：选集后自动收起，回到播放界面
     closeEpisodesModal();
 
@@ -2972,9 +3612,8 @@ function playEpisode(index) {
         saveCurrentProgress();
     }
 
-    // 首先隐藏之前可能显示的错误
-    const errEl = getErrorEl();
-    if (errEl) errEl.style.display = 'none';
+    // 首先隐藏之前可能显示的错误（含清除 force 保持标志）
+    wdtvHideErrorLayer();
 
     // 获取 sourceCode
     const urlParams2 = new URLSearchParams(window.location.search);
@@ -3000,12 +3639,8 @@ function playEpisode(index) {
     // 双人共同观影：换集广播（共享控制下双方选集同步——换集复用 src 通道，对方整页跟随到对应集）
     try { if (wdtvWatchParty) wdtvWatchParty.onEpisodeSwitch(index); } catch (e) { }
 
-    // 更新URL参数（不刷新页面）
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.set('index', index);
-    currentUrl.searchParams.set('url', url);
-    currentUrl.searchParams.delete('position');
-    window.history.replaceState({}, '', currentUrl.toString());
+    // 批次4 B1：换集更新 URL 走统一 helper，room 参数只透传不删除（共看换集不断连）
+    replaceUrlState({ index: String(index), url: url }, ['position']);
 
     if (isWebkit) {
         initPlayer(url);
@@ -3514,13 +4149,12 @@ function saveToHistory() {
         videoDuration = art.video.duration;
     }
 
-    // Define a show identifier: Prioritize sourceName_id, fallback to first episode URL or current video URL
-    let show_identifier_for_video_info;
-    if (sourceCode && id_from_params) {
-        show_identifier_for_video_info = `${sourceCode}_${id_from_params}`;
-    } else {
-        show_identifier_for_video_info = (currentEpisodes && currentEpisodes.length > 0) ? currentEpisodes[0] : currentVideoUrl;
-    }
+    // 剧级标识统一为 `${sourceCode}_${vodId}`；缺参时回退到 title 归一化值。
+    // 不再用 currentEpisodes[0] / currentVideoUrl 当剧级 ID（换源即变，会产生重复记录）。
+    // 正常路径下 ui.js 的 upsertViewingHistory 会用同一规则重算并去重。
+    const showIdentifier = (sourceCode && id_from_params)
+        ? `${sourceCode}_${id_from_params}`
+        : `title:${String(currentVideoTitle || '').trim().toLowerCase().replace(/\s+/g, ' ')}`;
 
     // 构建要保存的视频信息对象
     const videoInfo = {
@@ -3532,7 +4166,7 @@ function saveToHistory() {
         sourceName: sourceName,
         vod_id: id_from_params || '', // Store the ID from params as vod_id in history item
         sourceCode: sourceCode,
-        showIdentifier: show_identifier_for_video_info, // Identifier for the show/series
+        showIdentifier: showIdentifier, // 统一剧级标识（唯一入口会再按统一规则重算）
         timestamp: Date.now(),
         playbackPosition: currentPosition,
         duration: videoDuration
@@ -3545,15 +4179,35 @@ function saveToHistory() {
         }
     } catch (e) { }
 
+    // 收敛：viewingHistory 唯一写入入口在 ui.js，避免两条独立写入路径产生重复记录
+    if (typeof window !== 'undefined' && typeof window.upsertViewingHistory === 'function') {
+        try {
+            window.upsertViewingHistory(videoInfo);
+            return;
+        } catch (e) {
+            // 入口异常则继续走下方兜底，保证观影历史不丢
+        }
+    }
+
+    // 兜底：ui.js 尚未加载（极端脚本加载顺序）时保留原有写入路径，但定位一律按稳定
+    // showIdentifier（${sourceCode}_${vodId}），不再按裸 title + sourceCode，避免同名不同源串进度；
+    // 去重 / 50 条裁剪语义与 ui.js 唯一写入入口保持一致。
     try {
         const history = JSON.parse(localStorage.getItem('viewingHistory') || '[]');
+        if (!Array.isArray(history)) return;
 
-        // 检查是否已经存在相同的系列记录 (基于标题、来源和 showIdentifier)
-        const existingIndex = history.findIndex(item =>
-            item.title === videoInfo.title &&
-            item.sourceCode === videoInfo.sourceCode &&
-            item.showIdentifier === videoInfo.showIdentifier
+        let existingIndex = history.findIndex(item =>
+            item && item.showIdentifier && item.showIdentifier === videoInfo.showIdentifier
         );
+        if (existingIndex === -1) {
+            // 弱标识旧记录（无 sid）：按归一化 title + sourceCode 归并，绝不按裸 title 单独匹配
+            const titleKey = String(videoInfo.title || '').trim().toLowerCase();
+            existingIndex = history.findIndex(item =>
+                item && !item.showIdentifier &&
+                String(item.title || '').trim().toLowerCase() === titleKey &&
+                String(item.sourceCode || '') === String(videoInfo.sourceCode || '')
+            );
+        }
 
         if (existingIndex !== -1) {
             // 存在则更新现有记录的当前集数、时间戳、播放进度和URL等
@@ -3651,26 +4305,52 @@ function saveCurrentProgress() {
     };
     try {
         localStorage.setItem(progressKey, JSON.stringify(progressData));
-        // --- 新增：同步更新 viewingHistory 中的进度 ---
+        // --- 同步 viewingHistory 中的进度：收敛到 ui.js 唯一写入入口 ---
+        // 按稳定 showIdentifier 精确定位，避免同名不同源串进度；进度/时长无明显变化时
+        // 完全不写，避免 viewingHistory（云同步键）被 timeupdate 高频重写产生推送风暴。
         try {
             const historyRaw = localStorage.getItem('viewingHistory');
             if (historyRaw) {
                 const history = JSON.parse(historyRaw);
-                // 用 title + 集数索引唯一标识
-                const idx = history.findIndex(item =>
-                    item.title === currentVideoTitle &&
-                    (item.episodeIndex === undefined || item.episodeIndex === currentEpisodeIndex)
-                );
-                if (idx !== -1) {
-                    // 只在进度有明显变化时才更新，减少写入
-                    if (
+                if (Array.isArray(history)) {
+                    const sidParams = new URLSearchParams(window.location.search);
+                    const sidSourceCode = sidParams.get('source') || '';
+                    const sidVodId = sidParams.get('id') || '';
+                    const showIdentifier = (sidSourceCode && sidVodId)
+                        ? `${sidSourceCode}_${sidVodId}`
+                        : `title:${String(currentVideoTitle || '').trim().toLowerCase().replace(/\s+/g, ' ')}`;
+                    const idx = history.findIndex(item =>
+                        item && (
+                            (item.showIdentifier && item.showIdentifier === showIdentifier) ||
+                            (!item.showIdentifier &&
+                                String(item.sourceCode || '') === sidSourceCode &&
+                                String(item.title || '').trim().toLowerCase() ===
+                                    String(currentVideoTitle || '').trim().toLowerCase())
+                        )
+                    );
+                    // 本剧尚未入历史：交给 saveToHistory 的 upsert 建记录；值未变化则跳过写入
+                    if (idx !== -1 && (
                         Math.abs((history[idx].playbackPosition || 0) - currentTime) > 2 ||
                         Math.abs((history[idx].duration || 0) - duration) > 2
-                    ) {
-                        history[idx].playbackPosition = currentTime;
-                        history[idx].duration = duration;
-                        history[idx].timestamp = Date.now();
-                        localStorage.setItem('viewingHistory', JSON.stringify(history));
+                    )) {
+                        if (typeof window !== 'undefined' &&
+                            typeof window.upsertViewingHistory === 'function') {
+                            window.upsertViewingHistory({
+                                title: currentVideoTitle,
+                                sourceCode: sidSourceCode,
+                                vod_id: sidVodId,
+                                episodeIndex: currentEpisodeIndex,
+                                playbackPosition: currentTime,
+                                duration: duration,
+                                timestamp: Date.now()
+                            });
+                        } else {
+                            // 模块缺失兜底：按稳定标识定位后只改命中项，绝不按裸 title 查找
+                            history[idx].playbackPosition = currentTime;
+                            history[idx].duration = duration;
+                            history[idx].timestamp = Date.now();
+                            localStorage.setItem('viewingHistory', JSON.stringify(history));
+                        }
                     }
                 }
             }
@@ -3715,6 +4395,24 @@ function loadSpeedConfig() {
 }
 
 let speedConfig = loadSpeedConfig();
+
+// ===== 批次4 A7-b：让 defaultPlaybackRate 恒等于用户选定倍速 =====
+// 浏览器的媒体 load 算法在换集/恢复解码时会把 playbackRate 重置为 defaultPlaybackRate。
+// 只要让 defaultPlaybackRate 跟着用户倍速走，换集、直连转代理、错误重建后的归位就变成空操作。
+// 必须跳过两类「非用户选定」的赋值，否则会把默认倍速写成 1x 或长按临时值，机制失效：
+//   ① loadedmetadata 里 stallRateGuard 起播先降到 1x 的归位；② 长按临时加速。
+function syncDefaultPlaybackRate(rate) {
+    try {
+        if (!art || !art.video) return;
+        const r = Number(rate);
+        if (!Number.isFinite(r) || r <= 0) return;
+        // 保护期内的 1x 是起播归位，不是用户选择
+        if (stallRateGuard.active && Math.abs(r - 1) < 0.001) return;
+        // 长按临时倍速不写入默认值
+        if (longPressBoostActive) return;
+        art.video.defaultPlaybackRate = r;
+    } catch (e) { }
+}
 
 // 写回全局记忆
 function saveSpeedConfig(patch) {
@@ -4060,32 +4758,23 @@ function applyRatePlaybackStrategy(rate) {
     } catch (e) { }
 }
 
-// ===== 画质模式（自动 ABR / 强制最高锁定最高画质档位，设置面板内切换） =====
-const BITRATE_CAP_KEY = 'wdtvBitrateCap';
-
-// 仅两种模式：'max' 为强制最高，其余（含旧版数值上限残留值）一律视为自动
-function getBitrateCap() {
-    try {
-        return localStorage.getItem(BITRATE_CAP_KEY) === 'max' ? 'max' : Infinity;
-    } catch (e) { return Infinity; }
-}
-
-// 应用画质模式：'max' 强制锁定最高画质档位，否则恢复 ABR 自动选择（不设上限）
-function applyBitrateCap(capBps) {
-    if (!currentHls || !currentHls.levels || currentHls.levels.length === 0) return;
-    if (capBps === 'max') {
-        // 强制最高：锁定到声明分辨率最高（缺失时按声明码率最高）的档位，
-        // 与清晰度菜单的排序规则一致；换集重建 hls 后会在 MANIFEST_PARSED 里重新应用
-        let best = 0;
-        for (let i = 1; i < currentHls.levels.length; i++) {
-            const hi = currentHls.levels[i].height || 0;
-            const hb = currentHls.levels[best].height || 0;
-            if (hi > hb || (hi === hb && (currentHls.levels[i].bitrate || 0) > (currentHls.levels[best].bitrate || 0))) best = i;
-        }
-        currentHls.currentLevel = best;
-        return;
+// ===== 画质策略：始终锁定最高画质（已取消网络卡顿自动降档 / ABR 自动选档） =====
+// 清单解析后立即钳到声明分辨率最高（缺失时按码率最高）的档位并锁定：
+// hls.js 不再按带宽估算升降档，画质不随网络波动变化。
+// 唯一例外是最高档自身加载失败（源站故障）时，hls.js 的错误恢复逻辑可能降级，避免黑屏。
+function lockHighestLevel() {
+    if (!currentHls || !currentHls.levels || !currentHls.levels.length) return;
+    const levels = currentHls.levels;
+    // 与清晰度菜单的排序规则一致：优先声明分辨率，高度缺失时按声明码率
+    let best = 0;
+    for (let i = 1; i < levels.length; i++) {
+        const hi = levels[i].height || 0;
+        const hb = levels[best].height || 0;
+        if (hi > hb || (hi === hb && (levels[i].bitrate || 0) > (levels[best].bitrate || 0))) best = i;
     }
-    currentHls.autoLevelCapping = -1; // 自动：不限制 ABR 可选档位
+    try {
+        currentHls.currentLevel = best;
+    } catch (e) { }
 }
 
 // ===== 缓存快捷按钮（整集后台缓存进度 + 暂停/删除 + 管理入口） =====
@@ -4803,6 +5492,7 @@ function setupPlayerGestures() {
     let moved = false;      // 是否已越过判定阈值（10px）
     let touchStartAt = 0;   // 本次触摸按下时刻（区分单击与长按）
     let lastTapAt = 0;      // 上一次有效点击（tap）时刻（双击检测）
+    let boostGestureSuppressed = false; // 本触摸会话触发过长按倍速：屏蔽随后的音量/亮度/进度手势
 
     // 控件区/面板上的触摸不参与手势（进度条拖动、按钮、设置面板等照常工作）
     const inInteractiveArea = (target) => !!(target && target.closest &&
@@ -4898,12 +5588,18 @@ function setupPlayerGestures() {
         startY = t.clientY;
         moved = false;
         gestureType = '';
+        boostGestureSuppressed = false; // 新会话复位长按倍速屏蔽标记
         startTime = video.currentTime || 0;
         touchStartAt = Date.now();
     }, { passive: true });
 
     playerRoot.addEventListener('touchmove', (e) => {
         if (playerLocked || touchId === null) return;
+        // 长按倍速进行中（或本会话已触发过长按倍速）：不响应上下滑（音量/亮度）与横滑（进度）——
+        // 倍速播放中滑一下手指不应顺带调节音量/亮度；滑出热区取消倍速后，本会话同样不再触发手势
+        // （boostGestureSuppressed 保证取消后续滑的剩余行程也不会突然跳出音量/亮度条）
+        if (longPressBoostActive) boostGestureSuppressed = true;
+        if (boostGestureSuppressed) return;
         let t = null;
         for (let i = 0; i < e.changedTouches.length; i++) {
             if (e.changedTouches[i].identifier === touchId) { t = e.changedTouches[i]; break; }
@@ -5007,8 +5703,9 @@ function setupPlayerGestures() {
 // =================================
 // ====== 播放器锁定（手势锁）=======
 // =================================
-// 类爱奇艺/腾讯/优酷：锁定后隐藏控制栏并屏蔽一切手势/点击，仅对侧解锁悬浮钮可交互
-// 左右对称悬浮锁钮：右侧=锁定入口（随控制栏显隐），左侧=解锁（锁定时常显），均为简洁线性图标
+// 类爱奇艺/腾讯/优酷：锁定后隐藏控制栏并屏蔽一切手势/点击，仅左侧解锁悬浮钮可交互
+// 左右对称悬浮锁钮：右侧=锁定入口（随控制栏显隐），左侧=解锁（锁定后显示数秒即自动淡出，
+// 点击画面/移动鼠标经过可随时唤出），均为简洁线性图标
 function setupLockButton() {
     if (!art) return;
     const playerRoot = art.template.$player || document.querySelector('#player .art-video-player');
@@ -5039,7 +5736,7 @@ function setupLockButton() {
         playerRoot.appendChild(lockBtn);
     }
 
-    // 左侧解锁悬浮钮：锁定时常显，点按解锁
+    // 左侧解锁悬浮钮：锁定后显示数秒即自动淡出隐藏，点击画面/移动鼠标可唤出，点按解锁
     let unlockBtn = playerRoot.querySelector('.wdtv-unlock-btn');
     if (!unlockBtn) {
         unlockBtn = document.createElement('div');
@@ -5049,14 +5746,44 @@ function setupLockButton() {
         playerRoot.appendChild(unlockBtn);
     }
 
-    // 遮罩上点一下：闪烁解锁钮提示位置（用户找不到解锁钮时的引导）
+    // 解锁钮自动隐藏：锁定期间无操作约 LOCK_BTN_AUTO_HIDE_MS 后淡出（opacity 过渡），
+    // 点按遮罩 / 桌面鼠标移动经过遮罩即重新唤出；不可见→可见时带脉冲提示按钮位置
+    const LOCK_BTN_AUTO_HIDE_MS = 3000;
+    let lockBtnHideTimer = null;
+    let shieldMoveTs = 0;
+    const clearLockBtnHideTimer = () => {
+        if (lockBtnHideTimer) { clearTimeout(lockBtnHideTimer); lockBtnHideTimer = null; }
+    };
+    const showUnlockBtn = () => {
+        const wasHidden = !unlockBtn.classList.contains('show');
+        clearLockBtnHideTimer();
+        unlockBtn.classList.add('show');
+        if (wasHidden) {
+            // 不可见→可见：脉冲提示（用户找不到解锁钮时的引导）
+            unlockBtn.classList.remove('pulse');
+            void unlockBtn.offsetWidth; // 重启动画
+            unlockBtn.classList.add('pulse');
+        }
+        lockBtnHideTimer = setTimeout(() => {
+            lockBtnHideTimer = null;
+            unlockBtn.classList.remove('show'); // 到点淡出自动隐藏
+        }, LOCK_BTN_AUTO_HIDE_MS);
+    };
+
+    // 遮罩上点一下：唤出解锁钮并续时（已可见时点按=续时，隐藏统一交给自动计时）
     shield.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
-        unlockBtn.classList.remove('pulse');
-        void unlockBtn.offsetWidth; // 重启动画
-        unlockBtn.classList.add('pulse');
+        showUnlockBtn();
     });
+    // 桌面：鼠标在遮罩上移动同样唤出/续时（200ms 节流，行为与常见播放器控制栏一致）
+    shield.addEventListener('mousemove', (e) => {
+        e.stopPropagation();
+        const now = Date.now();
+        if (now - shieldMoveTs < 200) return;
+        shieldMoveTs = now;
+        showUnlockBtn();
+    }, { passive: true });
     // 阻断冒泡到播放器的事件（手势、长按倍速、显示控制栏的 mousemove/touch 逻辑）
     ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'pointerdown', 'pointermove', 'pointerup',
         'mousedown', 'mousemove', 'mouseup', 'dblclick', 'contextmenu'].forEach(type => {
@@ -5100,20 +5827,21 @@ function setupLockButton() {
         closeAllQuickPanels();
         try { art.controls.show = false; } catch (e) { }
         shield.style.display = 'block';
-        unlockBtn.style.display = 'flex';
+        showUnlockBtn(); // 解锁钮可见并启动自动隐藏计时
         lockBtn.style.display = 'none';
     };
     playerRoot.unlockGestures = () => {
         playerLocked = false;
+        clearLockBtnHideTimer();
         playerRoot.classList.remove('wdtv-locked');
         shield.style.display = 'none';
-        unlockBtn.style.display = 'none';
+        unlockBtn.classList.remove('show');
         try { art.controls.show = true; } catch (e) { }
         lockBtn.style.display = 'flex'; // 解锁时控制栏随之显示，锁定钮同步出现
     };
 
     shield.style.display = 'none';
-    unlockBtn.style.display = 'none';
+    unlockBtn.classList.remove('show'); // 初始不可见（CSS opacity:0 + pointer-events:none）
     syncLockBtn();
 }
 
@@ -5122,7 +5850,7 @@ function lockPlayerGestures() {
     const playerRoot = art.template.$player || document.querySelector('#player .art-video-player');
     if (playerRoot && playerRoot.lockGestures) {
         playerRoot.lockGestures();
-        if (typeof showToast === 'function') showToast('播放器已锁定', 'success');
+        if (typeof showToast === 'function') showToast('播放器已锁定（点击画面唤出解锁按钮）', 'success');
     }
 }
 

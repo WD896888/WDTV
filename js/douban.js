@@ -1,5 +1,17 @@
 // 豆瓣热门电影电视剧推荐功能
 
+// 统一 HTML 转义（文本节点 / 双引号属性上下文）：& 必须最先替换，避免后续生成的
+// &lt; / &quot; / &#39; 被二次转义成 &amp;lt; 等；补 ' → &#39; 覆盖单引号注入面。
+// 供 fill 系列、renderDoubanCards、addTag 复用，替换原先分散且缺 ' / & 的 replace 链。
+function wdtvEscapeDoubanText(text) {
+    return (text || '').toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // 豆瓣标签列表 - 修改为默认标签
 let defaultMovieTags = ['热门', '最新', '经典', '豆瓣高分', '冷门佳片', '喜剧', '爱情', '科幻', '悬疑', '恐怖', '治愈'];
 let defaultTvTags = ['热门', '美剧', '英剧', '韩剧', '日剧', '国产剧', '港剧', '日本动画', '综艺', '纪录片'];
@@ -63,8 +75,36 @@ let doubanCurrentTag = '热门';
 let doubanPageStart = 0;
 const doubanPageSize = 16; // 一次显示的项目数量
 
+// 首页推荐源：'douban'（默认，保持原行为零变化）| 'hotlist' | 'bangumi'
+// 仅当 window.WDTVRecommendSources 存在时 hotlist/bangumi 才生效，缺失时一律降级回豆瓣，
+// 保证未引入 recommend-sources.js 的旧页面行为完全不变。
+const RECOMMEND_SOURCE_KEY = 'wdtvRecommendSource';
+let currentRecommendSource = 'douban';
+
+function readRecommendSource() {
+    try {
+        const v = localStorage.getItem(RECOMMEND_SOURCE_KEY);
+        if (v === 'hotlist' || v === 'bangumi') {
+            const RS = window.WDTVRecommendSources;
+            if (!RS) return 'douban';
+            // 禁用的源（enabled === false，如当前网络不可达的 Bangumi）回退默认豆瓣，
+            // 避免刷新后从 localStorage 恢复成不可达源、再触发一轮无谓请求。
+            const meta = (typeof RS.get === 'function') ? RS.get(v) : null;
+            if (meta && meta.enabled === false) return 'douban';
+            return v;
+        }
+    } catch (e) { /* 存储不可用则保持默认 */ }
+    return 'douban';
+}
+
+// 标题文案联动与豆瓣专属控件（#doubanTypeToggle / #douban-tags）显隐由
+// index.html 底部独立事件委托脚本负责，此处不重复设置（两边各自幂等）。
+
 // 初始化豆瓣功能
 function initDouban() {
+    // 先恢复推荐源，确保后续 updateDoubanVisibility/renderRecommend 使用正确源
+    currentRecommendSource = readRecommendSource();
+
     // 设置豆瓣开关的初始状态
     const doubanToggle = document.getElementById('doubanToggle');
     if (doubanToggle) {
@@ -85,6 +125,23 @@ function initDouban() {
 
         // 滚动到页面顶部
         window.scrollTo(0, 0);
+    }
+
+    // 推荐源切换：#wdtvRecommendSource 由页面提供，不存在时静默跳过（兼容旧页面）
+    const sourceSelect = document.getElementById('wdtvRecommendSource');
+    if (sourceSelect) {
+        sourceSelect.value = currentRecommendSource;
+        sourceSelect.addEventListener('change', function (e) {
+            let v = e.target.value || 'douban';
+            const RS = window.WDTVRecommendSources;
+            if (v !== 'douban' && (!RS || !RS.get(v))) v = 'douban'; // 非法值/模块缺失回退豆瓣
+            currentRecommendSource = v;
+            sourceSelect.value = v;   // 修正后回写，保持与 HTML 层标题/显隐脚本读到的值一致
+            try { localStorage.setItem(RECOMMEND_SOURCE_KEY, v); } catch (err) {}
+            const results = document.getElementById('douban-results');
+            if (results) results.innerHTML = '';   // 清空以触发按新源重新渲染
+            updateDoubanVisibility();
+        });
     }
 
     // 加载用户标签
@@ -130,11 +187,8 @@ function updateDoubanVisibility() {
 function fillSearchInput(title) {
     if (!title) return;
     
-    // 安全处理标题，防止XSS
-    const safeTitle = title
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    // 安全处理标题，防止XSS（统一转义：& 最先，含 ' → &#39;）
+    const safeTitle = wdtvEscapeDoubanText(title);
     
     const input = document.getElementById('searchInput');
     if (input) {
@@ -152,32 +206,19 @@ function fillSearchInput(title) {
 function fillAndSearch(title) {
     if (!title) return;
     
-    // 安全处理标题，防止XSS
-    const safeTitle = title
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    // 安全处理标题，防止XSS（统一转义：& 最先，含 ' → &#39;）
+    const safeTitle = wdtvEscapeDoubanText(title);
     
     const input = document.getElementById('searchInput');
     if (input) {
         input.value = safeTitle;
         search(); // 使用已有的search函数执行搜索
-        
-        // 同时更新浏览器URL，使其反映当前的搜索状态
+        // 批次4 B1 双推去重：URL（/s= 的 pushState）由 app.js 的 search() 单一负责
+        // （缓存命中与渐进渲染两条路径均已写入），此处不再重复推入同一条历史记录，
+        // 否则后退一次「状态不变」。仅同步页面标题，不碰 history。
         try {
-            // 使用URI编码确保特殊字符能够正确显示
-            const encodedQuery = encodeURIComponent(safeTitle);
-            // 使用HTML5 History API更新URL，不刷新页面
-            window.history.pushState(
-                { search: safeTitle }, 
-                `搜索: ${safeTitle} - WDTV`, 
-                `/s=${encodedQuery}`
-            );
-            // 更新页面标题
             document.title = `搜索: ${safeTitle} - WDTV`;
-        } catch (e) {
-            console.error('更新浏览器历史失败:', e);
-        }
+        } catch (e) { /* 标题更新失败不影响搜索 */ }
     }
 }
 
@@ -185,11 +226,8 @@ function fillAndSearch(title) {
 async function fillAndSearchWithDouban(title) {
     if (!title) return;
     
-    // 安全处理标题，防止XSS
-    const safeTitle = title
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    // 安全处理标题，防止XSS（统一转义：& 最先，含 ' → &#39;）
+    const safeTitle = wdtvEscapeDoubanText(title);
     
     // 确保豆瓣资源API被选中
     if (typeof selectedAPIs !== 'undefined' && !selectedAPIs.includes('dbzy')) {
@@ -222,22 +260,10 @@ async function fillAndSearchWithDouban(title) {
     if (input) {
         input.value = safeTitle;
         await search(); // 使用已有的search函数执行搜索
-        
-        // 更新浏览器URL，使其反映当前的搜索状态
+        // 批次4 B1 双推去重：URL 由 app.js 的 search() 单一写入，此处只同步标题
         try {
-            // 使用URI编码确保特殊字符能够正确显示
-            const encodedQuery = encodeURIComponent(safeTitle);
-            // 使用HTML5 History API更新URL，不刷新页面
-            window.history.pushState(
-                { search: safeTitle }, 
-                `搜索: ${safeTitle} - WDTV`, 
-                `/s=${encodedQuery}`
-            );
-            // 更新页面标题
             document.title = `搜索: ${safeTitle} - WDTV`;
-        } catch (e) {
-            console.error('更新浏览器历史失败:', e);
-        }
+        } catch (e) { /* 标题更新失败不影响搜索 */ }
 
         if (window.innerWidth <= 768) {
           window.scrollTo({
@@ -355,6 +381,13 @@ function setupDoubanRefreshBtn() {
     if (!btn) return;
     
     btn.onclick = function() {
+        // 新源：无分页语义，清该源缓存后按当前源重取
+        if (currentRecommendSource !== 'douban') {
+            if (window.WDTVRecommendSources) window.WDTVRecommendSources.clearCache(currentRecommendSource);
+            renderRecommend(doubanCurrentTag, doubanPageSize, doubanPageStart);
+            return;
+        }
+        // 豆瓣源：保持原有「换一批」分页逻辑
         doubanPageStart += doubanPageSize;
         if (doubanPageStart > 9 * doubanPageSize) {
             doubanPageStart = 0;
@@ -415,6 +448,13 @@ function renderRecommend(tag, pageLimit, pageStart) {
     const container = document.getElementById("douban-results");
     if (!container) return;
 
+    // 非豆瓣源：走统一推荐源模块，复用既有 renderDoubanCards 渲染（豆瓣源不进入此分支）
+    if (currentRecommendSource !== 'douban') {
+        renderRecommendFromSource(currentRecommendSource, container);
+        return;
+    }
+
+    // 豆瓣源：以下完全保持原有链路（/proxy/ + allorigins 兜底 + tags + 电影/电视切换）
     const target = `https://movie.douban.com/j/search_subjects?type=${doubanMovieTvCurrentSwitch}&tag=${tag}&sort=recommend&page_limit=${pageLimit}&page_start=${pageStart}`;
 
     // 请求期间渲染骨架屏占位，消除空白与"换一批"僵持
@@ -436,6 +476,36 @@ function renderRecommend(tag, pageLimit, pageStart) {
                 </div>
             `;
         });
+}
+
+// 按当前源取新推荐数据，包装成 {subjects:[...]} 复用既有 renderDoubanCards；
+// 模块缺失时降级回豆瓣原链路；任一源返回空则显示克制空态，不弹 toast、不阻断页面。
+async function renderRecommendFromSource(source, container) {
+    const RS = window.WDTVRecommendSources;
+    if (!RS) {
+        currentRecommendSource = 'douban';
+        renderRecommend(doubanCurrentTag, doubanPageSize, doubanPageStart);
+        return;
+    }
+    renderDoubanSkeleton(container);
+    let items = [];
+    try {
+        const outcome = await RS.fetch(source);
+        if (Array.isArray(outcome)) items = outcome;
+    } catch (e) {
+        items = [];
+    }
+    if (items.length) {
+        renderDoubanCards({ subjects: items }, container);
+    } else {
+        container.innerHTML = `
+            <div class="col-span-full">
+                <div class="empty-state-glass">
+                    <div style="color: var(--text-muted); font-size: 0.95rem;">${RS.describeFailure(source)}</div>
+                </div>
+            </div>
+        `;
+    }
 }
 
 // 渲染灰底占位骨架卡（数量与一页一致，配合 CSS 脉动动画）
@@ -538,10 +608,39 @@ const doubanImageQueue = {
             return;
         }
         const src = img.dataset.cover;
+        const queue = this;
+        const fb = window.WDTVImageFallback;
+        // 统一降级链（直连 → 豆瓣 img9 归一 → /proxy/ → 占位图）交给模块 apply() 挂载，
+        // 不再手写 onerror 逐级回退；模块缺失/异常时静默降级回原「直连失败走一次代理」逻辑。
         img.onload = () => {
             img.onload = img.onerror = null;
-            this.release(img);
+            queue.release(img);
         };
+        if (fb && typeof fb.apply === 'function') {
+            // 耗尽时切本地占位图并释放队列槽（占位图会触发 load，先摘掉 onload 防重复 release）
+            let exhausted = false;
+            const exhaust = () => {
+                if (exhausted) return;
+                exhausted = true;
+                img.onload = img.onerror = null;
+                img.classList.add('object-contain');
+                if (typeof buildPlaceholderCover === 'function') {
+                    img.src = buildPlaceholderCover(img.getAttribute('alt') || '');
+                }
+                queue.release(img);
+            };
+            img.onfallback = exhaust;
+            // 模块耗尽时既派发 wdtv-image-exhausted 也调 onfallback，两路兜底并用幂等保护
+            if (typeof img.addEventListener === 'function') {
+                img.addEventListener('wdtv-image-exhausted', exhaust, { once: true });
+            }
+            try {
+                fb.apply(img, src);
+                // 豆瓣 CDN 需带 Referer：apply 默认 no-referrer 会让直连/img9 直接 403，这里恢复默认策略
+                if (typeof img.removeAttribute === 'function') img.removeAttribute('referrerpolicy');
+                return;
+            } catch (e) { /* 异常回退下方原逻辑 */ }
+        }
         img.onerror = async () => {
             img.onload = img.onerror = null;
             img.classList.add('object-contain');
@@ -549,7 +648,7 @@ const doubanImageQueue = {
             // 重试直连无意义，直接走本项目代理（服务端会补上豆瓣Referer）
             const proxied = PROXY_URL + encodeURIComponent(src);
             img.src = proxied;
-            this.release(img);
+            queue.release(img);
         };
         img.src = src;
     }
@@ -575,41 +674,55 @@ function renderDoubanCards(data, container) {
         data.subjects.forEach(item => {
             const card = document.createElement("div");
             card.className = "douban-card flex flex-col";
-            
+
             // 生成卡片内容，确保安全显示（防止XSS）
-            const safeTitle = item.title
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
-            
-            const safeRate = (item.rate || "暂无")
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;');
-            
+            const safeTitle = wdtvEscapeDoubanText(item.title);
+            const safeRate = wdtvEscapeDoubanText(item.rate || "暂无");
+            // 内联事件处理器里的单引号 JS 字符串：先 JS 层转义（' → \x27、\ → \\ 等），
+            // 再做 HTML 属性层转义。HTML 会把 &#39; 解码回 '，单靠 &#39; 放进
+            // onclick="...'...'..." 仍会闭合 JS 字符串，必须在 JS 层用 \x27 防注入。
+            const jsStringAttr = (v) => wdtvEscapeDoubanText(String(v == null ? '' : v)
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, '\\x27')
+                .replace(/\r/g, '\\r')
+                .replace(/\n/g, '\\n'));
+            const jsTitle = jsStringAttr(item.title);
+
+            // 属性上下文 URL 白名单：仅 http(s) 与本地 data:image（占位图）放行，
+            // 其余协议（javascript: / vbscript: / data:text 等）一律回退，杜绝 href / 封面注入。
+            const placeholderCover = (typeof buildPlaceholderCover === 'function')
+                ? wdtvEscapeDoubanText(buildPlaceholderCover(item.title || ''))
+                : 'data:image/svg+xml,';
+            const safeAssetUrl = (u, fallback) => {
+                const s = String(u == null ? '' : u).trim();
+                return /^(?:https?:\/\/|data:image\/)/i.test(s) ? wdtvEscapeDoubanText(s) : fallback;
+            };
             // 处理图片URL
             // 1. 直接使用豆瓣图片URL（豆瓣CDN要求请求必须携带Referer，禁止no-referrer）
             // 注意：豆瓣各图片节点防盗链宽严不一——img9 容忍外部 Referer，
             // 而 img1/img2/img3 对外部 Referer 返回 403（仅豆瓣自家 Referer 可通过）。
             // 图片路径在各节点通用，因此统一改写到 img9，否则部分封面必然加载失败。
             const originalCoverUrl = (item.cover || '').replace(/\/\/img\d+\.doubanio\.com/, '//img9.doubanio.com');
+            const safeCover = safeAssetUrl(originalCoverUrl, placeholderCover);
+            const safeItemUrl = safeAssetUrl(item.url, '#');
 
             // 玻璃风格卡片内容
             card.innerHTML = `
-                <div class="douban-card-image cursor-pointer" onclick="fillAndSearchWithDouban('${safeTitle}')">
-                    <img alt="${safeTitle}" data-cover="${originalCoverUrl}"
+                <div class="douban-card-image cursor-pointer" onclick="fillAndSearchWithDouban('${jsTitle}')">
+                    <img alt="${safeTitle}" data-cover="${safeCover}"
                         loading="lazy">
                     <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(0,0,0,0.6), transparent 50%); pointer-events: none;"></div>
                     <div class="absolute bottom-2 left-2 douban-rate-badge">
                         <span style="color: #ffd60a;">★</span> ${safeRate}
                     </div>
                     <div class="absolute bottom-2 right-2 douban-rate-badge" style="padding: 0.25rem 0.5rem;">
-                        <a href="${item.url}" target="_blank" rel="noopener noreferrer" title="在豆瓣查看" onclick="event.stopPropagation();" style="text-decoration: none;">
+                        <a href="${safeItemUrl}" target="_blank" rel="noopener noreferrer" title="在豆瓣查看" onclick="event.stopPropagation();" style="text-decoration: none;">
                             🔗
                         </a>
                     </div>
                 </div>
                 <div class="douban-card-title-area">
-                    <button onclick="fillAndSearchWithDouban('${safeTitle}')"
+                    <button onclick="fillAndSearchWithDouban('${jsTitle}')"
                             class="text-sm font-medium truncate w-full transition"
                             style="color: #1d1d1f; background: transparent; border: none; cursor: pointer; padding: 0;"
                             title="${safeTitle}">
@@ -617,7 +730,7 @@ function renderDoubanCards(data, container) {
                     </button>
                 </div>
             `;
-            
+
             fragment.appendChild(card);
         });
     }
@@ -756,11 +869,8 @@ function showTagManageModal() {
 
 // 添加标签
 function addTag(tag) {
-    // 安全处理标签名，防止XSS
-    const safeTag = tag
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    // 安全处理标签名，防止XSS（统一转义：& 最先，含 ' → &#39;）
+    const safeTag = wdtvEscapeDoubanText(tag);
     
     // 确定当前使用的是电影还是电视剧标签
     const isMovie = doubanMovieTvCurrentSwitch === 'movie';

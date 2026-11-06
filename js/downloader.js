@@ -472,11 +472,25 @@
     // 注意：分片相对路径必须以"最终媒体清单"的 URL 为基准。
     // 旧实现错用最初传入的 url（主列表地址）：主列表与子清单不在同一目录时
     // （如 .../index.m3u8 → 2000k/hls/index.m3u8），所有分片都会拼到主列表目录下 → 全部 404。
+    // 广告过滤（与播放链路共用 js/ad-filter.js 引擎）：对最终媒体清单做分片级移除，
+    // 保证"看的"和"下的"一致；引擎缺失/异常/开关关闭时原样透传。
+    let adSkip = null;
+    try {
+      if (typeof WDTVAdFilter !== 'undefined' && WDTVAdFilter.analyze) {
+        const afKey = (typeof PLAYER_CONFIG !== 'undefined' && PLAYER_CONFIG.adFilteringStorage) || 'adFilteringEnabled';
+        const afOn = localStorage.getItem(afKey) !== 'false';
+        // storageKey 显式透传：签名与 video-cache 校验侧保持同源（都按主开关存储值生成）。
+        const r = WDTVAdFilter.analyze(text, listUrl, { enabled: afOn, storageKey: afKey });
+        text = r.text;
+        adSkip = r.stats;
+      }
+    } catch (e) { /* 引擎异常不影响下载 */ }
     const media = parseMedia(text, listUrl);
     if (!media.segs.length) throw new Error('清单中没有可下载的视频分片');
     if (media.keyChanges.some(k => k.enc.method === 'SAMPLE-AES')) {
       throw new Error('该视频使用 SAMPLE-AES 加密，暂不支持下载');
     }
+    media.adSkip = adSkip;
     return media;
   }
 
@@ -710,6 +724,14 @@
     try {
       const media = await resolvePlaylist(task.url, task.qualityHint, ctrl.signal);
       if (ctrl.signal.aborted) throw new DOMException('aborted', 'AbortError');
+
+      // 广告过滤遥测：与播放链路同一引擎，下载同样剔除广告分片
+      if (media.adSkip && media.adSkip.removedSegs > 0) {
+        if (typeof toast === 'function') {
+          toast('下载任务已剔除 ' + media.adSkip.removedSegs + ' 段广告（约 ' + Math.round(media.adSkip.removedSecs) + ' 秒）', 'info');
+        }
+        console.info('[ad-filter][下载]', JSON.stringify(media.adSkip));
+      }
 
       task.totalFrags = media.segs.length;
       task.durationSec = Math.round(media.duration);

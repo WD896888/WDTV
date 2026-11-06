@@ -1,0 +1,250 @@
+/* ============================================================
+   WDTV 片头 / 中段 / 片尾跳过标记（仅 player.html 引用）
+   纯表现层：结构由 js/player.js 生成，类名冻结，勿随意改动。
+   配色：半透明低饱和玻璃 + 极淡边框；hover/focus 不加白色描边或白底；
+   统一 outline:none 关闭焦点环；不使用重投影。
+   ============================================================ */
+
+:root {
+  --wdtv-skip-glass: rgba(22, 28, 46, 0.62);
+  --wdtv-skip-glass-strong: rgba(22, 28, 46, 0.78);
+  --wdtv-skip-border: rgba(200, 220, 245, 0.16);
+  --wdtv-skip-border-hover: rgba(200, 220, 245, 0.30);
+  --wdtv-skip-text: rgba(230, 238, 252, 0.92);
+  --wdtv-skip-text-dim: rgba(214, 227, 246, 0.70);
+  --wdtv-skip-hover: rgba(155, 185, 232, 0.14);
+  --wdtv-skip-hover-strong: rgba(155, 185, 232, 0.22);
+  --wdtv-skip-opening: rgba(122, 158, 198, 0.32);
+  --wdtv-skip-middle: rgba(178, 156, 112, 0.30);
+  --wdtv-skip-ending: rgba(138, 166, 150, 0.32);
+}
+
+/* 亮色偏好下换成浅玻璃 + 深文字，两种主题下都自带底色、均可读 */
+@media (prefers-color-scheme: light) {
+  :root {
+    --wdtv-skip-glass: rgba(248, 250, 255, 0.78);
+    --wdtv-skip-glass-strong: rgba(248, 250, 255, 0.90);
+    --wdtv-skip-border: rgba(60, 80, 120, 0.16);
+    --wdtv-skip-border-hover: rgba(60, 80, 120, 0.30);
+    --wdtv-skip-text: rgba(28, 38, 62, 0.92);
+    --wdtv-skip-text-dim: rgba(48, 62, 92, 0.74);
+    --wdtv-skip-hover: rgba(90, 120, 170, 0.12);
+    --wdtv-skip-hover-strong: rgba(90, 120, 170, 0.20);
+  }
+}
+
+/* ============================================================
+   1) 进度条色带
+   容器挂在 .art-progress-highlight 内。css/player.css:1272-1281 已规定
+   highlight 容器必须 background:transparent!important，颜色只给内部 span；
+   .art-progress-cache（:1255-1267）是白色 42% 的另一层。
+   本组规则用与 player.css 相同的完整选择器链保证层叠获胜，
+   容器自身绝不给背景（否则会把已播段罩白），色带只落到 span[data-skip-type]，
+   且用低饱和半透明 + pointer-events:none 透出缓存条、不拦截进度条交互。
+   ============================================================ */
+.art-video-player .art-bottom .art-progress .art-control-progress .art-control-progress-inner .art-progress-highlight .wdtv-skip-band {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none;
+  pointer-events: none !important;
+  z-index: 1;
+}
+
+/* left / width 由 js/player.js 以内联百分比写入，这里只定外观 */
+.art-video-player .art-bottom .art-progress .art-control-progress .art-control-progress-inner .art-progress-highlight .wdtv-skip-band span[data-skip-type] {
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  display: block;
+  border-radius: 2px;
+  background: var(--wdtv-skip-opening) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none;
+  pointer-events: none !important;
+}
+
+.art-video-player .art-bottom .art-progress .art-control-progress .art-control-progress-inner .art-progress-highlight .wdtv-skip-band span[data-skip-type="opening"] {
+  background: var(--wdtv-skip-opening) !important;
+}
+.art-video-player .art-bottom .art-progress .art-control-progress .art-control-progress-inner .art-progress-highlight .wdtv-skip-band span[data-skip-type="middle"] {
+  background: var(--wdtv-skip-middle) !important;
+}
+.art-video-player .art-bottom .art-progress .art-control-progress .art-control-progress-inner .art-progress-highlight .wdtv-skip-band span[data-skip-type="ending"] {
+  background: var(--wdtv-skip-ending) !important;
+}
+
+/* ============================================================
+   2) 12s 撤销提示条
+   ============================================================ */
+/* 宿主为 .art-video-player（position:relative/absolute）或全屏元素时，absolute 相对宿主定位；
+   全屏元素本身铺满视口（UA :fullscreen 样式 position:fixed;inset:0），故 absolute 等价视口，
+   也避开祖先 transform/filter 把 fixed 的包含块带偏的问题。z-index 保持在播放器内部控制层之上。
+   容器不拦截指针事件，避免遮挡播放器控制条/进度条；交互只在下方按钮上重新开启。 */
+.wdtv-skip-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--wdtv-skip-glass);
+  border: 1px solid var(--wdtv-skip-border);
+  color: var(--wdtv-skip-text);
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  backdrop-filter: blur(10px) saturate(1.15);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
+  box-shadow: none;
+  outline: none;
+  pointer-events: none;
+  z-index: 9500;
+}
+
+.wdtv-skip-toast__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--wdtv-skip-text-dim);
+}
+
+.wdtv-skip-toast__undo {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--wdtv-skip-border);
+  background: var(--wdtv-skip-hover);
+  color: var(--wdtv-skip-text);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  pointer-events: auto;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+/* hover/focus 只微调低饱和背景与极淡边框，绝不加白色描边或白底 */
+.wdtv-skip-toast__undo:hover,
+.wdtv-skip-toast__undo:focus,
+.wdtv-skip-toast__undo:focus-visible {
+  background: var(--wdtv-skip-hover-strong);
+  border-color: var(--wdtv-skip-border-hover);
+  outline: none;
+  box-shadow: none;
+}
+
+/* ============================================================
+   3) 非模态侧栏（不加遮罩、不锁页面）
+   ============================================================ */
+.wdtv-skip-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 320px;
+  max-width: 88vw;
+  height: 100%;
+  padding: 18px 16px;
+  overflow-y: auto;
+  background: var(--wdtv-skip-glass-strong);
+  border-left: 1px solid var(--wdtv-skip-border);
+  color: var(--wdtv-skip-text);
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  box-shadow: none;
+  outline: none;
+  pointer-events: none;
+  z-index: 9400;
+}
+
+.wdtv-skip-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--wdtv-skip-border);
+  color: var(--wdtv-skip-text-dim);
+}
+
+.wdtv-skip-panel__btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--wdtv-skip-border);
+  background: var(--wdtv-skip-hover);
+  color: var(--wdtv-skip-text);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  pointer-events: auto;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.wdtv-skip-panel__btn:hover,
+.wdtv-skip-panel__btn:focus,
+.wdtv-skip-panel__btn:focus-visible {
+  background: var(--wdtv-skip-hover-strong);
+  border-color: var(--wdtv-skip-border-hover);
+  outline: none;
+  box-shadow: none;
+}
+
+/* ============================================================
+   4) 四段式断点（≤640 / 641-768 / 769-1024 / ≥1025）
+   ============================================================ */
+@media (min-width: 1025px) {
+  .wdtv-skip-toast { bottom: 96px; font-size: 13px; }
+  .wdtv-skip-panel { width: 320px; }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .wdtv-skip-toast { bottom: 88px; font-size: 13px; }
+  .wdtv-skip-panel { width: 300px; }
+}
+
+@media (min-width: 641px) and (max-width: 768px) {
+  .wdtv-skip-toast { bottom: 80px; font-size: 12.5px; }
+  .wdtv-skip-panel { width: 280px; }
+}
+
+@media (max-width: 640px) {
+  .wdtv-skip-toast {
+    bottom: 72px;
+    max-width: calc(100vw - 24px);
+    padding: 8px 12px;
+    gap: 8px;
+    font-size: 12px;
+    border-radius: 10px;
+  }
+  .wdtv-skip-toast__undo { padding: 4px 10px; }
+  .wdtv-skip-panel {
+    width: 100%;
+    max-width: 100vw;
+    padding: 14px 12px;
+    border-left: 0;
+    font-size: 12px;
+  }
+  .wdtv-skip-panel__row { padding: 9px 6px; }
+}
+
+/* 兜底：仅当宿主退化为 document.body（播放器容器尚未就绪）时，fixed 相对视口，
+   避免 absolute 相对初始包含块导致滚动偏移；挂在 .art-video-player / 全屏元素内部时
+   一律走上面的 absolute，相对宿主定位。 */
+body > .wdtv-skip-toast,
+body > .wdtv-skip-panel {
+  position: fixed;
+}

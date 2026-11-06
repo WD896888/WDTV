@@ -87,13 +87,6 @@
         try { return window.CloudSync.getStatus() || {}; } catch (e) { return {}; }
     }
 
-    // 取昵称/用户名首字作为头像占位
-    function firstLetter(s) {
-        var str = String(s || '').trim();
-        if (!str) return '客';
-        return str.charAt(0).toUpperCase();
-    }
-
     // 相对时间：上次同步距今
     function relativeTime(ts) {
         var t = Number(ts);
@@ -230,9 +223,7 @@
         if (status.loggedIn && state.avatarDataUrl) {
             return '<img src="' + esc(state.avatarDataUrl) + '" alt="">';
         }
-        if (status.loggedIn) {
-            return '<span class="wdtv-ab-ph">' + esc(firstLetter(status.nickname || status.username)) + '</span>';
-        }
+        // 未上传头像（含未登录）：无背景人物剪影图标占位（不用首字文本）
         return personIconHtml('');
     }
 
@@ -250,11 +241,12 @@
 
     /* ---------- 卡片：已登录（头像/昵称/同步状态 + 立即同步行） ---------- */
 
-    function cardAvatarInnerHtml(firstChar) {
+    function cardAvatarInnerHtml() {
         if (state.avatarDataUrl) {
             return '<img src="' + esc(state.avatarDataUrl) + '" alt="头像">';
         }
-        return '<span class="wdtv-am-ph">' + esc(firstChar) + '</span>';
+        // 未上传头像：无背景人物剪影图标占位（不用首字文本）
+        return personIconHtml('wdtv-am-ph-icon');
     }
 
     function statusLineHtml(status) {
@@ -285,7 +277,7 @@
             + '<div class="wdtv-am-card-top">'
             + '<button type="button" class="wdtv-am-avatar-btn" id="wdtvAmAvatarBtn" title="更换头像"'
             + (busy ? ' disabled' : '') + '>'
-            + cardAvatarInnerHtml(firstLetter(status.nickname || status.username))
+            + cardAvatarInnerHtml()
             + camIconHtml()
             + '</button>'
             + '<div class="wdtv-am-userinfo">'
@@ -597,7 +589,7 @@
         if (pillAv) pillAv.innerHTML = pillAvatarHtml(status);
         var cardBtn = document.getElementById('wdtvAmAvatarBtn');
         if (cardBtn) {
-            cardBtn.innerHTML = cardAvatarInnerHtml(firstLetter(status.nickname || status.username)) + camIconHtml();
+            cardBtn.innerHTML = cardAvatarInnerHtml() + camIconHtml();
         } else {
             render();
         }
@@ -711,5 +703,24 @@
         }
     }
 
+    // 监听 cloud-sync.js 兜底裁剪（有损）事件：仅在 showToast 可用时给用户可见提示，
+    // 无 window / showToast 时静默。事件挂在 window 上、不依赖账号菜单，故独立注册，
+    // 不受 init() 中「无 #accountMenu 直接跳过」影响。
+    function bindSyncTrimmedNotice() {
+        if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+        try {
+            window.addEventListener('wdtv-sync-trimmed', function (e) {
+                var reason = e && e.detail && e.detail.reason;
+                if (reason !== 'payload-limit') return;
+                if (typeof window.showToast === 'function') {
+                    try {
+                        window.showToast('同步数据过大，已裁剪部分跳过标记/订阅记录以保证同步成功');
+                    } catch (err) { /* 静默 */ }
+                }
+            });
+        } catch (e) { /* 静默 */ }
+    }
+
+    bindSyncTrimmedNotice();   // 不依赖 DOM 就绪，脚本加载即监听
     ready(init);
 })();

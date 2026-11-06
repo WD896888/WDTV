@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -26,11 +26,31 @@
 })();
 </script>
 
+<!-- 主题预绘制：与 js/theme.js 的 WDTVTheme 使用同一套 dark class 语义，
+     必须在 CSS link 之前执行，避免切换主题时首屏闪白。
+     未设置偏好时默认深色，保持现有视觉零变化。 -->
+<script>
+(function(){
+  var dark = true;
+  try{
+    var m = localStorage.getItem('wdtvTheme'); if (['light','dark','system'].indexOf(m) === -1) m = 'dark';
+    dark = (m === 'dark');
+    if (m === 'system') { dark = true; try { if (window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches) dark = false; } catch (e) {} }
+  }catch(e){}
+  try{
+    document.documentElement.classList.toggle('dark', dark);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  }catch(e){}
+})();
+</script>
+
 <!-- WDTV External CSS -->
 <link rel="stylesheet" href="css/styles.css?v=7">
-<link rel="stylesheet" href="css/index.css?v=25">
+<link rel="stylesheet" href="css/index.css?v=39">
 <link rel="stylesheet" href="css/modals.css?v=6">
-<link rel="stylesheet" href="css/downloader.css?v=3">
+<link rel="stylesheet" href="css/downloader.css?v=4">
+<link rel="stylesheet" href="css/states.css?v=1">
 
 <!-- Google Fonts 异步加载：preconnect 预热连接 + media 技巧避免阻塞首屏渲染（字体带 display=swap，晚到仅切换不遮挡文字） -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -49,6 +69,19 @@
   --beyond-color:#4a5882;
   --beyond-glow:0 0 15px rgba(255,255,255,0.4),0 0 30px rgba(255,255,255,0.25),0 0 50px rgba(255,255,255,0.12),0 0 80px rgba(255,255,255,0.06);
   --internal-color:#fff;
+}
+
+/* 亮色主题：仅当 <html> 没有 dark class 时覆盖同名变量。
+   head 预绘制脚本默认打 dark class，因此现有深色视觉零变化；用户主动切浅色才生效。
+   已知限制：站内少数组件把浅色文字/白色半透明底写成硬编码 rgba，浅色下对比度可能不足，
+   属可接受的渐进增强范围，不改动既有大量样式以免引入视觉回归。 */
+html:not(.dark){
+  --bg-deep:#f2f5fa;--bg-mid:#e6ecf6;
+  --mist:#6b7280;--silver:#4b5563;--light:#374151;--pale:#1f2937;--white:#111827;
+  --accent:#2f6ba8;--accent-light:#4a86c6;
+  --glass-bg:rgba(255,255,255,0.62);--glass-border:rgba(31,41,55,0.12);--glass-shadow:rgba(0,0,0,0.08);
+  --text-primary:#1f2937;--text-secondary:#4b5563;--text-muted:#6b7280;
+  --internal-color:#1f2937;
 }
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -143,7 +176,10 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-douban-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
 
 /* WDTV 我的影院 */
-.wdtv-cinema{width:100%;max-width:1200px;margin:32px auto}
+/* 上边距交给 .wdtv-header 的 margin-bottom:32px（不再用自身 margin 上顶）：
+   避免 margin 折叠依赖页面流内状态——非活动页（绝对定位）时 32px 不再向外折叠，
+   切换动画中离场页标题会突然低 32px，与入场页对不齐 */
+.wdtv-cinema{width:100%;max-width:1200px;margin:0 auto 32px}
 .wdtv-cinema h2{display:flex;align-items:center;gap:8px}
 .wdtv-cinema h2 .wdtv-cinema-heart{width:20px;height:20px;color:#e08aab;filter:drop-shadow(0 0 8px rgba(224,138,171,0.35))}
 .wdtv-cinema-count{font-size:0.78rem;color:var(--text-muted)}
@@ -174,7 +210,7 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
    否则卡片点击会落到背景水波 canvas 上（与 #resultsArea/#doubanArea 同机制） */
 .splash-content #cinemaArea,.splash-content #cinemaArea *{pointer-events:auto}
 /* 底栏页面：影院空态卡片与观影空间 Hub 同样加入白名单（含创建/加入按钮与输入框） */
-.splash-content #cinemaEmpty,.splash-content #cinemaEmpty *,.splash-content .wdtv-space-hub,.splash-content .wdtv-space-hub *{pointer-events:auto}
+.splash-content #cinemaEmpty,.splash-content #cinemaEmpty *,.splash-content .wsp-stage,.splash-content .wsp-stage *{pointer-events:auto}
 /* 影院卡片点按体验：touch-action:manipulation 消除双击缩放延迟并减少点被误判为滚动导致的
    pointercancel（点卡片没反应）；user-select:none 防止按住卡片时选中文字 */
 .splash-content #cinemaArea .douban-card{touch-action:manipulation;-webkit-user-select:none;user-select:none}
@@ -187,8 +223,94 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-result-card .wdtv-card-title{font-size:0.88rem;font-weight:500;color:var(--pale);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wdtv-result-card .wdtv-card-type{font-size:0.72rem;color:var(--text-muted)}
 
-.wdtv-search-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px;justify-content:center}
-@media (min-width:1024px){.wdtv-search-grid{grid-template-columns:repeat(6,minmax(0,1fr))}}
+/* 搜索结果网格：按容器宽度自适应列数（每列最小 160px）——手机约 2 列、平板
+   3~4 列、桌面 5~6 列。不再按封面朝向跨列：旧方案横版占 3 列 / 竖版占 2 列，
+   在 6 列基础栅格里任何屏幕都只有 2~3 列，桌面大屏也被撑成 380px 宽的大卡。
+   仅作用于搜索结果网格，「我的影院」/豆瓣推荐等竖版海报卡片不受影响 */
+.wdtv-search-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;align-items:start}
+/* 统一卡片尺寸：封面框固定 7:10（实测搜索结果封面 0.67~0.72 占多数），高度不再
+   由图片真实比例决定。比例接近的铺满（cover）；偏差大的 9:16 竖版 / 16:9 横版
+   改用 contain 完整显示，保证整图可见且卡片大小一致（朝向类由 app.js 标注） */
+.wdtv-search-grid .douban-card-image{aspect-ratio:7/10;max-height:none;background:rgba(10,16,28,0.35)}
+.wdtv-search-grid .douban-card.cover-tall .douban-card-image img,
+.wdtv-search-grid .douban-card.cover-landscape .douban-card-image img{object-fit:contain}
+/* 窄屏兜底：360px 级小屏按 auto-fill 只能排 1 列（单卡接近满屏），强制 2 列 */
+@media (max-width:390px){.wdtv-search-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* 卡片下方文本区：标题 + 源方备注；min-height 让常规卡片保持等高，
+   备注换行时按内容增高，不做固定高度裁切 */
+.wdtv-search-grid .douban-card-title-area{padding:0.35rem 0.5rem 0.4rem;border-top:none;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:3px;min-height:47px}
+.wdtv-search-grid .douban-card-title-area button{font-size:0.8rem;line-height:1.25}
+/* 备注纯文字：允许换行完整显示（覆盖 base 的 nowrap + ellipsis），不再按卡片宽度截断 */
+.wdtv-search-grid .douban-card-title-area .wdtv-remarks-badge{
+    margin-top:0;max-width:100%;padding:0;border:none;background:none;
+    font-size:0.66rem;line-height:1.35;font-weight:500;color:rgba(236,244,255,0.72);
+    text-shadow:0 1px 2px rgba(0,0,0,0.35);
+    white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;text-align:center;
+}
+/* 时长徽章（封面左上角；时长由探测获得，见 app.js probeItemDuration） */
+.wdtv-duration-badge{position:absolute;top:0.5rem;left:0.5rem;z-index:2;font-size:0.7rem;font-weight:600;line-height:1.2;padding:0.15rem 0.45rem;border-radius:0.375rem;color:#cfe0f5;background:rgba(0,0,0,0.65);border:1px solid rgba(255,255,255,0.18);font-variant-numeric:tabular-nums;pointer-events:none}
+/* 批次2：跨源同名聚合卡片（A1）/ 画质徽章（A6）/ 骨架屏（A7-a）
+   沿用 .wsp-* 克制约定：半透明低饱和玻璃、极淡边框、无重投影、hover 只改底色或位移，
+   不出现白色描边；焦点用极淡底色 + 轻微位移替代 outline。
+   类名与 js/app.js 的 buildResultCard / renderSearchSkeleton 实际输出严格对齐。 */
+.wdtv-group-badge{position:absolute;top:2.05rem;right:0.5rem;z-index:2;font-size:0.7rem;font-weight:600;line-height:1.2;padding:0.16rem 0.46rem;border-radius:0.375rem;color:#dbe8fa;background:rgba(20,32,56,0.62);border:1px solid rgba(165,188,230,0.22);font-variant-numeric:tabular-nums;pointer-events:none}
+.wdtv-group-panel{margin-top:6px;padding:5px;border-radius:10px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);max-height:186px;overflow-y:auto}
+.wdtv-group-source{display:flex;align-items:center;gap:6px;width:100%;padding:6px 8px;border-radius:8px;border:none;background:transparent;color:var(--text-secondary);font-size:0.76rem;text-align:left;cursor:pointer;font-family:'Noto Sans SC',sans-serif;transition:background 0.2s,transform 0.2s}
+.wdtv-group-source:hover{background:rgba(155,180,218,0.14);color:var(--pale)}
+.wdtv-group-source:focus-visible{outline:none;background:rgba(155,180,218,0.12);transform:translateY(-1px)}
+.wdtv-group-source-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wdtv-group-source-remarks{flex-shrink:0;max-width:38%;font-size:0.68rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 来源行复用 .wdtv-quality-badge（主卡片上它是右上角 absolute 角标），此处改回行内静态 */
+.wdtv-group-source .wdtv-quality-badge{position:static;top:auto;right:auto;z-index:auto;font-size:0.66rem;font-weight:500;padding:0.05rem 0.34rem;border-radius:0.3rem;background:rgba(80,128,176,0.28);color:#dce9fa;font-variant-numeric:tabular-nums}
+.wdtv-skeleton-card{border-radius:10px;overflow:hidden;background:rgba(155,180,218,0.05);border:1px solid rgba(165,188,230,0.12);animation:wdtvSkPulse 1.5s ease-in-out infinite}
+.wdtv-skeleton-cover{background:rgba(155,180,218,0.10);aspect-ratio:7/10}
+.wdtv-skeleton-lines{display:flex;flex-direction:column;gap:6px;justify-content:flex-start}
+.wdtv-skeleton-line{display:block;height:9px;margin:0;border-radius:5px;background:rgba(155,180,218,0.10);width:100%}
+.wdtv-skeleton-line.short{width:55%}
+@keyframes wdtvSkPulse{0%,100%{opacity:.55}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.wdtv-skeleton-card{animation:none}}
+/* 聚合卡片键盘焦点：极淡内描边 + 位移，不用白色外描边、不加投影 */
+.douban-card[data-group-card]:focus-visible{outline:none;box-shadow:inset 0 0 0 1px rgba(155,185,232,0.28);transform:translateY(-1px)}
+/* 画质探测成功后的徽章：只加一层极淡内描边区分，不改既有黄色文字与角标定位 */
+.wdtv-quality-badge.wdtv-quality-probed{box-shadow:inset 0 0 0 1px rgba(155,185,232,0.22)}
+.wdtv-theme-select{padding:5px 10px;border-radius:9px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--pale);font-size:0.78rem;font-family:'Noto Sans SC',sans-serif;outline:none;cursor:pointer;transition:background 0.2s}
+.wdtv-theme-select:hover{background:rgba(155,180,218,0.14)}
+.wdtv-theme-select:focus-visible{outline:none;background:rgba(155,180,218,0.12)}
+.wdtv-theme-select option{background:#1e2740;color:#e0e6f2}
+/* 批次3：推荐源切换 / 数据源订阅。用 id + 子选择器，不依赖 JS 生成的具体类名 */
+.wdtv-recommend-select{padding:4px 9px;border-radius:9px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--pale);font-size:0.75rem;font-family:'Noto Sans SC',sans-serif;outline:none;cursor:pointer;transition:background 0.2s}
+.wdtv-recommend-select:hover{background:rgba(155,180,218,0.14)}
+.wdtv-recommend-select:focus-visible{outline:none;background:rgba(155,180,218,0.12)}
+.wdtv-recommend-select option{background:#1e2740;color:#e0e6f2}
+.wdtv-sub-row{display:flex;gap:8px;margin-bottom:10px}
+.wdtv-sub-input{flex:1;min-width:0;padding:6px 9px;border-radius:8px;border:1px solid var(--glass-border);background:rgba(255,255,255,0.08);color:var(--pale);font-size:0.74rem;outline:none;font-family:'Noto Sans SC',sans-serif}
+.wdtv-sub-input::placeholder{color:var(--text-muted)}
+.wdtv-sub-input:focus-visible{outline:none;background:rgba(155,180,218,0.12)}
+.wdtv-sub-btn{flex-shrink:0;padding:6px 12px;border-radius:8px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--text-secondary);font-size:0.75rem;cursor:pointer;font-family:'Noto Sans SC',sans-serif;transition:background 0.2s}
+.wdtv-sub-btn:hover{background:rgba(155,180,218,0.14)}
+.wdtv-sub-btn:focus-visible{outline:none;background:rgba(155,180,218,0.12)}
+#wdtvSubscriptionList > div{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:6px 9px;margin-bottom:6px;border-radius:8px;background:rgba(155,180,218,0.06);font-size:0.73rem;color:var(--text-secondary)}
+#wdtvSubscriptionList button{padding:3px 8px;border-radius:6px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--text-secondary);font-size:0.7rem;cursor:pointer;font-family:'Noto Sans SC',sans-serif}
+#wdtvSubscriptionList button:hover{background:rgba(155,180,218,0.14)}
+#wdtvSubscriptionList select{padding:3px 6px;border-radius:6px;border:1px solid var(--glass-border);background:rgba(30,39,64,0.9);color:var(--pale);font-size:0.7rem;outline:none}
+.wdtv-sub-status{font-size:0.7rem;color:var(--text-muted);margin-top:6px;line-height:1.5}
+/* 时长筛选浮层（结果工具栏） */
+.wdtv-duration-filter{position:relative;display:inline-flex}
+.wdtv-duration-pop{position:absolute;top:calc(100% + 6px);right:0;z-index:60;width:252px;max-width:calc(100vw - 24px);padding:12px;border-radius:12px;border:1px solid rgba(200,220,245,0.4);background:rgba(200,220,245,0.15);backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);box-shadow:0 12px 40px rgba(0,0,0,0.22)}
+.wdtv-duration-pop.hidden{display:none}
+.wdtv-duration-title{font-size:0.82rem;font-weight:600;color:var(--pale);margin-bottom:8px}
+.wdtv-duration-row{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.wdtv-duration-row input{flex:1;min-width:0;padding:6px 8px;border-radius:8px;border:1px solid var(--glass-border);background:rgba(255,255,255,0.12);color:var(--pale);font-size:0.78rem;outline:none;font-family:'Noto Sans SC',sans-serif}
+.wdtv-duration-row input::placeholder{color:var(--text-muted)}
+.wdtv-duration-sep{color:var(--text-muted);font-size:0.75rem;flex-shrink:0}
+.wdtv-duration-presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.wdtv-duration-presets button{padding:3px 10px;border-radius:14px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);font-size:0.72rem;cursor:pointer;transition:all 0.2s;white-space:nowrap}
+.wdtv-duration-presets button:hover{border-color:rgba(155,185,232,0.38);color:var(--pale)}
+.wdtv-duration-actions{display:flex;gap:8px;margin-bottom:8px}
+.wdtv-duration-actions button{flex:1;padding:6px 0;border-radius:8px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--text-secondary);font-size:0.78rem;cursor:pointer;transition:all 0.2s;font-family:'Noto Sans SC',sans-serif}
+.wdtv-duration-actions button:hover{border-color:rgba(155,185,232,0.38)}
+.wdtv-duration-actions button.primary{background:rgba(80,128,176,0.4);color:#fff;border-color:rgba(155,185,232,0.45)}
+.wdtv-duration-tip{font-size:0.68rem;color:var(--text-muted);line-height:1.5}
 .wdtv-result-count{font-size:0.88rem;color:var(--text-muted);text-align:right;margin-bottom:12px}
 .wdtv-result-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
 .wdtv-result-toolbar .wdtv-result-count{margin-bottom:0}
@@ -199,7 +321,7 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-name-dropdown-toggle span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wdtv-name-dropdown-toggle svg{flex-shrink:0;transition:transform 0.2s}
 .wdtv-name-dropdown.open .wdtv-name-dropdown-toggle svg{transform:rotate(180deg)}
-.wdtv-name-dropdown-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:100%;max-width:320px;max-height:280px;overflow-y:auto;padding:6px;border-radius:12px;border:1px solid rgba(200,220,245,0.4);background:rgba(200,220,245,0.15);backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);box-shadow:0 12px 40px rgba(0,0,0,0.22)}
+.wdtv-name-dropdown-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:100%;max-width:min(320px,calc(100vw - 32px));max-height:280px;overflow-y:auto;padding:6px;border-radius:12px;border:1px solid rgba(200,220,245,0.4);background:rgba(200,220,245,0.15);backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);box-shadow:0 12px 40px rgba(0,0,0,0.22)}
 .wdtv-name-dropdown-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border-radius:8px;color:var(--pale);font-size:0.85rem;cursor:pointer;white-space:nowrap;transition:background 0.15s}
 .wdtv-name-dropdown-item:hover{background:rgba(255,255,255,0.18)}
 .wdtv-name-dropdown-item.active{background:rgba(80,128,176,0.3);color:var(--white);font-weight:500}
@@ -208,6 +330,15 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-block-btn{padding:4px 12px;border-radius:16px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);font-size:0.78rem;cursor:pointer;font-family:'Noto Sans SC',sans-serif;transition:all 0.2s;white-space:nowrap}
 .wdtv-block-btn:hover{border-color:rgba(155,185,232,0.38)}
 .wdtv-block-btn.active{background:rgba(80,128,176,0.2);border-color:rgba(155,185,232,0.45);color:var(--white)}
+/* WDTV 搜索结果分页栏（按页展示；翻到未加载到的页时按源补抓，见 app.js goToResultPage） */
+.wdtv-pagination{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;padding:22px 0 8px}
+.wdtv-pagination.loading{pointer-events:none;opacity:0.6}
+.wdtv-page-info{font-size:0.78rem;color:var(--text-muted);margin-right:6px;white-space:nowrap}
+.wdtv-page-btn{min-width:34px;height:34px;padding:0 10px;border-radius:10px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--text-secondary);font-size:0.82rem;cursor:pointer;font-family:'Noto Sans SC',sans-serif;transition:all 0.2s;white-space:nowrap}
+.wdtv-page-btn:hover:not(:disabled){border-color:rgba(155,185,232,0.38);background:rgba(80,128,176,0.15);color:var(--pale)}
+.wdtv-page-btn:disabled{opacity:0.45;cursor:default}
+.wdtv-page-btn.active{background:rgba(80,128,176,0.35);border-color:rgba(155,185,232,0.45);color:var(--white);font-weight:500}
+.wdtv-page-ellipsis{color:var(--text-muted);padding:0 2px;font-size:0.82rem;user-select:none}
 
 /* WDTV history panel - light glass */
 .wdtv-history-panel{position:fixed;left:0;top:0;height:100%;padding:24px;z-index:10000;transform:translateX(-100%);transition:transform 0.4s var(--transition);width:340px;max-width:90vw;background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border-right:1px solid rgba(200,220,245,0.42);box-shadow:4px 0 30px rgba(0,0,0,0.3);overflow-y:auto;color:rgba(236,244,255,0.96)}
@@ -595,9 +726,14 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 
         <div id="doubanArea" class="wdtv-douban hidden">
           <div class="wdtv-douban-header">
-            <div style="display:flex;align-items:center;gap:12px">
-              <h2>豆瓣热门</h2>
-              <div class="wdtv-douban-toggle">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <h2 id="wdtvRecommendTitle">豆瓣热门</h2>
+              <select id="wdtvRecommendSource" class="wdtv-recommend-select" aria-label="首页推荐数据源">
+                <option value="douban">豆瓣热门</option>
+                <option value="hotlist">影视榜单</option>
+                <option value="bangumi">新番放送（可选）</option>
+              </select>
+              <div class="wdtv-douban-toggle" id="doubanTypeToggle">
                 <button id="douban-movie-toggle" class="active">电影</button>
                 <button id="douban-tv-toggle">电视剧</button>
               </div>
@@ -623,6 +759,29 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
               </div>
             </div>
             <div class="wdtv-result-toolbar-right">
+              <!-- 时长筛选：探测视频时长并按区间过滤（逻辑见 app.js 时长探测模块） -->
+              <div class="wdtv-duration-filter" id="durationFilter">
+                <button id="durationFilterBtn" type="button" class="wdtv-block-btn" onclick="toggleDurationFilterPop(event)">时长筛选</button>
+                <div id="durationFilterPop" class="wdtv-duration-pop hidden">
+                  <div class="wdtv-duration-title">按时长筛选</div>
+                  <div class="wdtv-duration-row">
+                    <input id="durationMinInput" type="text" placeholder="最短 00:00" autocomplete="off" onkeydown="if(event.key==='Enter')applyDurationFilter()">
+                    <span class="wdtv-duration-sep">至</span>
+                    <input id="durationMaxInput" type="text" placeholder="最长 不限" autocomplete="off" onkeydown="if(event.key==='Enter')applyDurationFilter()">
+                  </div>
+                  <div class="wdtv-duration-presets">
+                    <button type="button" data-min="0" data-max="300">5分钟内</button>
+                    <button type="button" data-min="300" data-max="1200">5-20分钟</button>
+                    <button type="button" data-min="1200" data-max="3600">20-60分钟</button>
+                    <button type="button" data-min="3600" data-max="">60分钟以上</button>
+                  </div>
+                  <div class="wdtv-duration-actions">
+                    <button type="button" class="primary" onclick="applyDurationFilter()">应用</button>
+                    <button type="button" onclick="clearDurationFilter()">清除</button>
+                  </div>
+                  <div class="wdtv-duration-tip">时长需联网探测（取首集），仅探测当前页视频，结果会缓存在本次会话；支持 mm:ss / hh:mm:ss / 秒数。</div>
+                </div>
+              </div>
               <button id="blockAIManhuaBtn" type="button" class="wdtv-block-btn" onclick="toggleBlockFilter('blockAIManhuaEnabled')">屏蔽AI漫剧</button>
               <button id="blockShortDramaBtn" type="button" class="wdtv-block-btn" onclick="toggleBlockFilter('blockShortDramaEnabled')">屏蔽短剧</button>
               <div class="wdtv-result-count"><span id="searchResultsCount">0</span> 个结果</div>
@@ -630,63 +789,92 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
           </div>
           <div id="searchProgress" style="display:none;text-align:center;padding:16px 0;color:var(--text-muted);font-size:0.85rem;"></div>
           <div id="results" class="wdtv-search-grid"></div>
+          <!-- 结果分页栏：按页展示，翻到未加载到的页时按源补抓（渲染逻辑见 app.js renderResultsPagination） -->
+          <div id="resultsPagination" class="wdtv-pagination" style="display:none;"></div>
         </div>
           </section>
 
-          <!-- 页面：观影空间（双人共同观影 Hub：创建/加入房间，js/space.js 驱动） -->
+          <!-- 页面：观影空间（双人共同观影入口：创建/加入上下横条，js/space.js 驱动） -->
           <section id="page-space" class="wdtv-page" data-dock-page="space">
             <div class="wdtv-space">
-              <div class="wdtv-space-hub">
-                <div class="wdtv-hub-head">
-                  <div class="wdtv-hub-icon">
-                    <svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"></rect><path d="M7 5v14M17 5v14M2.5 9.5h4.5M2.5 14.5h4.5M17 9.5h4.5M17 14.5h4.5"></path></svg>
-                  </div>
-                  <h2 class="wdtv-space-title">观影空间</h2>
-                  <p class="wdtv-hub-sub">双人同步观影 · 聊天 · 画布</p>
-                </div>
-                <div class="wdtv-hub-modes">
-                  <div class="wdtv-hub-mode">
-                    <div class="wdtv-hub-mode-icon">
-                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"></path></svg>
+              <div class="wsp-stage">
+                <header class="wsp-brand">
+                  <h2 class="wsp-brand-title">观影空间</h2>
+                  <p class="wsp-brand-sub">双人同步 · 聊天 · 画布</p>
+                </header>
+                <div class="wsp-actions">
+                  <button type="button" id="wpCreateBtn" class="wsp-cta">
+                    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+                    <span>创建房间</span>
+                  </button>
+                  <p class="wsp-cta-hint">创建后生成 6 位房间码，发给对方即可同步</p>
+                  <div id="wpCreateResult" class="wsp-created" hidden>
+                    <p class="wsp-created-label">房间已创建，把房间码发给对方</p>
+                    <div class="wsp-created-code" id="wpRoomCode">XXXXXX</div>
+                    <div class="wsp-created-actions">
+                      <button type="button" id="wpCopyInvite" class="wsp-btn">复制房间码</button>
+                      <button type="button" id="wpEnterRoom" class="wsp-btn wsp-btn--primary">进入房间</button>
                     </div>
-                    <p class="wdtv-hub-mode-title">在线共同观影</p>
-                    <p class="wdtv-hub-mode-desc">双方各自在线拉流，房主控制播放，实时同步进度</p>
+                    <p class="wsp-created-count" id="wpCountdown"></p>
                   </div>
-                  <div class="wdtv-hub-mode">
-                    <div class="wdtv-hub-mode-icon">
-                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4"></path><path d="M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2"></path></svg>
+                  <section class="wsp-panel wsp-panel--join">
+                    <span class="wsp-panel-icon">
+                      <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"></path><path d="M10 17l5-5-5-5M15 12H3"></path></svg>
+                    </span>
+                    <div class="wsp-action-body">
+                      <span class="wsp-action-title">加入房间</span>
+                      <span class="wsp-action-desc">输入对方给你的 6 位房间码，输完自动加入</span>
                     </div>
-                    <p class="wdtv-hub-mode-title">预缓存共同观影</p>
-                    <p class="wdtv-hub-mode-desc">先在播放页把同一集缓存到本地，双方缓存就绪后离线同步播放</p>
-                  </div>
-                  <div class="wdtv-hub-mode">
-                    <div class="wdtv-hub-mode-icon">
-                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path><path d="M8 13h2m3 0h3"></path></svg>
+                    <div class="wsp-code" id="wpJoinCode">
+                      <input class="wsp-code-seg" type="text" maxlength="1" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="房间码第 1 位">
+                      <input class="wsp-code-seg" type="text" maxlength="1" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="房间码第 2 位">
+                      <input class="wsp-code-seg" type="text" maxlength="1" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="房间码第 3 位">
+                      <input class="wsp-code-seg" type="text" maxlength="1" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="房间码第 4 位">
+                      <input class="wsp-code-seg" type="text" maxlength="1" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="房间码第 5 位">
+                      <input class="wsp-code-seg" type="text" maxlength="1" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="房间码第 6 位">
                     </div>
-                    <p class="wdtv-hub-mode-title">本地视频共同观影</p>
-                    <p class="wdtv-hub-mode-desc">双方各自选择同一个本地视频文件，指纹校验后同步播放，不经服务器</p>
+                  </section>
+                </div>
+                <div id="wpRecentWrap" class="wsp-recent" hidden>
+                  <p class="wsp-recent-title">最近房间</p>
+                  <div id="wpRecentList" class="wsp-recent-list"></div>
+                </div>
+                <details class="wsp-modes">
+                  <summary class="wsp-modes-summary">
+                    <span>支持的观影方式</span>
+                    <span class="wsp-modes-hint">在线 · 预缓存 · 本地视频</span>
+                    <svg class="wsp-modes-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"></path></svg>
+                  </summary>
+                  <div class="wsp-modes-list">
+                    <div class="wsp-modes-item">
+                      <span class="wsp-modes-item-icon">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"></path></svg>
+                      </span>
+                      <span class="wsp-modes-item-body">
+                        <b>在线共同观影</b>
+                        <i>双方各自在线拉流，房主控制播放，实时同步进度</i>
+                      </span>
+                    </div>
+                    <div class="wsp-modes-item">
+                      <span class="wsp-modes-item-icon">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4"></path><path d="M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2"></path></svg>
+                      </span>
+                      <span class="wsp-modes-item-body">
+                        <b>预缓存共同观影</b>
+                        <i>先在播放页把同一集缓存到本地，双方缓存就绪后离线同步播放</i>
+                      </span>
+                    </div>
+                    <div class="wsp-modes-item">
+                      <span class="wsp-modes-item-icon">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path><path d="M8 13h2m3 0h3"></path></svg>
+                      </span>
+                      <span class="wsp-modes-item-body">
+                        <b>本地视频共同观影</b>
+                        <i>双方各自选择同一个本地视频文件，指纹校验后同步播放，不经服务器</i>
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <div class="wdtv-hub-actions">
-                  <button type="button" id="wpCreateBtn" class="wdtv-hub-btn wdtv-hub-btn-primary">创建房间</button>
-                  <div class="wdtv-hub-join">
-                    <input id="wpJoinCode" class="wdtv-hub-input" maxlength="6" placeholder="房间码" autocomplete="off">
-                    <button type="button" id="wpJoinBtn" class="wdtv-hub-btn">加入房间</button>
-                  </div>
-                </div>
-                <div id="wpCreateResult" class="wdtv-hub-result" hidden>
-                  <p class="wdtv-hub-result-label">房间已创建，把邀请链接发给对方</p>
-                  <div class="wdtv-hub-code" id="wpRoomCode">XXXXXX</div>
-                  <div class="wdtv-hub-result-actions">
-                    <button type="button" id="wpCopyInvite" class="wdtv-hub-btn">复制邀请链接</button>
-                    <button type="button" id="wpEnterRoom" class="wdtv-hub-btn wdtv-hub-btn-primary">进入房间</button>
-                  </div>
-                  <p class="wdtv-hub-countdown" id="wpCountdown"></p>
-                </div>
-                <div id="wpRecentWrap" class="wdtv-hub-recent" hidden>
-                  <p class="wdtv-hub-recent-title">最近房间</p>
-                  <div id="wpRecentList" class="wdtv-hub-recent-list"></div>
-                </div>
+                </details>
               </div>
             </div>
           </section>
@@ -773,6 +961,20 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <span>已选API数量：<span id="selectedApiCount" class="wdtv-count">0</span></span>
       <span id="siteStatus"></span>
     </div>
+    <!-- 批次3 A9：数据源订阅。直连优先，失败回退同源 /proxy/；解析全在浏览器端，不新增 Functions -->
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--glass-border)">
+      <label class="block-label">数据源订阅</label>
+      <div class="wdtv-sub-row">
+        <input id="wdtvSubscriptionUrl" class="wdtv-sub-input" type="url" placeholder="订阅 JSON 地址（SourceList / TVBOX / 接口目录）" autocomplete="off" spellcheck="false">
+        <button id="wdtvSubscriptionRefresh" class="wdtv-sub-btn">订阅 / 刷新</button>
+      </div>
+      <div id="wdtvSubscriptionList"></div>
+      <div id="wdtvSubscriptionStatus" class="wdtv-sub-status">未添加订阅</div>
+      <div class="wdtv-sub-row" style="margin-top:8px;margin-bottom:0">
+        <button id="wdtvSubscriptionExport" class="wdtv-sub-btn">导出数据源 JSON</button>
+      </div>
+      <div class="wdtv-api-info"><span>支持 LibreTV-SourceList、TVBOX 配置与接口目录。直连失败自动走本站代理；默认不自动刷新，可在条目上单独设置周期。导出后可托管为订阅链接分享。</span></div>
+    </div>
   </div>
   <!-- 视频源连接测试 -->
   <div class="wdtv-settings-block">
@@ -796,6 +998,14 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">分片广告过滤</div><div class="wdtv-sr-desc">关闭可减少旧版浏览器卡顿</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="adFilterToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
+    <div class="wdtv-settings-row" title="开启后，进入未能高置信识别的可疑广告时段时自动 seek 跳过（默认关闭）">
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">广告自动跳过</div><div class="wdtv-sr-desc">可疑广告时段播放时自动跳过（默认关闭）</div></div>
+      <label class="wdtv-toggle"><input type="checkbox" id="adAutoSkipToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
+    </div>
+    <div class="wdtv-settings-row" title="手动标记片头/中段/片尾后，同剧各集自动跳过；与「广告自动跳过」互不影响（默认关闭）">
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">片头片尾跳过标记</div><div class="wdtv-sr-desc">标记一次，同剧各集自动跳；跳过时可撤销</div></div>
+      <label class="wdtv-toggle"><input type="checkbox" id="skipMarksToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
+    </div>
     <div class="wdtv-settings-row">
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">豆瓣热门推荐</div><div class="wdtv-sr-desc">首页显示豆瓣热门影视内容</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="doubanToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
@@ -811,6 +1021,18 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
     <div class="wdtv-settings-row" title="开启后播放分片直连与代理立即双路并行竞速、先到先用（会多消耗流量换取流畅，默认关闭）">
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">流量竞速兜底</div><div class="wdtv-sr-desc">直连过慢时自动代理并行竞速，多耗流量换流畅</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="raceHedgeToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
+    </div>
+    <div class="wdtv-settings-row">
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">界面主题</div><div class="wdtv-sr-desc">默认深色；切换即时生效并记住选择</div></div>
+      <select id="wdtvThemeSelect" class="wdtv-theme-select" aria-label="界面主题">
+        <option value="dark">深色</option>
+        <option value="light">浅色</option>
+        <option value="system">跟随系统</option>
+      </select>
+    </div>
+    <div class="wdtv-settings-row" title="开启后对搜索卡片探测真实分辨率，会产生少量额外请求；默认关闭">
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">卡片画质探测</div><div class="wdtv-sr-desc">开启后探测真实分辨率，并用于展开面板排序</div></div>
+      <label class="wdtv-toggle"><input type="checkbox" id="wdtvQualityProbeToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
   </div>
   <!-- 弹幕设置 -->
@@ -896,23 +1118,38 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 
 <!-- External JS -->
 <script src="libs/tailwindcss.min.js"></script>
-<script src="js/config.js?v=14"></script>
-<script src="js/video-cache.js?v=93"></script>
-<script src="js/downloader.js?v=20"></script>
-<script src="js/connection-test.js?v=9"></script>
+<script src="js/config.js?v=19"></script>
+<!-- 批次2：LibreTV 优势项移植模块（零构建、普通 script，加载顺序即依赖） -->
+<script src="js/states.js?v=1"></script>
+<script src="js/focus-trap.js?v=1"></script>
+<script src="js/image-fallback.js?v=2"></script>
+<script src="js/theme.js?v=3"></script>
+<script src="js/remarks.js?v=1"></script>
+<script src="js/aggregate.js?v=1"></script>
+<script src="js/quality.js?v=2"></script>
+<script src="js/probe-queue.js?v=2"></script>
+<script src="js/ad-filter.js?v=3"></script>
+<script src="js/video-cache.js?v=96"></script>
+<script src="js/downloader.js?v=22"></script>
+<script src="js/connection-test.js?v=11"></script>
 <script src="js/customer_site.js?v=8"></script>
-<script src="js/ui.js?v=13"></script>
-<script src="js/api.js?v=13"></script>
-<script src="js/douban.js?v=9"></script>
-<script src="js/search.js?v=10"></script>
-<script src="js/app.js?v=23"></script>
+<!-- 批次3：数据源订阅（需在 app.js 之前；解析全在浏览器端，直连优先 + /proxy/ 兜底） -->
+<script src="js/source-subscription.js?v=3"></script>
+<script src="js/ui.js?v=16"></script>
+<script src="js/source-health.js?v=3"></script>
+<script src="js/api.js?v=16"></script>
+<!-- 批次3：首页推荐增源（需在 douban.js 之前；60s 榜单直连，Bangumi 可选默认关闭） -->
+<script src="js/recommend-sources.js?v=3"></script>
+<script src="js/douban.js?v=14"></script>
+<script src="js/search.js?v=13"></script>
+<script src="js/app.js?v=42"></script>
 <script src="js/cinema.js?v=17"></script>
 <script src="js/pwa-register.js?v=8"></script>
-<script src="js/index-page.js?v=11"></script>
+<script src="js/index-page.js?v=12"></script>
 <script src="js/dock.js?v=3"></script>
-<script src="js/cloud-sync.js?v=1"></script>
-<script src="js/cloud-sync-ui.js?v=4"></script>
-<script src="js/space.js?v=2"></script>
+<script src="js/cloud-sync.js?v=8"></script>
+<script src="js/cloud-sync-ui.js?v=6"></script>
+<script src="js/space.js?v=5"></script>
 
 <!-- InternalBeyond Scripts -->
 <script>
@@ -1078,7 +1315,7 @@ function toSim(e){if(mode==='pane'){var r=pane.getBoundingClientRect();if(r.widt
 function stir(e){if(!(e.buttons&1))return;if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;var lp=stirPts[e.pointerId];if(!lp){stirPts[e.pointerId]={x:p.x,y:p.y};return}var dx=p.x-lp.x,dy=p.y-lp.y;var d=Math.sqrt(dx*dx+dy*dy);if(d<1.15)return;var steps=Math.min(6,Math.ceil(d/1.5));var s=Math.min(0.55,0.12+d*0.05);for(var i=1;i<=steps;i++)poke(lp.x+dx*i/steps,lp.y+dy*i/steps,s*MOUSE_STR_MAG,1.7*MOUSE_MAG);lp.x=p.x;lp.y=p.y}
 function tap(e){if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;stirPts[e.pointerId]={x:p.x,y:p.y};poke(p.x,p.y,2.0*MOUSE_STR_MAG,2.8*MOUSE_MAG)}
 function lift(e){delete stirPts[e.pointerId]}
-function bgBlank(e){var t=e.target;if(!t||t===sp||t===slot||t===pane)return true;if(t.closest&&(t.closest('#searchArea')||t.closest('#doubanArea')||t.closest('#resultsArea')||t.closest('#cinemaEmpty')||t.closest('.wdtv-space-hub')||t.closest('.wdtv-dock')||t.closest('.wdtv-modal-overlay')||t.closest('.wdtv-disclaimer-modal')||t.closest('.wdtv-history-panel')||t.closest('.wdtv-settings-panel')||t.closest('#chat-mini')))return false;return true}
+function bgBlank(e){var t=e.target;if(!t||t===sp||t===slot||t===pane)return true;if(t.closest&&(t.closest('#searchArea')||t.closest('#doubanArea')||t.closest('#resultsArea')||t.closest('#cinemaEmpty')||t.closest('.wsp-stage')||t.closest('.wdtv-dock')||t.closest('.wdtv-modal-overlay')||t.closest('.wdtv-disclaimer-modal')||t.closest('.wdtv-history-panel')||t.closest('.wdtv-settings-panel')||t.closest('#chat-mini')))return false;return true}
 if(sp&&!REDUCED){var gwTouch={};sp.addEventListener('pointerdown',function(e){if(mode!=='bg')return;var ok=bgBlank(e);gwTouch[e.pointerId]=ok;if(ok)tap(e)},{passive:true});sp.addEventListener('pointermove',function(e){if(mode==='bg'&&gwTouch[e.pointerId]!==false)stir(e)},{passive:true});sp.addEventListener('pointerup',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointercancel',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointerleave',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true})}
 var fogCv=document.getElementById('gw-fogwipe');var fog=fogCv?fogCv.getContext('2d'):null;var wipeStrokes=[];
 function blotch(x,y,r,a){if(!fog)return;var g=fog.createRadialGradient(W*x,H*y,0,W*x,H*y,Math.max(W,H)*r);g.addColorStop(0,'rgba(222,234,250,'+a+')');g.addColorStop(1,'rgba(222,234,250,0)');fog.fillStyle=g;fog.fillRect(0,0,W,H)}
@@ -1162,6 +1399,136 @@ window.__fxGlass=gwStart;
   if(!pl||pl.classList.contains('fade-out')){show();return}
   var obs=new MutationObserver(function(){if(pl.classList.contains('fade-out')){show();obs.disconnect()}});
   obs.observe(pl,{attributes:true,attributeFilter:['class']});
+})();
+</script>
+
+<!-- 批次2：A4 焦点陷阱事件层挂接。独立脚本，不改动既有 toggleSettings/toggleHistory/closeModal 实现；
+     既有按钮多为 inline onclick，故在 document 冒泡阶段用 setTimeout(0) 延后同步面板状态。 -->
+<script>
+(function(){
+  var PANELS = [
+    {id:'settingsPanel', isOpen:function(el){return el.classList.contains('show')}},
+    {id:'historyPanel',  isOpen:function(el){return el.classList.contains('show')}},
+    {id:'modal',         isOpen:function(el){return !el.classList.contains('hidden')}}
+  ];
+  var active = {};
+  function sync(){
+    PANELS.forEach(function(p){
+      var el = document.getElementById(p.id);
+      if (!el) return;
+      var open = p.isOpen(el);
+      if (open && !active[p.id] && typeof window.openPanelWithTrap === 'function') {
+        window.openPanelWithTrap(p.id); active[p.id] = true;
+      } else if (!open && active[p.id] && typeof window.closePanelWithTrap === 'function') {
+        window.closePanelWithTrap(p.id); active[p.id] = false;
+      }
+    });
+  }
+  // JS 直接切 class（不经 click / Esc）时也要同步 trap：给三个真实弹层挂 class 观察器。
+  // .wsp-panel 是常驻内容区、不是弹层，不在此列（给它上焦点陷阱会锁死键盘焦点）。
+  if (typeof window.MutationObserver === 'function') {
+    PANELS.forEach(function(p){
+      var el = document.getElementById(p.id);
+      if (!el) return;
+      try {
+        var mo = new MutationObserver(function(){ sync(); });
+        mo.observe(el, {attributes:true, attributeFilter:['class','style']});
+      } catch (e) {}
+    });
+  }
+  document.addEventListener('click', function(){ setTimeout(sync, 0); }, false);
+  document.addEventListener('keydown', function(e){
+    if (e.key !== 'Escape' && e.key !== 'Esc') return;
+    // #modal 用的是 hidden 体系（closePanelWithTrap 对它 no-op），Esc 需走既有 closeModal
+    var m = document.getElementById('modal');
+    if (m && !m.classList.contains('hidden') && typeof window.closeModal === 'function') {
+      try { window.closeModal(); } catch (err) {}
+    }
+    setTimeout(sync, 0);
+  }, false);
+  window.addEventListener('pageshow', function(e){
+    if (!e.persisted) return;
+    PANELS.forEach(function(p){
+      if (active[p.id] && typeof window.closePanelWithTrap === 'function') {
+        window.closePanelWithTrap(p.id); active[p.id] = false;
+      }
+    });
+  });
+})();
+</script>
+
+<!-- 批次3：推荐源切换的标题与豆瓣专属控件显隐。
+     独立事件委托，不改动 js/douban.js（避免与实现组并发冲突）；与 douban.js 的 change 监听各自幂等。 -->
+<script>
+(function(){
+  var LABELS = { douban:'豆瓣热门', hotlist:'影视榜单', bangumi:'新番放送' };
+  function sync(){
+    var sel = document.getElementById('wdtvRecommendSource');
+    if (!sel) return;
+    var id = sel.value || 'douban';
+    var title = document.getElementById('wdtvRecommendTitle');
+    if (title) title.textContent = LABELS[id] || LABELS.douban;
+    var showDouban = (id === 'douban');
+    ['doubanTypeToggle', 'douban-tags'].forEach(function(elId){
+      var el = document.getElementById(elId);
+      if (el) el.style.display = showDouban ? '' : 'none';
+    });
+  }
+  document.addEventListener('change', function(e){
+    if (e && e.target && e.target.id === 'wdtvRecommendSource') setTimeout(sync, 0);
+  }, false);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(sync, 0); });
+  } else {
+    setTimeout(sync, 0);
+  }
+})();
+</script>
+
+<!-- 批次3：导出数据源 JSON（独立绑定，不改动 app.js / source-subscription.js） -->
+<script>
+(function(){
+  var btn = document.getElementById('wdtvSubscriptionExport');
+  if (!btn) return;
+  btn.addEventListener('click', function(){
+    var S = window.WDTVSourceSubscriptions;
+    var st = document.getElementById('wdtvSubscriptionStatus');
+    if (!S || typeof S.exportAll !== 'function') { if (st) st.textContent = '导出功能未就绪'; return; }
+    try {
+      var text = JSON.stringify(S.exportAll(), null, 2);
+      var url = URL.createObjectURL(new Blob([text], { type: 'application/json;charset=utf-8' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = 'wdtv-sources.json';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){
+        try { URL.revokeObjectURL(url); } catch (e) {}
+        if (a.parentNode) a.parentNode.removeChild(a);
+      }, 0);
+      if (st) st.textContent = '已导出当前点播源，可托管为订阅链接分享';
+    } catch (e) {
+      if (st) st.textContent = '导出失败';
+    }
+  });
+})();
+</script>
+
+<!-- 页级错误兜底：未捕获异常 / Promise 拒绝不再静默白屏（详情只进控制台 + 一条克制提示）。
+     资源加载失败（img/script 的 error）不上报，避免封面降级链频繁刷提示。 -->
+<script>
+(function(){
+  function report(kind, detail){
+    try { console.warn('[WDTV] ' + kind + ':', detail); } catch (e) {}
+    try {
+      if (typeof window.showToast === 'function') window.showToast('页面出现异常，详情见控制台', 'error');
+    } catch (e) {}
+  }
+  window.addEventListener('error', function(e){
+    if (e && e.target && e.target !== window && e.target.nodeType) return;
+    report('error', (e && (e.message || e.error)) || '未知错误');
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    report('unhandledrejection', (e && e.reason) || '未知拒绝');
+  });
 })();
 </script>
 

@@ -1,3 +1,25 @@
+// 搜索源 DNS 预解析：抽成具名函数并挂到 window，供数据源订阅合并新源后重跑（批次3）。
+// 用持久 Set 记录已预热域名，重复调用只补新增源，避免重复插入 <link rel="dns-prefetch">。
+window.prefetchAPISiteDns = (function () {
+    const prefetched = new Set();
+    return function () {
+        try {
+            Object.values(API_SITES).forEach(site => {
+                if (!site || !site.api) return;
+                try {
+                    const origin = new URL(site.api).origin;
+                    if (prefetched.has(origin)) return;
+                    prefetched.add(origin);
+                    const link = document.createElement('link');
+                    link.rel = 'dns-prefetch';
+                    link.href = origin;
+                    document.head.appendChild(link);
+                } catch (e) { /* 无效地址跳过 */ }
+            });
+        } catch (e) { /* API_SITES 不可用时跳过 */ }
+    };
+})();
+
 // 页面加载后显示弹窗脚本
 document.addEventListener('DOMContentLoaded', function() {
     // 弹窗显示脚本
@@ -18,22 +40,8 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // 搜索源 DNS 预解析：读取 API_SITES 批量预热各源域名，直连首包时间直接缩短
-    try {
-        const prefetched = new Set();
-        Object.values(API_SITES).forEach(site => {
-            if (!site || !site.api) return;
-            try {
-                const origin = new URL(site.api).origin;
-                if (prefetched.has(origin)) return;
-                prefetched.add(origin);
-                const link = document.createElement('link');
-                link.rel = 'dns-prefetch';
-                link.href = origin;
-                document.head.appendChild(link);
-            } catch (e) { /* 无效地址跳过 */ }
-        });
-    } catch (e) { /* API_SITES 不可用时跳过 */ }
+    // 搜索源 DNS 预解析：DOMContentLoaded 时只调用一次；订阅合并新源后由订阅模块再次调用重跑
+    window.prefetchAPISiteDns();
 
     // URL搜索参数处理脚本
     // 首先检查是否是播放URL格式 (/player.html 开头的路径)

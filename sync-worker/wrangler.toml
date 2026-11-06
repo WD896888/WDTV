@@ -4,8 +4,9 @@ compatibility_date = "2025-09-01"
 
 # 双人共同观影房间服务（Durable Object）
 # 部署：cd sync-worker && npx wrangler deploy
-# 密钥（必须与 Pages 项目 AUTH_SECRET 同值）：
+# AUTH_SECRET secret 仅 worker 层 /ws 直连路径（本地联调）使用：
 #   npx wrangler secret put AUTH_SECRET --name wdtv-sync-worker
+# 生产链路（Pages DO 绑定）的身份校验由 Pages Function 完成，不依赖本 secret。
 
 [[durable_objects.bindings]]
 name = "WATCH_ROOM_SELF"

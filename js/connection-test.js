@@ -102,12 +102,32 @@
         throw { err: lastErr, elapsed: lastElapsed, retried: true };
     }
 
+    // 代理错误体适配（S5）：Functions/本地代理把错误收敛为固定枚举后，面板不能只显示
+    // "HTTP 502" 而不说明是转发失败；旧版含 details 的错误体同样兼容。
+    // 只读取固定 code / error 字段，绝不解析或回显 stack / targetUrl / addr / port。
+    function isProxyErrorJson(obj) {
+        return !!(obj && typeof obj === 'object' &&
+            (obj.code === 'UPSTREAM_FAILED' || obj.error === 'upstream_error' ||
+             obj.error === 'forbidden' || obj.error === 'upstream' ||
+             (obj.success === false && typeof obj.error === 'string')));
+    }
+    function describeProxyError(resp, body) {
+        const status = resp && resp.status != null ? resp.status : '?';
+        let parsed = null;
+        try { parsed = body ? JSON.parse(body) : null; } catch (e) { parsed = null; }
+        if (isProxyErrorJson(parsed)) {
+            const code = parsed.code ? `，错误码 ${String(parsed.code).slice(0, 40)}` : '';
+            return `代理转发失败（HTTP ${status}${code}），源站可能不可达或被拦截`;
+        }
+        return `HTTP ${status} ${(resp && resp.statusText) || ''}`.trim();
+    }
+
     // 搜索响应统一判定（收紧版）：
     //   'ok'    —— HTTP 2xx + 合法 JSON + list 为非空数组
     //   'empty' —— HTTP 2xx + 合法 JSON + list 为空数组（连通但无结果）
     //   'fail'  —— 非 2xx / 响应非 JSON（风控页、跳转页）/ JSON 无 list 数组（含 code 错误体）
     function judgeSearchResponse(resp, body) {
-        if (!resp.ok) return { verdict: 'fail', detail: `HTTP ${resp.status} ${resp.statusText || ''}` };
+        if (!resp.ok) return { verdict: 'fail', detail: describeProxyError(resp, body) };
         let json = null;
         try {
             json = body ? JSON.parse(body) : null;
@@ -310,6 +330,10 @@
         // ===== 结果汇总与源健康度联动 =====
         if (typeof window.markSourceHealth === 'function') {
             window.markSourceHealth(key, searchOk);
+            // 测速通过即手动恢复：清掉阶梯停用态与失败计数（失败时保持原写回）
+            if (searchOk && typeof window.resumeSourceHealth === 'function') {
+                window.resumeSourceHealth(key);
+            }
         }
 
         const elapsedTotal = Math.round(performance.now() - startedAt);

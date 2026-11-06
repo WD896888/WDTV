@@ -1,0 +1,136 @@
+/* ============================================================
+   WDTV 状态组件基础样式（批次 1：只建文件，不接入页面）
+   说明：index.html 内联 <style> 优先级高于外链，本批不指望它在 index 页生效；
+   player.html 无内联样式，批次 2 可外链引用本文件。
+   配色沿用项目 :root 深色玻璃变量，并带 fallback，避免外链浅色变量覆盖。
+   ============================================================ */
+
+.wdtv-state-spinner {
+  display: inline-block;
+  flex: none;
+  border-radius: 50%;
+  border-style: solid;
+  border-color: var(--glass-border, rgba(165, 188, 230, 0.2));
+  border-top-color: var(--accent-light, #72a8d8);
+  box-sizing: border-box;
+  animation: wdtv-state-spin 0.8s linear infinite;
+  vertical-align: middle;
+}
+.wdtv-state-spinner--sm { width: 16px; height: 16px; border-width: 2px; }
+.wdtv-state-spinner--md { width: 28px; height: 28px; border-width: 3px; }
+.wdtv-state-spinner--lg { width: 44px; height: 44px; border-width: 4px; }
+
+/* 色调：仅换 spinner 主色，不改结构 */
+.wdtv-state-tone--default { border-top-color: var(--accent-light, #72a8d8); }
+.wdtv-state-tone--accent { border-top-color: var(--accent, #5080b0); }
+.wdtv-state-tone--muted { border-top-color: var(--text-muted, #7e90b2); }
+.wdtv-state-tone--light { border-top-color: var(--pale, #e2e9f5); }
+
+@keyframes wdtv-state-spin { to { transform: rotate(360deg); } }
+
+/* ---------- Loading ---------- */
+.wdtv-state-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  color: var(--text-secondary, #adb8d0);
+  font-size: 0.85rem;
+}
+.wdtv-state-loading__label { line-height: 1.4; }
+
+/* ---------- EmptyState ---------- */
+.wdtv-state-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--text-secondary, #adb8d0);
+}
+.wdtv-state-empty--boxed {
+  padding: 28px 20px;
+  border-radius: 14px;
+  background: var(--glass-bg, rgba(155, 180, 218, 0.1));
+  border: 1px solid var(--glass-border, rgba(165, 188, 230, 0.2));
+  /* 无重投影 */
+}
+.wdtv-state-empty--plain { background: transparent; border: none; }
+.wdtv-state-empty__icon {
+  width: 40px; height: 40px;
+  color: var(--text-muted, #7e90b2);
+  opacity: 0.7;
+}
+.wdtv-state-empty__title {
+  color: var(--text-primary, #e0e6f2);
+  font-size: 0.95rem;
+}
+.wdtv-state-empty__desc {
+  color: var(--text-muted, #7e90b2);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+/* ---------- ErrorState ---------- */
+.wdtv-state-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 20px;
+  border-radius: 14px;
+  text-align: center;
+  background: var(--glass-bg, rgba(155, 180, 218, 0.1));
+  border: 1px solid var(--glass-border, rgba(165, 188, 230, 0.2));
+}
+.wdtv-state-error__icon {
+  width: 36px; height: 36px;
+  color: var(--text-muted, #7e90b2);
+  opacity: 0.8;
+}
+.wdtv-state-error__message {
+  color: var(--text-primary, #e0e6f2);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.wdtv-state-error__retry {
+  padding: 6px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border, rgba(165, 188, 230, 0.2));
+  background: rgba(155, 180, 218, 0.08);
+  color: var(--text-secondary, #adb8d0);
+  font-size: 0.82rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+/* hover 只改极淡底色，不加白色描边、不加投影 */
+.wdtv-state-error__retry:hover { background: rgba(155, 180, 218, 0.16); }
+
+/* ---------- 焦点环（极淡底色 + 位移，不用白色描边） ---------- */
+.wdtv-state-focus-ring:focus-visible,
+.wdtv-state-error__retry:focus-visible,
+.wdtv-focus-visible:focus-visible {
+  outline: none;
+  background: rgba(155, 180, 218, 0.12);
+  transform: translateY(-1px);
+}
+/* 兜底：JS 手动加 .wdtv-focus-visible 类时（不支持 :focus-visible 的环境）也生效 */
+.wdtv-focus-visible {
+  outline: none;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.wdtv-focus-visible.wdtv-is-focused {
+  background: rgba(155, 180, 218, 0.12);
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wdtv-state-spinner { animation: none; }
+  .wdtv-state-error__retry,
+  .wdtv-state-focus-ring,
+  .wdtv-focus-visible { transition: none; }
+}

@@ -297,8 +297,8 @@
   // ============================================================
   // M2：清晰度锁档 / 解锁
   // lockLevel：无该层（levels.length <= levelIndex）返回 false，由调用方 toast 回退
-  // unlockLevel：currentLevel=-1 恢复 ABR（hls.js 的 autoLevelEnabled 为只读 getter，
-  //              赋值在严格模式会抛错，单独 try/catch 吞掉即可，-1 赋值已生效）
+  // unlockLevel：项目已取消 ABR 自动降画质（始终最高画质策略），解锁不再是
+  //              currentLevel=-1 恢复自动档，而是经宿主 lockHighestLevel 重新钳到最高档
   // ============================================================
   function lockLevel(levelIndex) {
     try {
@@ -319,10 +319,16 @@
     if (!levelLocked) return;
     levelLocked = false;
     try {
+      // 始终最高画质策略：经宿主（player.js）的 lockHighestLevel 重新钳到最高档。
+      // callGetter 对函数型 env 条目是"直接调用并返回其结果"，返回 null 即宿主未提供该能力
+      var r = callGetter('lockHighestLevel');
+      if (r !== null) return;
+    } catch (e) { }
+    try {
+      // 兜底：宿主未提供锁档能力时，至少解除 M2 锁定的指定档
       var hls = getHls();
       if (!hls) return;
       try { hls.currentLevel = -1; } catch (e) { }
-      try { hls.autoLevelEnabled = true; } catch (e) { }
     } catch (e) { }
   }
 

@@ -11,7 +11,9 @@ import dotenv from 'dotenv';
 import { WebSocketServer } from 'ws';
 // 本地账号 API：mini D1 mock + 云端 handleApi（与 Cloudflare Pages functions 共用同一实现）
 import { createMiniD1 } from './functions/api/_mock-d1.mjs';
-import { handleApi } from './functions/api/_lib.mjs';
+import { handleApi, DEFAULT_AUTH_SECRET } from './functions/api/_lib.mjs';
+// S2：复用生产 Functions 的 SSRF 字面量守卫（纯 ESM、零 Node 专有 API），与线上同一份逻辑
+import { isBlockedTarget } from './functions/proxy/_ssrf-literal.mjs';
 
 dotenv.config();
 
@@ -40,6 +42,26 @@ const log = (...args) => {
 };
 
 const app = express();
+
+// S4（与线上 Functions 对齐）：/proxy 只放行 GET/HEAD/OPTIONS，且必须早于全局 cors
+// 中间件——cors 默认会直接结束 OPTIONS 预检，放在后面就补不上 Max-Age / Allow 头。
+// OPTIONS 早退 204，不触碰上游，零网络开销。
+app.use('/proxy', (req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.set('Access-Control-Allow-Headers', '*');
+    res.set('Access-Control-Max-Age', '86400');
+    res.set('Cache-Control', 'no-store');
+    return res.status(204).end();
+  }
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.set('Allow', 'GET, HEAD, OPTIONS');
+    res.set('Cache-Control', 'no-store');
+    return res.status(405).json({ error: 'method_not_allowed' });
+  }
+  next();
+});
 
 app.use(cors({
   origin: config.corsOrigin,
@@ -330,10 +352,14 @@ function roomOnClose(room, ws) {
 }
 
 // 本地账号 API：把 /api/* 请求转发给与云端共用的 handleApi（含 mini D1 mock 持久化）
-const accountDb = createMiniD1({ file: path.join(__dirname, 'data', 'account-dev.json') });
+// 注意：账号库是容器/主机上的单个 JSON 文件——Docker 部署必须给 /app/data 挂持久卷，
+// 否则重建容器会清空全部账号（详见 docker-compose.yml 注释）
+const accountDbFile = process.env.ACCOUNT_DB_FILE || path.join(__dirname, 'data', 'account-dev.json');
+console.log(`账号数据库文件: ${accountDbFile}（请确保该路径位于持久化存储上）`);
+const accountDb = createMiniD1({ file: accountDbFile });
 const accountEnv = () => ({
   WDTV_DB: accountDb,
-  AUTH_SECRET: process.env.AUTH_SECRET || 'wdtv-dev-secret',
+  AUTH_SECRET: process.env.AUTH_SECRET || DEFAULT_AUTH_SECRET,
   ALLOW_REGISTER: process.env.ALLOW_REGISTER || 'true'
 });
 app.use('/api', async (req, res) => {
@@ -420,9 +446,19 @@ function isValidUrl(urlString) {
     if (!allowedProtocols.includes(parsed.protocol)) return false;
     if (blockedHostnames.includes(parsed.hostname)) return false;
     
-    for (const prefix of blockedPrefixes) {
-      if (parsed.hostname.startsWith(prefix)) return false;
+    // 前缀只对 IP 字面量主机名生效：`10.evil.com` 这类以数字开头的合法域名
+    // 不应被 `10.` 前缀误拦（私网 IP 字面量已由 isBlockedTarget 完整覆盖）。
+    const hostIsIpLiteral = /^[\d.]+$/.test(parsed.hostname) || parsed.hostname.indexOf(':') !== -1;
+    if (hostIsIpLiteral) {
+      for (const prefix of blockedPrefixes) {
+        if (parsed.hostname.startsWith(prefix)) return false;
+      }
     }
+
+    // S2：复用生产 Functions 的 SSRF 字面量守卫（覆盖 0/8、10/8、127/8、100.64/10、
+    // 169.254/16、172.16/12、192.168/16、192.0.0/24、≥224、IPv6 链路本地/唯一本地/mapped、
+    // 十进制/八进制/十六进制/简写 IP）。原 BLOCKED_HOSTS / 前缀判断保留为额外一层，不削弱既有拦截。
+    if (isBlockedTarget(urlString)) return false;
     
     return true;
   } catch {
@@ -432,8 +468,27 @@ function isValidUrl(urlString) {
 
 app.get('/proxy/:encodedUrl', async (req, res) => {
   try {
+    // S3 同源 Referer 校验：带 Referer 且其 host 与当前请求 host 不一致 → 403；
+    // 无 Referer 放行（WebView/PWA 兼容）；畸形 Referer 视为不同源。与 Functions 一致，
+    // 位于任何上游请求之前。
+    const referer = req.headers.referer;
+    if (referer) {
+      let refererHost = null;
+      try { refererHost = new URL(referer).host; } catch (e) { /* 畸形 Referer，视为不同源 */ }
+      if (refererHost !== req.headers.host) {
+        res.set('Cache-Control', 'no-store');
+        return res.status(403).json({ error: 'forbidden' });
+      }
+    }
+
     const encodedUrl = req.params.encodedUrl;
-    const targetUrl = decodeURIComponent(encodedUrl);
+    let targetUrl;
+    try {
+      targetUrl = decodeURIComponent(encodedUrl);
+    } catch (e) {
+      // 与 Functions 的 getTargetUrlFromPath 对齐：畸形百分号编码返回 400，不是 500
+      return res.status(400).send('无效的 URL 编码');
+    }
 
     // 安全验证
     if (!isValidUrl(targetUrl)) {
@@ -503,20 +558,12 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
     // 管道传输响应流
     response.data.pipe(res);
   } catch (error) {
+    // S5：错误响应收敛为通用错误码，不回显目标 URL / 内网地址 / hostname / port。
+    // 诊断细节仅保留在服务端日志，不外泄给客户端；保留状态码与 no-store。
     console.error('代理请求错误:', error.message);
-    if (error.response) {
-      res.status(error.response.status || 500);
-      error.response.data.pipe(res);
-    } else {
-      // 网络层错误（DNS/TCP/超时等）：附上底层原因，便于连接测试诊断
-      const bits = [];
-      if (error.code) bits.push(`code=${error.code}`);
-      if (error.errno) bits.push(`errno=${error.errno}`);
-      if (error.syscall) bits.push(`syscall=${error.syscall}`);
-      if (error.hostname) bits.push(`host=${error.hostname}`);
-      if (error.address) bits.push(`addr=${error.address}`);
-      res.status(500).send(`请求失败: ${error.message}${bits.length ? ' | ' + bits.join(' | ') : ''}`);
-    }
+    const status = (error.response && error.response.status) || 500;
+    res.set('Cache-Control', 'no-store');
+    res.status(status).json({ success: false, error: 'upstream_error', code: 'UPSTREAM_FAILED' });
   }
 });
 

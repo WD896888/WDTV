@@ -4,7 +4,8 @@
 // 职责（只负责"取数据"，渲染由 artplayer-plugin-danmuku 插件完成）：
 //   1. 端点解析：自定义端点 → 同源转发层 /danmu/ 探测（弹弹play官方 API，首选）→ 内置自建源 → 旧公共代理（均不可用则静默禁用）
 //   2. 弹弹play v2 客户端：search/episodes（自动匹配）、search/anime + bangumi（手动匹配）、
-//      comment/{episodeId}（弹幕拉取）；请求统一 12s 超时，任何失败返回空值、绝不向上抛错
+//      comment/{episodeId}（弹幕拉取）；搜索/剧集/弹幕请求统一 45s 慢超时（冷启动聚合实测 25s+），
+//      其余请求 12s，任何失败返回空值、绝不向上抛错
 //   3. 自动匹配引擎：标题规范化（去噪声词）→ bigram 相似度打分 → 集数对齐 → 记忆映射
 //   4. 缓存：弹幕按 episodeId 缓存、"标题+集数 → episodeId"记忆映射（localStorage，容量受限按最旧淘汰）
 //   5. 事件通知：加载成功派发 danmu:loaded，确定无弹幕派发 danmu:unavailable（供播放器显隐控制按钮）
@@ -160,7 +161,9 @@
     function lookupMap(titleKey) {
         const entry = readLSJSON(LS_MAP_KEY)[titleKey];
         if (!entry || !entry.episodeId) return null;
-        if (!entry.v2) return null; // 旧版记忆可能已被跨源同号弹幕污染，弃用（下次成功匹配后自动覆盖为 v2）
+        // 版本校验必须与 saveMap 写入的字段名一致（v: MEMO_VERSION）——此前误查 entry.v2，
+        // 而写入的是 v，导致记忆映射永不命中：每次播放都全链路重搜（弹幕"经常不自动加载"主因）
+        if (entry.v !== MEMO_VERSION) return null;
         if (Date.now() - (entry.ts || 0) > MAP_TTL) return null; // 过期视为未命中
         return entry;
     }
@@ -194,7 +197,9 @@
     function readCache(episodeId) {
         const entry = readLSJSON(LS_CACHE_KEY)[episodeId];
         if (!entry || !Array.isArray(entry.list)) return null;
-        if (!entry.v2) return null; // 旧缓存可能含跨源污染的同号弹幕，弃用
+        // 同上：必须与 saveCache 写入的 v 字段对齐——误查 v2 导致弹幕缓存永不命中，
+        // 预热/手动匹配写入的数据全部读不出（手动选集成功后 reload 仍整链重搜、屏幕空白）
+        if (entry.v !== MEMO_VERSION) return null;
         return entry.list;
     }
 
@@ -425,8 +430,10 @@
 
     // 拉取某集原始弹幕，失败返回 null。restrictBase=匹配发生的数据源——弹幕请求
     // 绝不跨源轮换（集 ID 是各源本地 ID，跨源取同号 = 取到别的剧的弹幕）
+    // 必须传 SLOW_TIMEOUT：danmu_api 冷启动时首请求同步聚合构建弹幕库（实测 25s+），
+    // 默认 12s 会把每次尝试掐死在构建中途，退避重试同样超时，冷集弹幕永远拉不到
     async function getComments(episodeId, restrictBase) {
-        const data = await apiGet(`/api/v2/comment/${episodeId}?format=json&withRelated=true`, null, restrictBase);
+        const data = await apiGet(`/api/v2/comment/${episodeId}?format=json&withRelated=true`, SLOW_TIMEOUT, restrictBase);
         return (data && Array.isArray(data.comments)) ? data.comments : null;
     }
 
@@ -662,11 +669,12 @@
         const raw = await getComments(matched.episodeId, matchBase);
         if (token !== matchToken && !silent) return { list: [], matched: null, fromMemo: false };
         let list = raw ? sampleToMax(convertComments(raw)) : [];
-        // danmu_api 冷启动特性：平台弹幕数据在后台异步构建，首次请求可能 404/空
-        // （实测同 ID 首次 404、数秒后重试 200+1075 条）。两段退避重试（4s/12s）：
-        // 第一段覆盖"快速构建"型，第二段覆盖"慢构建"型；仍无弹幕才判定该源该集无数据
-        // （预热模式只保留第一段 4s 轻重试，避免后台任务长时间占用）
-        const retryDelays = silent ? [4000] : [4000, 12000];
+        // danmu_api 冷启动特性：平台弹幕数据在后台异步构建，首次请求 404 后构建可持续
+        // 30~120s（实测东宫第1集：12s/16s/29s 三连 404，约 2 分钟后 5000 条）。退避重试
+        // 拉长到 4s/12s/25s/40s（窗口约 90s+请求耗时），覆盖慢构建；间隔拉大同时缓解
+        // 密集重试触发的 429 限流（实测 4s/12s 重试风暴第 2 轮即 429 三连）。
+        // 仍无弹幕才判定该源该集无数据（预热模式只保留 4s/12s 轻重试，避免后台任务长时间占用）
+        const retryDelays = silent ? [4000, 12000] : [4000, 12000, 25000, 40000];
         for (const delay of retryDelays) {
             if (list.length || (token !== matchToken && !silent)) break;
             await new Promise(res => setTimeout(res, delay));
@@ -775,9 +783,12 @@
             // 手动选择同样锁源：剧集列表来自哪个源，弹幕就只能从那个源取（集 ID 本地性）
             const selBase = (activeEndpoint && activeEndpoint.base) || null;
             let raw = await getComments(sel.episodeId, selBase);
-            const retryDelays = [4000, 12000];
+            // 与自动链路对齐的冷构建退避窗口（4s/12s/25s/40s，约 90s+）
+            const retryDelays = [4000, 12000, 25000, 40000];
             for (const delay of retryDelays) {
-                if (raw && Array.isArray(raw.comments) && raw.comments.length) break;
+                // getComments 返回弹幕数组本体（非响应对象），查 raw.comments 永假——
+                // 误写会导致成功也白跑 3 次拉取 + 16s 退避，冷集 2 分多钟不出结果形同失败
+                if (raw && raw.length) break;
                 if (token !== matchToken) return [];
                 await new Promise(res => setTimeout(res, delay));
                 if (token !== matchToken) return [];

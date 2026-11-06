@@ -4,13 +4,29 @@ function toggleSettings(e) {
     e && e.stopPropagation();
     const panel = document.getElementById('settingsPanel');
     panel.classList.toggle('show');
+
+    // 打开设置面板时若历史面板仍开着，则一并关闭（两个面板不叠显）
+    const historyPanel = document.getElementById('historyPanel');
+    if (historyPanel && historyPanel.classList.contains('show')) {
+        historyPanel.classList.remove('show');
+    }
 }
 
 // 改进的Toast显示函数 - 支持队列显示多个Toast
 const toastQueue = [];
 let isShowingToast = false;
+// 当前 toast 上挂载的撤销按钮引用（换条时清理，避免普通 toast 残留按钮）
+let currentToastActionBtn = null;
 
-function showToast(message, type = 'error') {
+function _removeToastAction() {
+    const btn = currentToastActionBtn;
+    currentToastActionBtn = null;
+    if (btn && btn.parentNode && typeof btn.parentNode.removeChild === 'function') {
+        try { btn.parentNode.removeChild(btn); } catch (e) { /* 元素可能已被移除 */ }
+    }
+}
+
+function showToast(message, type = 'error', options) {
     // 首先确保toast元素存在
     let toast = document.getElementById('toast');
     let toastMessage = document.getElementById('toastMessage');
@@ -34,8 +50,8 @@ function showToast(message, type = 'error') {
         document.body.appendChild(toast);
     }
 
-    // 将新的toast添加到队列
-    toastQueue.push({ message, type });
+    // 将新的toast添加到队列（options 可选：{ actionLabel, onAction, duration }）
+    toastQueue.push({ message, type, options });
 
     // 如果当前没有显示中的toast，则开始显示
     if (!isShowingToast) {
@@ -50,7 +66,9 @@ function showNextToast() {
     }
 
     isShowingToast = true;
-    const { message } = toastQueue.shift();
+    const item = toastQueue.shift();
+    const { message } = item;
+    const options = item.options || null;
 
     const toast = document.getElementById('toast');
     const toastMessage = document.getElementById('toastMessage');
@@ -76,6 +94,19 @@ function showNextToast() {
     toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
     toastMessage.textContent = message;
 
+    // 换条前清理上一条可能残留的撤销按钮（保证普通 toast 不出现按钮）
+    _removeToastAction();
+
+    // 是否带可点击的撤销动作：有 actionLabel 即渲染按钮
+    const hasAction = !!(options && typeof options.actionLabel === 'string' && options.actionLabel.length);
+    // 展示时长：显式 duration > 有 action 默认 6s > 普通 3s（无 options 时恒为 3s，行为不变）
+    let duration = 3000;
+    if (options && typeof options.duration === 'number' && isFinite(options.duration) && options.duration > 0) {
+        duration = options.duration;
+    } else if (hasAction) {
+        duration = 6000;
+    }
+
     // 从底部滑入显示
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -84,16 +115,51 @@ function showNextToast() {
         });
     });
 
-    // 3秒后自动隐藏
-    setTimeout(() => {
+    // 隐藏并推进到下一条（正常超时 / 点击撤销共用，advanced 防重入）
+    let advanced = false;
+    function hideAndAdvance() {
+        if (advanced) return;
+        advanced = true;
         toast.style.opacity = '0';
         toast.style.transform = 'translateX(-50%) translateY(30px)';
-
+        _removeToastAction();
         // 等待动画完成后显示下一个toast
         setTimeout(() => {
             showNextToast();
         }, 300);
-    }, 3000);
+    }
+
+    // 撤销按钮：仅在带 actionLabel 时用 DOM API 追加到 #toast，不改动 #toastMessage 的文本更新逻辑
+    if (hasAction) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'wdtv-toast-action';
+        btn.textContent = String(options.actionLabel);
+        // 内联样式沿用 toast 深色玻璃观感：淡边框、无白色描边、无重投影
+        btn.style.marginLeft = '14px';
+        btn.style.padding = '4px 12px';
+        btn.style.borderRadius = '8px';
+        btn.style.background = 'rgba(255,255,255,0.08)';
+        btn.style.border = '1px solid rgba(200,220,245,0.35)';
+        btn.style.color = 'rgba(236,244,255,0.96)';
+        btn.style.fontFamily = 'inherit';
+        btn.style.fontSize = '13px';
+        btn.style.cursor = 'pointer';
+        btn.style.boxShadow = 'none';
+        btn.style.outline = 'none';
+        btn.addEventListener('click', function () {
+            // 先执行撤销回调，再立即关闭当前 toast
+            if (typeof options.onAction === 'function') {
+                try { options.onAction(); } catch (e) { /* 撤销回调异常不阻断关闭 */ }
+            }
+            hideAndAdvance();
+        });
+        toast.appendChild(btn);
+        currentToastActionBtn = btn;
+    }
+
+    // 自动隐藏（普通 3s / 有 action 默认 6s / 显式 duration）
+    setTimeout(hideAndAdvance, duration);
 }
 
 // 添加显示/隐藏 loading 的函数
@@ -111,8 +177,15 @@ function showLoading(message = '加载中...') {
     const loading = document.getElementById('loading');
     if (!loading) return; // 当前页面无遮罩元素（如部分弹窗场景）时静默跳过
 
-    const messageEl = loading.querySelector('p');
-    if (messageEl) messageEl.textContent = message;
+    // 状态组件接入：WDTVStates 可用时用 loading() 渲染到 #loading 的内容区，
+    // 模块未加载则回退原有的 <p> 文本更新（对外行为完全不变）。
+    const S = _getStates();
+    if (S) {
+        S.mount(_loadingHost(loading), S.loading(message));
+    } else {
+        const messageEl = loading.querySelector('p');
+        if (messageEl) messageEl.textContent = message;
+    }
     loadingOwnerSeq++;
     loading.classList.add('show');
 
@@ -133,6 +206,10 @@ function hideLoading() {
     const loading = document.getElementById('loading');
     if (!loading) return;
     loading.classList.remove('show');
+
+    // 模块可用时清空状态组件渲染的内容（与 showLoading 使用同一 host）
+    const S = _getStates();
+    if (S) S.clear(_loadingHost(loading));
 }
 
 function updateSiteStatus(isAvailable) {
@@ -145,9 +222,18 @@ function updateSiteStatus(isAvailable) {
 }
 
 function closeModal() {
-    document.getElementById('modal').classList.add('hidden');
+    // 关闭前归还焦点：若该弹层曾通过 openPanelWithTrap 激活过焦点陷阱
+    if (typeof closePanelWithTrap === 'function') closePanelWithTrap('modal');
+
+    const modal = document.getElementById('modal');
+    const modalContent = document.getElementById('modalContent');
+    if (modal) modal.classList.add('hidden');
     // 清除 iframe 内容
-    document.getElementById('modalContent').innerHTML = '';
+    if (modalContent) {
+        const S = _getStates();
+        if (S) S.clear(modalContent);
+        else modalContent.innerHTML = '';
+    }
 }
 
 // 获取搜索历史的增强版本 - 支持新旧格式
@@ -368,15 +454,78 @@ function formatTimestamp(timestamp) {
     return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
-// 获取观看历史记录
+// 归一化标题：去首尾空白、折叠内部空白、转小写，作为无稳定 ID 时的归并键
+function _normTitle(title) {
+    return String(title == null ? '' : title).trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// 弱标识：无 showIdentifier，或缺参时的 title: 回退值（本质没有稳定剧级 ID，等同旧记录）。
+// 只有弱标识记录才允许按 title 归并；稳定标识（sourceCode_vodId）必须按 sid 精确匹配，
+// 否则不同采集站的同名剧会被误合并、sourceCode 被后写入者覆盖。
+function _isWeakShow(item) {
+    return !item || !item.showIdentifier || String(item.showIdentifier).indexOf('title:') === 0;
+}
+
+// 获取观看历史记录（唯一读取入口，做旧记录兼容）
+// 1) 解析失败 / 脏数据不抛错、不白屏；2) 缺字段条目做兜底，绝不丢弃；
+// 3) 稳定标识（sourceCode_vodId）按 sid 精确去重，不同源同名剧各自保留（不误合并）；
+// 4) 弱标识旧记录（无 sid / title: 回退）才按归一化 title 归并，且同 title 已有稳定记录时丢弃
 function getViewingHistory() {
+    let raw;
     try {
-        const data = localStorage.getItem('viewingHistory');
-        return data ? JSON.parse(data) : [];
+        raw = JSON.parse(localStorage.getItem('viewingHistory') || '[]');
     } catch (e) {
-        console.error('获取观看历史失败:', e);
         return [];
     }
+    if (!Array.isArray(raw)) return [];
+
+    const safe = [];
+    for (let i = 0; i < raw.length; i++) {
+        const item = raw[i];
+        if (!item || typeof item !== 'object') continue;
+        // 字段兜底：旧记录可能缺 showIdentifier / sourceCode / url，补齐以防渲染抛错
+        safe.push({
+            ...item,
+            title: typeof item.title === 'string' ? item.title : String(item.title == null ? '' : item.title),
+            url: typeof item.url === 'string' ? item.url : String(item.url == null ? '' : item.url),
+            timestamp: item.timestamp || 0
+        });
+    }
+
+    const stableById = new Map();
+    const stableTitleKeys = new Set();
+    const legacyByTitle = new Map();
+    const merged = [];
+
+    // 第一遍：稳定标识记录按 sid 去重（不同源同名剧各自保留）
+    safe.forEach(item => {
+        if (_isWeakShow(item)) return;
+        stableTitleKeys.add(_normTitle(item.title));
+        const pos = stableById.get(item.showIdentifier);
+        if (pos == null) {
+            stableById.set(item.showIdentifier, merged.length);
+            merged.push(item);
+        } else if ((item.timestamp || 0) > (merged[pos].timestamp || 0)) {
+            merged[pos] = item;
+        }
+    });
+
+    // 第二遍：弱标识旧记录按 title 归并；同 title 已有稳定记录则丢弃（由稳定记录代表）
+    safe.forEach(item => {
+        if (!_isWeakShow(item)) return;
+        const tk = _normTitle(item.title);
+        if (stableTitleKeys.has(tk)) return;
+        const pos = legacyByTitle.get(tk);
+        if (pos == null) {
+            legacyByTitle.set(tk, merged.length);
+            merged.push(item);
+        } else if ((item.timestamp || 0) > (merged[pos].timestamp || 0)) {
+            merged[pos] = item;
+        }
+    });
+
+    merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return merged;
 }
 
 // 加载观看历史并渲染
@@ -498,11 +647,12 @@ function deleteHistoryItem(encodedUrl) {
         // 解码URL
         const url = decodeURIComponent(encodedUrl);
 
-        // 获取当前历史记录
-        const history = getViewingHistory();
-
-        // 过滤掉要删除的项
-        const newHistory = history.filter(item => item.url !== url);
+        // 收敛后 viewingHistory 只有唯一写入路径；删除直接读原始存储按 url 过滤，
+        // 不经过读取侧的 title 归并视图，避免归并后 url 对不上而删不掉
+        // 撤销快照：删除前的完整原始存储（localStorage 返回 JSON 字符串，天然深拷贝）
+        const snapshot = localStorage.getItem('viewingHistory');
+        const raw = JSON.parse(snapshot || '[]');
+        const newHistory = (Array.isArray(raw) ? raw : []).filter(item => item && item.url !== url);
 
         // 保存回localStorage
         localStorage.setItem('viewingHistory', JSON.stringify(newHistory));
@@ -510,8 +660,17 @@ function deleteHistoryItem(encodedUrl) {
         // 重新加载历史记录显示
         loadViewingHistory();
 
-        // 显示成功提示
-        showToast('已删除该记录', 'success');
+        // 带「撤销」动作：把删除前的完整快照写回并重绘
+        const toast = (typeof window !== 'undefined' && typeof window.showToast === 'function')
+            ? window.showToast : showToast;
+        toast('已删除该记录', 'success', {
+            actionLabel: '撤销',
+            onAction: function () {
+                if (snapshot === null || snapshot === undefined) localStorage.removeItem('viewingHistory');
+                else localStorage.setItem('viewingHistory', snapshot);
+                loadViewingHistory();
+            }
+        });
     } catch (e) {
         console.error('删除历史记录项失败:', e);
         showToast('删除记录失败', 'error');
@@ -603,112 +762,171 @@ function playFromHistory(url, title, episodeIndex, playbackPosition = 0) {
     }
 }
 
-// 添加观看历史 - 确保每个视频标题只有一条记录
-// IMPORTANT: videoInfo passed to this function should include a 'showIdentifier' property
-// (ideally `${sourceName}_${vod_id}`), 'sourceName', and 'vod_id'.
-function addToViewingHistory(videoInfo) {
+// 统一生成剧级标识：优先 sourceCode / source_code，绝不把中文 sourceName 或播放 URL 当 ID。
+// 缺参时回退到 title 归一化值（稳定、跨换源不变），而不是 episodes[0] / directVideoUrl。
+function _makeShowIdentifier(info) {
+    const sourceCode = String(info.sourceCode || info.source_code || '');
+    const vodId = String(info.vod_id != null ? info.vod_id : (info.vodId != null ? info.vodId : ''));
+    if (sourceCode && vodId) return sourceCode + '_' + vodId;
+    const t = _normTitle(info.title);
+    return t ? 'title:' + t : '';
+}
+
+// viewingHistory 唯一写入入口（收敛 player.js 与 ui.js 两条独立写入路径）
+// videoInfo: { title, sourceCode|source_code, vod_id|vodId, sourceName(展示), url, directVideoUrl,
+//              episodeIndex, episodes, playbackPosition, duration, timestamp, ... }
+// 去重优先级：① 稳定 showIdentifier 相等 ② 归一化 title + sourceCode 相等
+//             ③ 仅「弱标识」旧记录（无 sid / title: 回退）按归一化 title 归并
+// 稳定标识的新记录只走 ①/② 精确匹配，不同采集站的同名剧各自保留、sourceCode 不被覆盖
+// 旧记录不丢弃，命中后升级为统一标识并合并字段；保留上限 50 条
+// 返回写入后的记录数组
+function upsertViewingHistory(videoInfo) {
+    if (!videoInfo || typeof videoInfo !== 'object') return getViewingHistory();
+    const title = typeof videoInfo.title === 'string' ? videoInfo.title : String(videoInfo.title == null ? '' : videoInfo.title);
+    if (!title.trim()) return getViewingHistory(); // 无标题：明确跳过写入，不用 URL 当 ID
+
+    let history;
     try {
-        const history = getViewingHistory();
-
-        // Ensure videoInfo has a showIdentifier
-        if (!videoInfo.showIdentifier) {
-            if (videoInfo.sourceName && videoInfo.vod_id) {
-                videoInfo.showIdentifier = `${videoInfo.sourceName}_${videoInfo.vod_id}`;
-            } else {
-                // Fallback if critical IDs are missing for the preferred identifier
-                videoInfo.showIdentifier = (videoInfo.episodes && videoInfo.episodes.length > 0) ? videoInfo.episodes[0] : videoInfo.directVideoUrl;
-                // console.warn(`addToViewingHistory: videoInfo for "${videoInfo.title}" was missing sourceName or vod_id for preferred showIdentifier. Generated fallback: ${videoInfo.showIdentifier}`);
-            }
-        }
-
-        const existingIndex = history.findIndex(item =>
-            item.title === videoInfo.title &&
-            item.sourceName === videoInfo.sourceName &&
-            item.showIdentifier === videoInfo.showIdentifier // Strict check using the determined showIdentifier
-        );
-
-        if (existingIndex !== -1) {
-            // Exact match with showIdentifier: Update existing series entry
-            const existingItem = history[existingIndex];
-            existingItem.episodeIndex = videoInfo.episodeIndex;
-            existingItem.timestamp = Date.now();
-            existingItem.sourceName = videoInfo.sourceName || existingItem.sourceName;
-            existingItem.sourceCode = videoInfo.sourceCode || existingItem.sourceCode;
-            existingItem.vod_id = videoInfo.vod_id || existingItem.vod_id;
-            existingItem.directVideoUrl = videoInfo.directVideoUrl || existingItem.directVideoUrl;
-            existingItem.url = videoInfo.url || existingItem.url;
-            existingItem.playbackPosition = videoInfo.playbackPosition > 10 ? videoInfo.playbackPosition : (existingItem.playbackPosition || 0);
-            existingItem.duration = videoInfo.duration || existingItem.duration;
-
-            if (videoInfo.episodes && Array.isArray(videoInfo.episodes) && videoInfo.episodes.length > 0) {
-                if (!existingItem.episodes ||
-                    !Array.isArray(existingItem.episodes) ||
-                    existingItem.episodes.length !== videoInfo.episodes.length ||
-                    !videoInfo.episodes.every((ep, i) => ep === existingItem.episodes[i])) {
-                    existingItem.episodes = [...videoInfo.episodes];
-                    // console.log(`更新 (addToViewingHistory) "${videoInfo.title}" 的剧集数据: ${videoInfo.episodes.length}集`);
-                }
-            }
-
-            history.splice(existingIndex, 1);
-            history.unshift(existingItem);
-            // console.log(`更新历史记录 (addToViewingHistory): "${videoInfo.title}", 第 ${videoInfo.episodeIndex !== undefined ? videoInfo.episodeIndex + 1 : 'N/A'} 集`);
-        } else {
-            // No exact match: Add as a new entry
-            const newItem = {
-                ...videoInfo, // Includes the showIdentifier we ensured is present
-                timestamp: Date.now()
-            };
-
-            if (videoInfo.episodes && Array.isArray(videoInfo.episodes)) {
-                newItem.episodes = [...videoInfo.episodes];
-            } else {
-                newItem.episodes = [];
-            }
-
-            history.unshift(newItem);
-            // console.log(`创建新的历史记录 (addToViewingHistory): "${videoInfo.title}", Episode: ${videoInfo.episodeIndex !== undefined ? videoInfo.episodeIndex + 1 : 'N/A'}`);
-        }
-
-        // 限制历史记录数量为50条
-        const maxHistoryItems = 50;
-        if (history.length > maxHistoryItems) {
-            history.splice(maxHistoryItems);
-        }
-
-        // 保存到本地存储
-        localStorage.setItem('viewingHistory', JSON.stringify(history));
+        history = JSON.parse(localStorage.getItem('viewingHistory') || '[]');
     } catch (e) {
-        // console.error('保存观看历史失败:', e);
+        history = [];
     }
+    if (!Array.isArray(history)) history = [];
+    history = history.filter(item => item && typeof item === 'object');
+
+    const sid = _makeShowIdentifier(videoInfo);
+    const titleKey = _normTitle(title);
+    const sourceCode = String(videoInfo.sourceCode || videoInfo.source_code || '');
+
+    // 找"同一剧"：优先级 稳定 sid > title+sourceCode > 弱标识旧记录按 title 归并
+    let matchIdx = -1;
+    if (sid) {
+        matchIdx = history.findIndex(item => item.showIdentifier && item.showIdentifier === sid);
+    }
+    if (matchIdx === -1 && sourceCode) {
+        matchIdx = history.findIndex(item =>
+            _normTitle(item.title) === titleKey && String(item.sourceCode || '') === sourceCode);
+    }
+    if (matchIdx === -1) {
+        // 第 3 级只用于兼容「弱标识」旧记录：稳定标识的新记录必须靠 sid 精确匹配，
+        // 否则不同采集站的同名剧会被误合并成一条、sourceCode 被后写入者覆盖。
+        matchIdx = history.findIndex(item =>
+            _isWeakShow(item) && _normTitle(item.title) === titleKey);
+    }
+
+    const now = Date.now();
+    let entry;
+    if (matchIdx !== -1) {
+        entry = history[matchIdx];
+    } else {
+        entry = {};
+        history.unshift(entry);
+        matchIdx = 0;
+    }
+
+    // 合并字段：沿用原有字段结构，缺失值不覆盖已有值
+    entry.title = title;
+    if (sid) {
+        // 稳定 ID（sourceCode_vodId）优先升级旧记录；title 回退值不覆盖已有的稳定 ID
+        var sidIsFallback = sid.indexOf('title:') === 0;
+        if (!sidIsFallback || !entry.showIdentifier) entry.showIdentifier = sid;
+    }
+    if (videoInfo.sourceName != null) entry.sourceName = videoInfo.sourceName;
+    if (sourceCode) entry.sourceCode = sourceCode;
+    const vodId = videoInfo.vod_id != null ? videoInfo.vod_id : videoInfo.vodId;
+    if (vodId != null && String(vodId) !== '') entry.vod_id = vodId;
+    if (videoInfo.url != null) entry.url = videoInfo.url;
+    if (videoInfo.directVideoUrl != null) entry.directVideoUrl = videoInfo.directVideoUrl;
+    if (videoInfo.episodeIndex !== undefined) entry.episodeIndex = videoInfo.episodeIndex;
+    if (videoInfo.episodes && Array.isArray(videoInfo.episodes)) entry.episodes = videoInfo.episodes.slice();
+    else if (!Array.isArray(entry.episodes)) entry.episodes = [];
+    if (videoInfo.total != null) entry.total = videoInfo.total;
+    if (videoInfo.playbackPosition > 10) entry.playbackPosition = videoInfo.playbackPosition;
+    else if (entry.playbackPosition == null) entry.playbackPosition = 0;
+    if (videoInfo.duration) entry.duration = videoInfo.duration;
+    entry.timestamp = videoInfo.timestamp || now;
+
+    // 命中项移到最前
+    if (matchIdx !== 0) {
+        history.splice(matchIdx, 1);
+        history.unshift(entry);
+    }
+
+    // 二次去重：稳定标识按 sid 精确去重（不同源同名剧各自保留）；
+    // 弱标识旧记录按归一化 title 归并，且同 title 已有稳定记录时丢弃（由稳定记录代表，避免重复）
+    const stableById = new Map();
+    const stableTitleKeys = new Set();
+    const legacyByTitle = new Map();
+    const deduped = [];
+
+    // 第一遍：稳定标识记录按 sid 去重
+    history.forEach(item => {
+        if (_isWeakShow(item)) return;
+        stableTitleKeys.add(_normTitle(item.title));
+        const pos = stableById.get(item.showIdentifier);
+        if (pos == null) {
+            stableById.set(item.showIdentifier, deduped.length);
+            deduped.push(item);
+        } else if ((item.timestamp || 0) > (deduped[pos].timestamp || 0)) {
+            deduped[pos] = item;
+        }
+    });
+
+    // 第二遍：弱标识旧记录按 title 归并；同 title 已有稳定记录则丢弃
+    history.forEach(item => {
+        if (!_isWeakShow(item)) return;
+        const tk = _normTitle(item.title);
+        if (stableTitleKeys.has(tk)) return;
+        const pos = legacyByTitle.get(tk);
+        if (pos == null) {
+            legacyByTitle.set(tk, deduped.length);
+            deduped.push(item);
+        } else if ((item.timestamp || 0) > (deduped[pos].timestamp || 0)) {
+            deduped[pos] = item;
+        }
+    });
+
+    // 按 timestamp 倒序，保证「最近观看」在最前
+    deduped.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    // 保留上限 50 条
+    if (deduped.length > 50) deduped.splice(50);
+
+    try {
+        localStorage.setItem('viewingHistory', JSON.stringify(deduped));
+    } catch (e) {
+        // 存储失败（如配额满）不影响播放流程
+    }
+    return deduped;
+}
+
+// 兼容旧调用形态：薄封装，委托给唯一写入入口
+function addToViewingHistory(videoInfo) {
+    return upsertViewingHistory(videoInfo);
 }
 
 // 清空观看历史
 function clearViewingHistory() {
     try {
+        // 撤销快照：清空前的完整原始存储（JSON 字符串深拷贝）
+        const snapshot = localStorage.getItem('viewingHistory');
         localStorage.removeItem('viewingHistory');
         loadViewingHistory(); // 重新加载空的历史记录
-        showToast('观看历史已清空', 'success');
+        const toast = (typeof window !== 'undefined' && typeof window.showToast === 'function')
+            ? window.showToast : showToast;
+        toast('观看历史已清空', 'success', {
+            actionLabel: '撤销',
+            onAction: function () {
+                if (snapshot === null || snapshot === undefined) localStorage.removeItem('viewingHistory');
+                else localStorage.setItem('viewingHistory', snapshot);
+                loadViewingHistory();
+            }
+        });
     } catch (e) {
         // console.error('清除观看历史失败:', e);
         showToast('清除观看历史失败', 'error');
     }
 }
-
-// 更新toggleSettings函数以处理历史面板互动
-const originalToggleSettings = toggleSettings;
-toggleSettings = function(e) {
-    if (e) e.stopPropagation();
-
-    // 原始设置面板切换逻辑
-    originalToggleSettings(e);
-
-    // 如果历史记录面板是打开的，则关闭它
-    const historyPanel = document.getElementById('historyPanel');
-    if (historyPanel && historyPanel.classList.contains('show')) {
-        historyPanel.classList.remove('show');
-    }
-};
 
 // 点击外部关闭历史面板
 document.addEventListener('DOMContentLoaded', function() {
@@ -759,6 +977,12 @@ function clearLocalStorage() {
 
     // 添加模态框到页面
     document.body.appendChild(modal);
+
+    // 默认焦点落「取消」：破坏性操作的确认弹窗，避免回车/空格误触发「确定」
+    try {
+        const cancelBtn = document.getElementById('cancelBoxModal');
+        if (cancelBtn && typeof cancelBtn.focus === 'function') cancelBtn.focus();
+    } catch (e) { /* 忽略焦点设置异常 */ }
 
     // 添加事件监听器 - 关闭按钮
     document.getElementById('closeBoxModal').addEventListener('click', function () {
@@ -825,3 +1049,147 @@ function clearLocalStorage() {
         }
     });
 }
+
+// ============================================================
+// 观影历史收敛：显式导出到 window
+// 浏览器普通 script 下顶层函数本就挂 window，这里再赋相同引用无副作用；
+// Node ESM 自测时顶层声明不挂 globalThis，靠此桥暴露（与 ad-filter.js 的 IIFE 导出同构）。
+// player.js 跨文件调用 window.upsertViewingHistory。
+// ============================================================
+(function (g) {
+    'use strict';
+    g.upsertViewingHistory = upsertViewingHistory;
+    g.addToViewingHistory = addToViewingHistory;
+    g.getViewingHistory = getViewingHistory;
+    g.deleteHistoryItem = deleteHistoryItem;
+    g.clearViewingHistory = clearViewingHistory;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+// ============================================================
+// 批次 2：状态组件 / 焦点陷阱 可选接入
+// 全部 typeof 防御式：js/states.js / js/focus-trap.js 未加载时回退原有行为，绝不抛错。
+// toggleSettings 已收敛为单一定义（含关闭历史面板），由 HTML 事件层挂接。
+// ============================================================
+
+// 防御式读取 WDTVStates（浏览器挂 window，Node ESM 自测挂 globalThis）
+function _getStates() {
+    var S = (typeof window !== 'undefined' ? window.WDTVStates : null) ||
+            (typeof globalThis !== 'undefined' ? globalThis.WDTVStates : null);
+    return (S && typeof S.loading === 'function' && typeof S.clear === 'function' && typeof S.mount === 'function') ? S : null;
+}
+
+function _getFocusTrap() {
+    var FT = (typeof window !== 'undefined' ? window.WDTVFocusTrap : null) ||
+             (typeof globalThis !== 'undefined' ? globalThis.WDTVFocusTrap : null);
+    return (FT && typeof FT.create === 'function') ? FT : null;
+}
+
+// loading 内容区：优先 .wdtv-loading-content，保留 #loading 遮罩骨架与 .show 切换
+function _loadingHost(loading) {
+    try {
+        if (loading && typeof loading.querySelector === 'function') {
+            const content = loading.querySelector('.wdtv-loading-content');
+            if (content) return content;
+        }
+    } catch (e) { /* 回退到 loading 本身 */ }
+    return loading;
+}
+
+// ---- 通用弹层焦点陷阱：Map<panelId, trap> + Esc 监听 ----
+const panelTraps = new Map();        // panelId -> trap（模块不可用时存 null，仅作"已打开"标记）
+const panelEscHandlers = new Map();  // panelId -> keydown handler
+const panelOpenOrder = [];           // 打开顺序，用于判断"最后打开的弹层"
+
+// 清理某弹层的 trap / Esc 监听 / 顺序记录（不改动面板 DOM 显示状态）
+function _disposePanelTrap(panelId) {
+    const trap = panelTraps.get(panelId);
+    if (trap && typeof trap.deactivate === 'function') {
+        try { trap.deactivate(); } catch (e) { /* 忽略 */ }
+    }
+    panelTraps.delete(panelId);
+
+    const h = panelEscHandlers.get(panelId);
+    if (h) {
+        if (typeof document !== 'undefined' && document && typeof document.removeEventListener === 'function') {
+            try { document.removeEventListener('keydown', h, true); } catch (e) { /* 忽略 */ }
+        }
+        panelEscHandlers.delete(panelId);
+    }
+
+    const idx = panelOpenOrder.indexOf(panelId);
+    if (idx !== -1) panelOpenOrder.splice(idx, 1);
+}
+
+function openPanelWithTrap(panelId) {
+    if (!panelId) return;
+    // 重复打开：先清理旧 trap（只动 trap，不动 DOM，避免误关刚打开的面板）
+    if (panelTraps.has(panelId)) _disposePanelTrap(panelId);
+
+    const panel = (typeof document !== 'undefined' && document && typeof document.getElementById === 'function')
+        ? document.getElementById(panelId) : null;
+
+    const FT = _getFocusTrap();
+    let trap = null;
+    if (FT && panel) {
+        try {
+            trap = FT.create(panel);
+            if (trap && typeof trap.activate === 'function') trap.activate();
+        } catch (e) { trap = null; }
+    }
+    panelTraps.set(panelId, trap);
+
+    // Esc 由 WDTVFocusTrap 不处理：仅当该弹层是最后打开的才关闭，
+    // 且只调用 closePanelWithTrap，不触发关闭动作以外的副作用。
+    if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') {
+        const escHandler = function (e) {
+            if (!e || (e.key !== 'Escape' && e.key !== 'Esc')) return;
+            if (panelOpenOrder.length && panelOpenOrder[panelOpenOrder.length - 1] === panelId) {
+                closePanelWithTrap(panelId);
+            }
+        };
+        document.addEventListener('keydown', escHandler, true);
+        panelEscHandlers.set(panelId, escHandler);
+    }
+
+    const idx = panelOpenOrder.indexOf(panelId);
+    if (idx !== -1) panelOpenOrder.splice(idx, 1);
+    panelOpenOrder.push(panelId);
+}
+
+function closePanelWithTrap(panelId) {
+    if (!panelId) return;
+    _disposePanelTrap(panelId);
+    // 通用关闭：show 体系面板（settingsPanel/historyPanel 等）移除 show class；
+    // hidden / removeChild 体系（#modal 等）为 no-op，由各自关闭逻辑负责。
+    if (typeof document !== 'undefined' && document && typeof document.getElementById === 'function') {
+        const panel = document.getElementById(panelId);
+        if (panel && panel.classList && typeof panel.classList.remove === 'function') {
+            try { panel.classList.remove('show'); } catch (e) { /* 忽略 */ }
+        }
+    }
+}
+
+// 空态 / 错误态输出到 #modalContent：仅在确实无实质内容时渲染，绝不覆盖正常详情。
+// 模块未加载时 no-op；kind === 'error' 走 error()，否则 empty()。
+function renderModalState(kind, title, description) {
+    const S = _getStates();
+    if (!S || typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') return;
+    const box = document.getElementById('modalContent');
+    if (!box) return;
+    let hasContent = false;
+    try {
+        hasContent = (typeof box.innerHTML === 'string' && box.innerHTML.trim().length > 0) ||
+                     (typeof box.childElementCount === 'number' && box.childElementCount > 0);
+    } catch (e) { /* 视作无内容 */ }
+    if (hasContent) return;
+    S.mount(box, kind === 'error' ? S.error(title) : S.empty(title, description));
+}
+
+// 显式导出到 window（浏览器普通 script 顶层函数本就挂 window；
+// Node ESM 自测时靠此桥暴露，与上方 viewingHistory 导出同构）
+(function (g) {
+    'use strict';
+    g.openPanelWithTrap = openPanelWithTrap;
+    g.closePanelWithTrap = closePanelWithTrap;
+    g.renderModalState = renderModalState;
+})(typeof window !== 'undefined' ? window : globalThis);

@@ -1615,7 +1615,11 @@
       return ok;
     },
     hasControl: hasControl,   // 是否拥有控制权（房主或共享开启）
-    roomState: roomState      // 供 UI 渲染
+    roomState: roomState,     // 供 UI 渲染
+    // 批次4：供 player.js 的「程序自动 seek」（进度恢复 / 换档恢复 / 广告跳过 / 片头片尾跳过 / 撤销）调用。
+    // 复用既有 600ms 防回声抑制窗，避免 onLocalSeeking 把程序跳进度误判为用户拖动并广播给整个房间（尤其房主）。
+    // 不改同步协议、不新增请求；用户主动拖进度条仍照常广播。
+    suppressLocalSeek: function () { suppress(); }
   };
 
   if (typeof window !== 'undefined') window.WatchParty = WatchParty;

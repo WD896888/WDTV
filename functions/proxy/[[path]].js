@@ -14,6 +14,9 @@
 //      同一 colo 的重复请求直接命中边缘，不回源、不消耗上游流量
 // 鉴权说明：前端不携带 auth 参数（与 Vercel 版一致），代理层不做密码校验
 
+// SSRF 字面量守卫：纯同步、零网络往返（同目录相对 import，下划线前缀模块不会被注册为路由）
+import { isBlockedTarget } from './_ssrf-literal.mjs';
+
 // --- 配置 (从 Cloudflare 环境变量读取，wrangler.toml [vars] 或 Dashboard 中设置) ---
 // DEBUG (例如 false 或 true)
 // CACHE_TTL (例如 86400)
@@ -89,29 +92,6 @@ export async function onRequest(context) {
         }
     }
 
-    // 展开错误及其 cause 链，返回可读的详细原因列表（用于连接测试诊断）
-    function errorDetails(err) {
-        const parts = [];
-        let current = err;
-        let depth = 0;
-        while (current && depth < 6) {
-            const bits = [];
-            if (current.name) bits.push(current.name);
-            if (current.syscall) bits.push('syscall=' + current.syscall);
-            if (current.code) bits.push('code=' + current.code);
-            if (current.errno !== undefined && current.errno !== null) bits.push('errno=' + current.errno);
-            if (current.hostname) bits.push('host=' + current.hostname);
-            if (current.address) bits.push('addr=' + current.address);
-            if (current.port) bits.push('port=' + current.port);
-            const msg = current.message || String(current);
-            if (bits.indexOf(msg) === -1) bits.push(msg);
-            parts.push(bits.join('  '));
-            current = current.cause;
-            depth++;
-        }
-        return parts.length ? parts : [String(err)];
-    }
-
     // 从请求路径中提取目标 URL
     function getTargetUrlFromPath(pathname) {
         // 路径格式: /proxy/经过编码的URL
@@ -121,17 +101,26 @@ export async function onRequest(context) {
         try {
             let decodedUrl = decodeURIComponent(encodedUrl);
 
-            // 简单检查解码后是否是有效的 http/https URL
-            if (!decodedUrl.match(/^https?:\/\//i)) {
-                // 也许原始路径就没有编码？如果看起来像URL就直接用
-                if (encodedUrl.match(/^https?:\/\//i)) {
-                    decodedUrl = encodedUrl;
-                    logDebug(`Warning: Path was not encoded but looks like URL: ${decodedUrl}`);
-                } else {
-                    logDebug(`无效的目标URL格式 (解码后): ${decodedUrl}`);
-                    return null;
-                }
+            // 兼容：原始路径未编码但看起来像 URL 时仍用原始串（同样要经过 new URL 校验）
+            if (!/^https?:\/\//i.test(decodedUrl) && /^https?:\/\//i.test(encodedUrl)) {
+                decodedUrl = encodedUrl;
+                logDebug(`Warning: Path was not encoded but looks like URL: ${decodedUrl}`);
             }
+
+            // S1 协议白名单：用 new URL() 规范解析，显式只接受 http:/https:。
+            // 其余协议（file:/ftp:/javascript:/data: 等）与畸形串一律返回 null（触发既有 400 分支）。
+            let parsed;
+            try {
+                parsed = new URL(decodedUrl);
+            } catch (e) {
+                logDebug(`无效的目标URL格式 (new URL 解析失败): ${decodedUrl}`);
+                return null;
+            }
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                logDebug(`非法的目标URL协议: ${parsed.protocol}`);
+                return null;
+            }
+            // 返回原始字符串（不做 href 规范化），避免改变下游请求 URL 与缓存键、影响现有源
             return decodedUrl;
         } catch (e) {
             logDebug(`解码目标URL时出错: ${encodedUrl} - ${e.message}`);
@@ -144,14 +133,21 @@ export async function onRequest(context) {
         const responseHeaders = new Headers(headers);
         // 关键：添加 CORS 跨域头，允许前端 JS 访问代理后的响应
         responseHeaders.set("Access-Control-Allow-Origin", "*");
-        responseHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS");
+        responseHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
         responseHeaders.set("Access-Control-Allow-Headers", "*");
 
         if (request.method === "OPTIONS") {
-            return new Response(null, {
-                status: 204,
-                headers: responseHeaders
-            });
+            // S4 兜底：OPTIONS 响应统一补预检结果缓存头（早退分支已自带，这里保证
+            // 被 S3 拒绝的 OPTIONS 错误响应也不缺该头）。
+            responseHeaders.set("Access-Control-Max-Age", "86400");
+            // 仅成功类响应改 204 No Content；错误响应保留原状态码，避免把
+            // S3 的 403 一并"洗"成 204 让跨源预检被误放行。
+            if (status >= 200 && status < 300) {
+                return new Response(null, {
+                    status: 204,
+                    headers: responseHeaders
+                });
+            }
         }
 
         return new Response(body, { status, headers: responseHeaders });
@@ -205,6 +201,17 @@ export async function onRequest(context) {
             throw new Error(`连接目标 URL 失败 ${targetUrl}: ${error.message}`);
         } finally {
             clearTimeout(timer);
+        }
+
+        // S2 补强：redirect:'follow' 只校验了初始 targetUrl，上游 30x 仍可把请求带到
+        // 169.254.169.254 / 内网地址形成重定向型 SSRF。这里追加校验 fetch 给出的最终 URL
+        // （response.url），零额外 RTT、不改 follow 行为，故不影响依赖 302 的正常源。
+        const finalUrl = response && response.url;
+        if (typeof finalUrl === 'string' && finalUrl && isBlockedTarget(finalUrl)) {
+            const forbidden = new Error('blocked redirect target');
+            forbidden.status = 403;
+            forbidden.wdtvForbidden = true;
+            throw forbidden;
         }
 
         if (!response.ok) {
@@ -441,11 +448,65 @@ export async function onRequest(context) {
     // --- 主要请求处理逻辑 ---
 
     try {
+        // --- S3 同源 Referer 校验（照抄 functions/danmu/[[path]].js 的成熟写法）---
+        // 带 Referer 且其 host 与当前请求 host 不一致 → 403；无 Referer 放行（WebView/PWA 兼容）；
+        // 畸形 Referer 视为不同源。纯同步、零网络往返，位于任何 fetch / 缓存查询之前。
+        const referer = request.headers.get('Referer');
+        if (referer) {
+            let refererHost = null;
+            try {
+                refererHost = new URL(referer).host;
+            } catch (e) { /* 畸形 Referer，视为不同源 */ }
+            if (refererHost !== url.host) {
+                logDebug(`Referer 校验拒绝: ${referer}`);
+                return createResponse(JSON.stringify({ error: 'forbidden' }), 403, {
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-store'
+                });
+            }
+        }
+
+        // --- S4 方法白名单：仅 GET / HEAD / OPTIONS，其余 405 + Allow ---
+        if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+            return createResponse(JSON.stringify({ error: 'method not allowed' }), 405, {
+                'Content-Type': 'application/json',
+                'Allow': 'GET, HEAD, OPTIONS',
+                'Cache-Control': 'no-store'
+            });
+        }
+
+        // --- S4 OPTIONS 预检早退：S3 同源校验与 S4 方法白名单均已通过后直接返回 204 ---
+        // 不再落到 getTargetUrlFromPath()/S2/fetch/KV，避免为每个预检白消耗一次上游请求；
+        // 带完整 CORS 头（含 Access-Control-Max-Age: 86400）与 no-store，风格与错误分支一致。
+        if (request.method === 'OPTIONS') {
+            return new Response(null, {
+                status: 204,
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                    'Access-Control-Allow-Headers': '*',
+                    'Access-Control-Max-Age': '86400',
+                    'Cache-Control': 'no-store'
+                }
+            });
+        }
+
         const targetUrl = getTargetUrlFromPath(url.pathname);
 
         if (!targetUrl) {
             logDebug(`无效的代理请求路径: ${url.pathname}`);
             return createResponse("无效的代理请求。路径应为 /proxy/<经过编码的URL>", 400);
+        }
+
+        // --- S2 SSRF 字面量守卫：纯同步、零网络往返 ---
+        // 位于 getTargetUrlFromPath() 返回非空之后、任何 fetch / 缓存 / KV 查询之前。
+        // 仅拦截私网/保留 IP 字面量与非 http(s) 协议，域名一律放行（不影响任何现有源）。
+        if (isBlockedTarget(targetUrl)) {
+            logDebug(`SSRF 字面量守卫拒绝目标: ${targetUrl}`);
+            return createResponse(JSON.stringify({ error: 'forbidden', reason: 'blocked target' }), 403, {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-store'
+            });
         }
 
         logDebug(`收到代理请求: ${targetUrl}`);
@@ -616,34 +677,39 @@ export async function onRequest(context) {
         }
 
     } catch (error) {
+        // 重定向最终目标命中 SSRF 字面量黑名单：沿用 S2 的 403 格式，不落到通用 500 上游错误。
+        if (error && error.wdtvForbidden) {
+            return new Response(JSON.stringify({ error: 'forbidden', reason: 'blocked redirect target' }), {
+                status: 403,
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                    'Access-Control-Allow-Headers': '*',
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-store'
+                }
+            });
+        }
+        // S5：错误响应只返回通用错误码，不再暴露目标 URL / 内网地址 / hostname / port。
+        // 诊断细节仅保留在服务端 DEBUG 日志，不外泄给客户端；保留状态码与 no-store。
         logDebug(`处理代理请求时发生严重错误: ${error.message} \n ${error.stack}`);
         return new Response(JSON.stringify({
             success: false,
-            error: `代理处理错误: ${error.message}`,
-            targetUrl: typeof targetUrl !== 'undefined' ? targetUrl : null,
-            details: errorDetails(error)
+            error: 'upstream_error',
+            code: 'UPSTREAM_FAILED'
         }), {
             status: error.status || 500,
             headers: {
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
+                'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
                 'Access-Control-Allow-Headers': '*',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-store'
             }
         });
     }
 }
 
-// 处理 OPTIONS 预检请求的函数
-export async function onOptions(context) {
-    // 直接返回允许跨域的头信息
-    return new Response(null, {
-        status: 204, // No Content
-        headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "*", // 允许所有请求头
-            "Access-Control-Max-Age": "86400", // 预检请求结果缓存一天
-        },
-    });
-}
+// OPTIONS 预检统一由 onRequest 内 S3/S4 之后的早退分支处理（见上文），不再提供独立导出：
+// Pages Functions 只识别 onRequest 与 onRequestGet/Post/Patch/Put/Delete/Head/Options，
+// onOptions 不是有效导出名，不会被路由调用。

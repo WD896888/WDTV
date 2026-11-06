@@ -1,5 +1,5 @@
 // 账号系统 API 共享核心（纯 Web Crypto，无 Workers 专有 API，可在 Node 22 中直接 import）
-// 由 functions/api/[[path]].js（Pages Functions）、本地开发服 server.mjs、test-sync.mjs 共用同一实现
+// 由 functions/api/[[path]].js（Pages Functions）与本地开发服 server.mjs 共用同一实现
 
 // ============================================================
 // 基础工具
@@ -144,6 +144,31 @@ function allowRegister(env) {
     return env.ALLOW_REGISTER !== 'false';
 }
 
+// ============================================================
+// AUTH_SECRET 统一获取（关键一致性保证）
+// ============================================================
+// AUTH_SECRET 同时决定 JWT 签名与密码哈希（password_hash = HMAC(secret, clientHash)）。
+// 一旦取值发生变化（例如从未设置 secret 变为已设置），所有已签发 token 与全部账号
+// 密码哈希立即失效，表现为"所有账号都无法登录，只能重新注册"。
+// 历史隐患：Pages 上未配置 secret 时 env.AUTH_SECRET 为 undefined，会被 String()
+// 隐式转成 "undefined" 当密钥——与本地 server.mjs 的默认值不一致，且日后补设
+// secret 时全部账号静默报废。统一回退到固定默认值可消除跨环境不一致；
+// 生产环境仍应显式配置强随机 AUTH_SECRET（/api/config 的 authSecretSet 可自检）。
+export const DEFAULT_AUTH_SECRET = 'wdtv-dev-secret';
+
+// 每个 isolate 只告警一次，避免刷日志
+let warnedDefaultSecret = false;
+
+export function authSecret(env) {
+    const s = env && env.AUTH_SECRET;
+    if (typeof s === 'string' && s.length > 0) return s;
+    if (!warnedDefaultSecret) {
+        warnedDefaultSecret = true;
+        console.warn('[wdtv] AUTH_SECRET 未配置，正在使用公开默认值，生产环境请立即通过 wrangler pages secret put AUTH_SECRET 设置强随机密钥');
+    }
+    return DEFAULT_AUTH_SECRET;
+}
+
 // 登录限速表：key = ip|username小写，值 = { count, lockUntil }（模块级，单实例内有效）
 const loginAttempts = new Map();
 
@@ -151,7 +176,7 @@ const loginAttempts = new Map();
 export async function requireAuth(request, env) {
     const m = /^Bearer\s+(.+)$/i.exec(request.headers.get('Authorization') || '');
     if (!m) return null;
-    return verifyJwt(m[1].trim(), env.AUTH_SECRET);
+    return verifyJwt(m[1].trim(), authSecret(env));
 }
 
 // ============================================================
@@ -161,12 +186,14 @@ export async function requireAuth(request, env) {
 // GET /api/auth/salt?username=X：查 users 表；不存在或参数非法时返回一致的假 salt，避免用户名枚举
 async function handleSalt(url, env) {
     ensureDb(env);
-    const username = url.searchParams.get('username') || '';
+    // 去首尾空白：换设备输入时易带入不可见字符
+    const username = (url.searchParams.get('username') || '').trim();
     if (isValidUsername(username)) {
-        const row = await env.WDTV_DB.prepare('SELECT * FROM users WHERE username = ?').bind(username).first();
+        // COLLATE NOCASE：用户名大小写不敏感（手机键盘常自动大写首字母，避免换设备登录查不到用户）
+        const row = await env.WDTV_DB.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').bind(username).first();
         if (row) return json({ salt: row.salt, allowRegister: allowRegister(env) });
     }
-    const fakeSalt = await hmacHex(env.AUTH_SECRET, 'wdtv-fake-salt');
+    const fakeSalt = await hmacHex(authSecret(env), 'wdtv-fake-salt');
     return json({ salt: fakeSalt, allowRegister: allowRegister(env) });
 }
 
@@ -175,23 +202,24 @@ async function handleRegister(request, env) {
     if (!allowRegister(env)) return json({ error: '注册已关闭' }, 403);
     ensureDb(env);
     const body = await readJson(request);
-    const username = str(body.username);
+    const username = str(body.username).trim();
     const salt = str(body.salt);
     const clientHash = str(body.clientHash);
     if (!isValidUsername(username) || !SALT_RE.test(salt) || !CLIENT_HASH_RE.test(clientHash)) {
         return json({ error: '用户名或密码格式不正确' }, 400);
     }
-    const exist = await env.WDTV_DB.prepare('SELECT * FROM users WHERE username = ?').bind(username).first();
+    // 大小写不敏感查重，防止注册出仅大小写不同的重复账号
+    const exist = await env.WDTV_DB.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').bind(username).first();
     if (exist) return json({ error: '用户名已被占用' }, 409);
     // 存库的是服务端加盐哈希：AUTH_SECRET 再包一层 clientHash，泄露数据库也拿不到原始凭据
     const now = Date.now();
     const res = await env.WDTV_DB
         .prepare('INSERT INTO users (username, salt, password_hash, display_name, created_at) VALUES (?, ?, ?, ?, ?)')
-        .bind(username, salt, await hmacHex(env.AUTH_SECRET, clientHash), null, now)
+        .bind(username, salt, await hmacHex(authSecret(env), clientHash), null, now)
         .run();
     const uid = res.meta.last_row_id;
     const sec = Math.floor(now / 1000);
-    const token = await signJwt({ uid, un: username, iat: sec, exp: sec + 30 * 86400 }, env.AUTH_SECRET);
+    const token = await signJwt({ uid, un: username, iat: sec, exp: sec + 30 * 86400 }, authSecret(env));
     return json({ token, username, nickname: null, avatarVersion: 0 });
 }
 
@@ -200,7 +228,7 @@ async function handleLogin(request, env) {
     ensureDb(env);
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     const body = await readJson(request);
-    const username = str(body.username);
+    const username = str(body.username).trim();
     const clientHash = str(body.clientHash);
     const key = `${ip}|${username.toLowerCase()}`;
     const now = Date.now();
@@ -211,11 +239,12 @@ async function handleLogin(request, env) {
     }
     if (now < rec.lockUntil) return json({ error: '尝试次数过多，请 10 分钟后再试' }, 429);
 
+    // COLLATE NOCASE：大小写不敏感匹配，登录成功后以库中规范用户名签发 token
     const row =
         isValidUsername(username) && CLIENT_HASH_RE.test(clientHash)
-            ? await env.WDTV_DB.prepare('SELECT * FROM users WHERE username = ?').bind(username).first()
+            ? await env.WDTV_DB.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').bind(username).first()
             : null;
-    const expected = row ? await hmacHex(env.AUTH_SECRET, clientHash) : '';
+    const expected = row ? await hmacHex(authSecret(env), clientHash) : '';
     if (!row || !constantTimeEqual(row.password_hash, expected)) {
         // 失败计数，达到阈值锁定 10 分钟
         rec.count++;
@@ -229,7 +258,7 @@ async function handleLogin(request, env) {
 
     const avatarRow = await env.WDTV_DB.prepare('SELECT data, updated_at FROM avatars WHERE user_id = ?').bind(row.id).first();
     const sec = Math.floor(now / 1000);
-    const token = await signJwt({ uid: row.id, un: row.username, iat: sec, exp: sec + 30 * 86400 }, env.AUTH_SECRET);
+    const token = await signJwt({ uid: row.id, un: row.username, iat: sec, exp: sec + 30 * 86400 }, authSecret(env));
     return json({
         token,
         username: row.username,
@@ -341,6 +370,106 @@ async function handleSyncPut(request, env, payload) {
 }
 
 // ============================================================
+// 管理端（X-Admin-Key 鉴权）
+// ============================================================
+
+// 管理端密钥校验：X-Admin-Key 与 env.ADMIN_KEY 恒时比较
+// 返回 'ok' | 'disabled'（未配置 ADMIN_KEY，管理接口关闭）| 'denied'（密钥不符）
+function adminAuth(request, env) {
+    const key = env && env.ADMIN_KEY;
+    if (typeof key !== 'string' || key.length === 0) return 'disabled';
+    const provided = request.headers.get('X-Admin-Key') || '';
+    return constantTimeEqual(provided, key) ? 'ok' : 'denied';
+}
+
+// GET /api/admin/users：全量账号列表（绝不返回 salt 与 password_hash）
+async function handleAdminUsers(env) {
+    ensureDb(env);
+    const rows =
+        (await env.WDTV_DB.prepare('SELECT id, username, display_name, created_at FROM users ORDER BY id').all()).results || [];
+    const users = [];
+    for (const u of rows) {
+        const d = await env.WDTV_DB.prepare('SELECT revision, updated_at FROM user_data WHERE user_id = ?').bind(u.id).first();
+        const a = await env.WDTV_DB.prepare('SELECT updated_at FROM avatars WHERE user_id = ?').bind(u.id).first();
+        users.push({
+            id: u.id,
+            username: u.username,
+            nickname: u.display_name ?? null,
+            createdAt: u.created_at,
+            revision: d ? d.revision : 0,
+            syncUpdatedAt: d ? d.updated_at : 0,
+            hasAvatar: !!a,
+            avatarUpdatedAt: a ? a.updated_at : 0,
+        });
+    }
+    return json({ users });
+}
+
+// GET /api/admin/avatar?userId=N：读取指定账号上传的头像（dataUrl，带 ETag 304）
+async function handleAdminAvatar(request, url, env) {
+    ensureDb(env);
+    const userId = Number(url.searchParams.get('userId'));
+    if (!Number.isInteger(userId) || userId <= 0) return json({ error: '参数不正确' }, 400);
+    const row = await env.WDTV_DB.prepare('SELECT data, updated_at FROM avatars WHERE user_id = ?').bind(userId).first();
+    if (!row) return json({ dataUrl: null, updatedAt: 0 });
+    const etag = `"v${row.updated_at}"`;
+    if ((request.headers.get('If-None-Match') || '') === etag) {
+        return new Response(null, { status: 304, headers: { ETag: etag } });
+    }
+    return json({ dataUrl: row.data, updatedAt: row.updated_at }, 200, { ETag: etag, 'Cache-Control': 'no-store' });
+}
+
+// POST /api/admin/reset-password：body { userId, salt, clientHash }
+// 管理页在浏览器端用新密码 PBKDF2 派生 clientHash 后提交，服务端与注册同规二次加盐存储
+async function handleAdminResetPassword(request, env) {
+    ensureDb(env);
+    const body = await readJson(request);
+    const userId = Number(body.userId);
+    const salt = str(body.salt);
+    const clientHash = str(body.clientHash);
+    if (!Number.isInteger(userId) || userId <= 0 || !SALT_RE.test(salt) || !CLIENT_HASH_RE.test(clientHash)) {
+        return json({ error: '参数不正确' }, 400);
+    }
+    const target = await env.WDTV_DB.prepare('SELECT id FROM users WHERE id = ?').bind(userId).first();
+    if (!target) return json({ error: '用户不存在' }, 404);
+    await env.WDTV_DB
+        .prepare('UPDATE users SET salt = ?, password_hash = ? WHERE id = ?')
+        .bind(salt, await hmacHex(authSecret(env), clientHash), userId)
+        .run();
+    return json({ ok: true });
+}
+
+// POST /api/admin/delete-user：body { userId }，连同同步数据与头像一并删除
+// 删除后该账号已签发的 token 由受保护路由的"用户存活校验"立即失效（无需等 30 天过期）
+async function handleAdminDeleteUser(request, env) {
+    ensureDb(env);
+    const body = await readJson(request);
+    const userId = Number(body.userId);
+    if (!Number.isInteger(userId) || userId <= 0) return json({ error: '参数不正确' }, 400);
+    const target = await env.WDTV_DB.prepare('SELECT id FROM users WHERE id = ?').bind(userId).first();
+    if (!target) return json({ error: '用户不存在' }, 404);
+    await env.WDTV_DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
+    await env.WDTV_DB.prepare('DELETE FROM user_data WHERE user_id = ?').bind(userId).run();
+    await env.WDTV_DB.prepare('DELETE FROM avatars WHERE user_id = ?').bind(userId).run();
+    return json({ ok: true });
+}
+
+// GET /api/admin/user-data?userId=N：读取指定账号的同步数据
+async function handleAdminUserData(url, env) {
+    ensureDb(env);
+    const userId = Number(url.searchParams.get('userId'));
+    if (!Number.isInteger(userId) || userId <= 0) return json({ error: '参数不正确' }, 400);
+    const target = await env.WDTV_DB.prepare('SELECT id FROM users WHERE id = ?').bind(userId).first();
+    if (!target) return json({ error: '用户不存在' }, 404);
+    const row = await env.WDTV_DB.prepare('SELECT payload, revision, updated_at FROM user_data WHERE user_id = ?').bind(userId).first();
+    let payload = null;
+    if (row) {
+        try { payload = JSON.parse(row.payload); } catch { payload = null; }
+    }
+    return json({ payload, revision: row ? row.revision : 0, updatedAt: row ? row.updated_at : 0 });
+}
+
+// ============================================================
 // 主入口
 // ============================================================
 
@@ -351,9 +480,28 @@ export async function handleApi(request, env) {
         const path = url.pathname;
         const method = request.method;
 
+        // ---- 管理端接口（X-Admin-Key 鉴权；未配置 ADMIN_KEY 时全部关闭）----
+        if (path.startsWith('/api/admin/')) {
+            const auth = adminAuth(request, env);
+            if (auth === 'disabled') return json({ error: '管理接口未启用' }, 403);
+            if (auth === 'denied') return json({ error: '管理密钥不正确' }, 403);
+            if (path === '/api/admin/users' && method === 'GET') return await handleAdminUsers(env);
+            if (path === '/api/admin/user-data' && method === 'GET') return await handleAdminUserData(url, env);
+            if (path === '/api/admin/avatar' && method === 'GET') return await handleAdminAvatar(request, url, env);
+            if (path === '/api/admin/reset-password' && method === 'POST') return await handleAdminResetPassword(request, env);
+            if (path === '/api/admin/delete-user' && method === 'POST') return await handleAdminDeleteUser(request, env);
+            return json({ error: 'Not Found' }, 404);
+        }
+
         // ---- 公开接口 ----
+        // /api/config：注册开关 + 部署自检（db: D1 是否绑定；authSecretSet: 是否已配置
+        // 强随机 AUTH_SECRET——false 表示正在使用公开默认值，存在安全风险，请尽快设置）
         if (path === '/api/config' && method === 'GET') {
-            return json({ allowRegister: allowRegister(env) });
+            return json({
+                allowRegister: allowRegister(env),
+                db: !!(env && env.WDTV_DB),
+                authSecretSet: !!(env && typeof env.AUTH_SECRET === 'string' && env.AUTH_SECRET.length > 0)
+            });
         }
         if (path === '/api/auth/salt' && method === 'GET') {
             return await handleSalt(url, env);
@@ -374,6 +522,9 @@ export async function handleApi(request, env) {
         ) {
             const payload = await requireAuth(request, env);
             if (!payload) return json({ error: '登录已过期，请重新登录' }, 401);
+            // 用户存活校验：账号被管理员删除后立即踢下线（JWT 本身 30 天有效，不能等过期）
+            const alive = await env.WDTV_DB.prepare('SELECT id FROM users WHERE id = ?').bind(payload.uid).first();
+            if (!alive) return json({ error: '登录已过期，请重新登录' }, 401);
             if (path === '/api/user/me') return await handleMe(request, env, payload);
             if (path === '/api/user/profile') return await handleProfile(request, env, payload);
             if (path === '/api/user/avatar') {

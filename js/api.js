@@ -20,6 +20,10 @@ function readSourceHealth() {
     }
 }
 
+// 与 js/source-health.js 的 writeRaw 并存，但职责互补、不构成并发覆盖：
+// 这里只 patch「直连维度」direct/dts（或模块缺失时的旧格式字段），那边维护 failCount/tier/
+// permanent 停用阶梯；两者都是同步 read-modify-write，且不删除对方字段。
+// 模块已加载时 markSourceHealth 直接委托 SourceHealth.record，不再经过本函数。
 function updateSourceHealth(apiId, patch) {
     try {
         const health = readSourceHealth();
@@ -28,8 +32,13 @@ function updateSourceHealth(apiId, patch) {
     } catch (e) { /* 存储失败不影响请求 */ }
 }
 
-// 记录源整体请求成败
+// 记录源整体请求成败：委托阶梯停用状态机；模块未加载时回退到原有写入逻辑
 function markSourceHealth(apiId, ok) {
+    const sh = (typeof window !== 'undefined') ? window.SourceHealth : null;
+    if (sh && typeof sh.record === 'function') {
+        sh.record(apiId, ok);
+        return;
+    }
     updateSourceHealth(apiId, { ok: ok ? 1 : 0, ts: Date.now() });
 }
 
@@ -38,10 +47,40 @@ function markDirectHealth(apiId, directOk) {
     updateSourceHealth(apiId, { direct: directOk ? 1 : 0, dts: Date.now() });
 }
 
-// 该源近期（TTL 内）整体请求是否失败过
+// 该源是否已被阶梯停用（语义从「近期失败过」改为「已被停用」；模块未加载时回退旧判定）
 function isSourceUnhealthy(apiId) {
+    const sh = (typeof window !== 'undefined') ? window.SourceHealth : null;
+    if (sh && typeof sh.isDisabled === 'function') {
+        return !!sh.isDisabled(apiId);
+    }
     const entry = readSourceHealth()[apiId];
     return !!(entry && entry.ok === 0 && Date.now() - entry.ts < SOURCE_HEALTH_TTL);
+}
+
+// 供设置面板读取源健康度状态（阶梯停用徽章）
+function getSourceHealthStatus(apiId) {
+    const sh = (typeof window !== 'undefined') ? window.SourceHealth : null;
+    if (sh && typeof sh.status === 'function') {
+        return sh.status(apiId);
+    }
+    // 回退：模块未加载时给出「未停用」的最小状态对象
+    return { disabled: false, until: 0, tier: 0, failCount: 0, permanent: false, remainingMs: 0 };
+}
+
+// 手动恢复某个源（清停用态与失败计数）；模块未加载时回退到原有成功态写入
+function resumeSourceHealth(apiId) {
+    const sh = (typeof window !== 'undefined') ? window.SourceHealth : null;
+    if (sh && typeof sh.resume === 'function') {
+        sh.resume(apiId);
+        return;
+    }
+    updateSourceHealth(apiId, { ok: 1, ts: Date.now(), failCount: 0, tier: 0, disabledUntil: 0, permanent: false });
+}
+
+// 显式挂到 window，供设置面板 / 连接测试调用（顶层 function 声明本已全局，双重保险）
+if (typeof window !== 'undefined') {
+    window.getSourceHealthStatus = getSourceHealthStatus;
+    window.resumeSourceHealth = resumeSourceHealth;
 }
 
 // 该源近期（TTL 内）直连是否失败过：是则跳过直连直接走代理
@@ -66,6 +105,10 @@ function linkAbortSignal(externalSignal, controller) {
 //   totalBudget   总预算（毫秒），代理回退使用剩余预算
 //   apiId         源标识：提供时直连成败计入源健康度，且近期直连失败过的源自动跳过直连
 //   signal        外部中止信号（新搜索发起时 abort 旧请求）
+// 健康度职责划分（勿在此处补写整源成败）：这里只记「直连维度」direct/dts。
+// 整源成败由业务层调用方在判定响应内容后写回（search.js 判 list 是否有效、
+// fetchVideoDetailData 判集数是否可用），因为 HTTP 200 也可能是风控页或空 list。
+// 若在这里再写一次，搜索链路将与 search.js 双计数（一次请求记两次失败 → 误停用）。
 async function fetchWithFallback(url, { headers, directTimeout = DIRECT_TIMEOUT_DEFAULT, totalBudget = TOTAL_BUDGET_DEFAULT, apiId = null, signal = null } = {}) {
     const deadline = Date.now() + totalBudget;
 
@@ -231,12 +274,21 @@ function fetchDetailData(url, apiId, signal) {
 }
 
 // 获取视频详情与集数列表（不依赖 Service Worker 的 /api/detail，任何环境均可直接调用）
-// opts: { id, source }；返回 { code, episodes, videoInfo, ... }
+// opts: { id, source, signal }；返回 { code, episodes, videoInfo, ... }
 // 详情获取方式由 config.js 各源的 detailMode 显式配置，不做运行时猜测：
 //   'api'（默认）—— 仅标准接口；'html' —— 仅详情页解析；'auto' —— 接口优先、失败回退详情页
 async function fetchVideoDetailData(opts) {
+    // 详情 / 播放页换源链路把「业务层成败」写回源健康度，与搜索链路共用同一停用阶梯。
+    // 画质探测等纯探测型调用传 trackHealth:false 跳过，避免「某片无 m3u8」被误判为源故障。
+    const { id, source = 'heimuer', signal = null } = opts || {};
+    const trackHealth = !opts || opts.trackHealth !== false;
+    let healthSettled = false;
+    const settleHealth = function (ok) {
+        if (!trackHealth || healthSettled) return;
+        healthSettled = true;
+        try { markSourceHealth(source, ok); } catch (e) { /* 存储异常不影响详情 */ }
+    };
     try {
-        const { id, source = 'heimuer' } = opts || {};
 
         if (!id) throw new Error('缺少视频ID参数');
         if (!/^[\w-]+$/.test(id)) throw new Error('无效的视频ID格式');
@@ -252,7 +304,7 @@ async function fetchVideoDetailData(opts) {
         let apiResult = null;
         if (detailMode === 'api' || detailMode === 'auto') {
             try {
-                const response = await fetchDetailData(detailUrl, source);
+                const response = await fetchDetailData(detailUrl, source, signal);
                 if (response.ok) {
                     const data = await response.json();
                     if (data && data.list && Array.isArray(data.list) && data.list.length > 0) {
@@ -308,7 +360,7 @@ async function fetchVideoDetailData(opts) {
                         };
 
                         // 标准接口拿到集数，直接返回
-                        if (episodes.length > 0) return apiResult;
+                        if (episodes.length > 0) { settleHealth(true); return apiResult; }
                     }
                 }
             } catch (e) {
@@ -322,6 +374,7 @@ async function fetchVideoDetailData(opts) {
                 try {
                     const htmlResult = JSON.parse(await handleSpecialSourceDetail(id, source));
                     if (htmlResult && Array.isArray(htmlResult.episodes) && htmlResult.episodes.length > 0) {
+                        settleHealth(true);
                         return htmlResult;
                     }
                 } catch (e) {
@@ -333,9 +386,11 @@ async function fetchVideoDetailData(opts) {
         }
 
         // 3) 标准接口有视频信息但无集数：仍返回（弹窗展示信息）；两条路径都拿不到数据则报错
-        if (apiResult) return apiResult;
+        if (apiResult) { settleHealth(true); return apiResult; }
+        settleHealth(false);
         throw new Error('详情获取失败：未获取到可用集数');
     } catch (error) {
+        settleHealth(false);
         console.error('获取视频详情失败:', error);
         return { code: 400, msg: error.message || '请求处理失败', episodes: [] };
     }
@@ -451,25 +506,30 @@ const M3U8_DURATION_TOTAL_BUDGET = 14000;
 // 代理跑在海外 serverless 上时经常被视频 CDN 地域屏蔽/风控拒绝，
 // 全部依赖代理会导致时长大面积检测失败而播放却一切正常。
 // apiId 用 CDN 主机名：近期直连失败过的 CDN 自动跳过直连直接走代理，省去每集白等直连超时
-async function fetchM3u8Duration(url, depth = 0) {
+// signal：外部中止信号（如新搜索发起时中断在途的时长探测）
+async function fetchM3u8Duration(url, depth = 0, signal = null) {
     try {
         let resp;
         if (url.startsWith(PROXY_URL)) {
             // 代理重写后的同源路径：直接请求（不可再次编码，也没有直连一说）
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 10000);
+            linkAbortSignal(signal, controller);
             try {
                 resp = await fetch(url, { signal: controller.signal });
             } finally {
                 clearTimeout(timer);
             }
         } else {
+            // 时长探测的 apiId 是 CDN 主机名（m3u8:xxx），与采集站源 ID 属不同键空间、
+            // 没有 isSourceUnhealthy 消费点，故此处只记直连维度，不写整源成败（避免污染停用阶梯）。
             let apiId = null;
             try { apiId = 'm3u8:' + new URL(url).hostname; } catch (e) { /* 非法地址不记健康度 */ }
             resp = await fetchWithFallback(url, {
                 directTimeout: M3U8_DURATION_DIRECT_TIMEOUT,
                 totalBudget: M3U8_DURATION_TOTAL_BUDGET,
-                apiId
+                apiId,
+                signal: signal || null
             });
         }
         if (!resp || !resp.ok) return null;
@@ -492,7 +552,7 @@ async function fetchM3u8Duration(url, depth = 0) {
                     if (!line || line.startsWith('#')) continue;
                     // 子列表地址已被代理重写为 /proxy/ 同源路径时直接透传，否则按真实地址相对解析
                     const nextUrl = line.startsWith(PROXY_URL) ? line : resolveM3u8Url(baseUrl, line);
-                    return await fetchM3u8Duration(nextUrl, depth + 1);
+                    return await fetchM3u8Duration(nextUrl, depth + 1, signal);
                 }
             }
             return null;

@@ -657,7 +657,7 @@
             state.metaDirty = true;
             scheduleFlush();
         }
-        // done 不再是永久终态：换档（手动切清晰度 / ABR 自动升降档 / 画质模式切换）会把
+        // done 不再是永久终态：换档（手动切清晰度 / 换集换源重建）会把
         // levelKeys 整体重建为新档分片集合。旧档的 done 若不重开泵，新档除"播放路过写穿"
         // 的分片外全部缺失，而面板却按 done 短路恒显 100%（假 100%）——表现为"整集已缓存
         // 完成 ✓"，但 seek 到未缓冲区（回开头/远处）时缓存未命中、回退网络慢加载，与显示
@@ -937,7 +937,7 @@
     // - 首字节看门狗：连接建立阶段限时 FRAG_DIRECT_TTFB_MS，超时判"连不上"→ 失败
     // - 停滞看门狗：出流后连续 FRAG_DIRECT_STALL_MS 无新字节才判连接僵死 → 失败
     // 首字节到达后不再限制总时长：慢但在流的连接（蜂窝网常见）允许跑完，
-    // 由 hls.js ABR 自行降档适配带宽，而不是误杀直连锁进更慢的跨境代理
+    // 由播放端重试与缓冲消化慢速链路，而不是误杀直连锁进更慢的跨境代理
     function directXhrLoad(url, headers, responseType, onSuccess, onFail, onAbort) {
         var xhr = new XMLHttpRequest();
         var startTs = performance.now();
@@ -1256,6 +1256,52 @@
         markPumpFailed(s);
     }
 
+    // ===== 缝合点预热（广告删除专用） =====
+    // 背景：中插广告被整段移除后，重印时间戳的源会留一个时间线空洞（如正片 590s → 630s），
+    // hls.js 跳空洞前要现取"缝合点后第一个分片"——网络慢就是一次可见卡顿（用户感知的"闪烁"）。
+    // 这里在清单解析后立即把该分片抓入 IDB：播放头到达缝合点时 loader 直接命中缓存，零等待。
+    // 与预取泵的区别：不走队列/并发额度，一次性少量（调用方限幅），失败完全静默。
+    // 键口径必须与 loader 一致：URL 用 hls.js 将要请求的原样（代理形态下即 /proxy/ 形式）。
+    function warmFrags(items) {
+        if (state.disabled || !items || !items.length) return;
+        var s = state.session;
+        if (!s || s.paused || s.state === 'failed') return;
+        for (var i = 0; i < items.length; i++) {
+            (function (item) {
+                if (!item || !item.url) return;
+                var rs = item.rs != null ? item.rs : null;
+                var re = item.re != null ? item.re : null;
+                var key = fragmentKey(item.url, rs, re);
+                // 已入库 / 播放器正在取 / 下载器在途：跳过（避免重复请求）
+                if (state.cachedFragKeys.has(key) || state.inflightPlayback.has(key) ||
+                    (s.downloading && s.downloading.has(key))) return;
+                var headers = rs != null
+                    ? { Range: 'bytes=' + rs + '-' + (re != null ? (re - 1) : '') }
+                    : undefined;
+                fetchWithTimeout(item.url, headers).then(function (res) {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.arrayBuffer().then(function (buf) {
+                        // 与预取泵一致的完整性校验：坏分片绝不入库（防永久秒回坏数据）
+                        if (!buf || !buf.byteLength) throw new Error('empty-fragment');
+                        if (rs != null && re != null) {
+                            if (buf.byteLength !== re - rs) throw new Error('fragment-size-mismatch');
+                        } else if (res.contentLength > 0 && buf.byteLength < res.contentLength) {
+                            throw new Error('fragment-truncated');
+                        }
+                        return buf;
+                    });
+                }).then(function (buf) {
+                    return putFragSafe(key, item.url, rs, re, buf).then(function (ok) {
+                        if (ok) {
+                            state.cachedFragKeys.add(key);
+                            if (s.levelKeys.has(key)) s.levelCached.add(key);
+                        }
+                    });
+                }).catch(function () { /* 预热失败静默：不影响正常播放路径 */ });
+            })(items[i]);
+        }
+    }
+
     // ===== loader（读写穿透） =====
     // 清单文本缓存有效期：manifest 短（保证服务端/上游修复能在数小时内生效，自愈坏清单）；
     // level（VOD 媒体列表）内容不变，可长效缓存
@@ -1274,7 +1320,14 @@
         if (type !== 'fragment') {
             var url = key.slice(2);
             var mem = state.textMemCache.get(url);
-            if (mem !== undefined) return Promise.resolve({ data: mem, size: mem.length });
+            if (mem !== undefined) {
+                // 广告过滤版本签名校验（js/ad-filter.js）：规则版本或主开关变更后，
+                // 旧签名文本视为未命中（落入 IDB 分支同样失守→回源重取，自愈迁移）
+                if (typeof WDTVAdFilter === 'undefined' || WDTVAdFilter.textMatchesCurrentSignature(mem)) {
+                    return Promise.resolve({ data: mem, size: mem.length });
+                }
+                state.textMemCache.delete(url);
+            }
         }
         var ck = type + '|' + key;
         if (state.pendingReads.has(ck)) return state.pendingReads.get(ck);
@@ -1289,6 +1342,17 @@
                 // manifest 短 TTL 自愈；level（VOD 媒体列表）内容不变可长效。
                 var ttl = type === 'manifest' ? MANIFEST_TTL_MS : LEVEL_TTL_MS;
                 if (!rec.ts || Date.now() - rec.ts > ttl) return undefined;
+                // 广告过滤版本签名校验：旧规则/旧开关产出的文本删除并视为未命中，
+                // 回源后 writeThrough 写入新签名文本（一次性自愈，旧文本最长存活一次读取）
+                if (typeof WDTVAdFilter !== 'undefined' && !WDTVAdFilter.textMatchesCurrentSignature(rec.data)) {
+                    state.textMemCache.delete(rec.url || key.slice(2));
+                    ensureDB().then(function (db) {
+                        return txWrite(db, [STORE_TEXTS], function (tx) {
+                            tx.objectStore(STORE_TEXTS).delete(key);
+                        });
+                    }).catch(function () { });
+                    return undefined;
+                }
                 textMemCacheSet(rec.url || key.slice(2), rec.data);
             }
             if (rec && type === 'fragment' && isBrokenFragRecord(rec)) {
@@ -2062,6 +2126,7 @@
         coverageOf: coverageOf,
         currentKeyOf: currentKeyOf,
         invalidateFragment: invalidateFragment,
+        warmFrags: warmFrags,
         housekeep: housekeep,
         openManager: openManager,
         closeManager: closeManager

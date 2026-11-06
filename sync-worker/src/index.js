@@ -236,10 +236,13 @@ export class WatchRoom {
     const room = url.searchParams.get('room') || '';
     const uid = url.searchParams.get('uid') || '';
     const name = url.searchParams.get('name') || '';
-    const token = url.searchParams.get('token') || '';
-    const tokUid = await verifyRoomToken(token, room, this.env.AUTH_SECRET);
-    // 参数齐全 + token 有效 + token 身份与 uid 一致（防冒名）
-    if (!room || !uid || !name || !tokUid || tokUid !== uid) return json({ error: 'authFailed' }, 403);
+    // 本 DO 仅可经两条受信路径到达，身份均已在上游完成鉴权（token→uid 校验）：
+    //   1) Pages DO 绑定（平台保证仅绑定的 Pages 项目可调用；roomToken 已由 Pages
+    //      Function 用 Pages 的 AUTH_SECRET 校验，并把反解出的 uid 写入 query）；
+    //   2) worker 层 /ws（本地联调直连；已用 worker AUTH_SECRET 校验后转发）。
+    // 不在此处用 worker 自身 AUTH_SECRET 重复校验 roomToken——那要求两侧 secret
+    // 恒等，一旦漂移（或 worker 未设置）所有 WS 升级 403，前端表现为"永远连接中"。
+    if (!room || !uid || !name) return json({ error: 'authFailed' }, 403);
 
     // 同 uid 替换：旧 socket 以 4000 关闭（刷新页面/换标签页重连场景，不计新成员）
     for (const old of this.ctx.getWebSockets()) {

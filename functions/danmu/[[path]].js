@@ -148,13 +148,13 @@ export async function onRequest(context) {
     }
 
     // --- 构造上游地址（捕获路径不含前导斜杠，统一归一化补上） ---
-    // 调试补丁：透传段整体包 try/catch 把线上异常堆栈直接返回（排查 1101；定位后移除）
+    // 统一错误响应：异常堆栈/消息只进服务端日志，绝不放进响应体。
+    // 前端 js/danmu.js 已按 502 / 失败静默降级，行为不变。
     try {
         return await passthroughRequest(context, request, env, url, rawPath, waitUntil);
     } catch (err) {
-        const stack = (err && (err.stack || err.message)) || String(err);
-        console.error('[Danmu Func fatal]', stack);
-        return jsonResponse({ fatal: true, message: String(err && err.message || err), stack }, 500, { 'Cache-Control': 'no-store' });
+        console.error('[Danmu Func fatal]', err && (err.stack || err.message) || String(err));
+        return jsonResponse({ error: 'upstream' }, 502, { 'Cache-Control': 'no-store' });
     }
 }
 

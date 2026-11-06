@@ -4,7 +4,7 @@
 //       （剧集区折叠为「剧集选单」按钮并入资源信息栏顶替「切换资源」位置；
 //        面板内 聊天区占主导 + 房间信息/操作区可折叠 + 底部纤薄工具行）；
 //       四态渲染（idle / connecting / room / error）、M1/M2/M3 操作区、
-//       聊天（本地乐观渲染 + seq 去重 + 未读红点）、共享画布工具条、邀请链接复制。
+//       聊天（本地乐观渲染 + seq 去重 + 未读红点）、共享画布工具条、房间码复制。
 // 依赖：window.WatchParty（js/watch-party.js，defer 顺序保证先于本模块执行）；
 //       window.WatchLocal 见 lp()（js/watch-party-local.js，可缺席，全部特性检测）；
 //       window.CloudSync.getStatus().loggedIn（登录门禁）；window.showToast（js/ui.js）。
@@ -98,6 +98,7 @@
     ownM3Checking: false, // 指纹计算中
     cinemaOpen: false,    // 我的影院选片层（列表）
     cinemaEpFav: null,    // 已展开集数选择的收藏项
+    showCacheProg: false, // 头部工具条开关：M1 信息区是否显示本地缓存进度条（默认隐藏）
     m2Timer: 0,           // M2 覆盖率轮询（3s，值变化才重渲染）
     chatLog: [],          // 聊天记录（重建 DOM 时回放）
     seenSeq: {},          // 服务端 seq 去重（断线重连历史回放不重复）
@@ -493,11 +494,13 @@
 
   // ============================================================
   // room 视图：壳（主区 + 工具行 + 聊天区）只建一次，主区按签名局部重渲染。
-  // 排列：房间信息/操作区（可折叠）→ 紧凑工具条（剧集/画布/共享控制/退出）→ 聊天区
+  // 排列：房间信息/操作区（可折叠）→ 紧凑工具条（搜索换片/剧集/缓存进度/画布/共享控制/退出）→ 聊天区
   // ============================================================
-  // 工具行图标（剧集选单 / 画布 / 共享控制 / 退出房间，紧凑图标条）
+  // 工具行图标（搜索换片 / 剧集选单 / 缓存进度 / 画布 / 共享控制 / 退出房间，紧凑图标条）
   var TOOL_ICONS = {
+    search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
     episodes: '<path d="M4 6h16M4 12h16M4 18h10"/>',
+    cache: '<path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/>',
     canvas: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     share: '<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6"/>',
     leave: '<path d="M15 3h4a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/>'
@@ -517,8 +520,13 @@
       tools.id = 'wpHeadTools';
       tools.className = 'wp-head-tools';
       tools.innerHTML =
+        '<button type="button" class="wp-tool-btn" id="wpSearchTool" hidden title="搜索换片：在线选片并同步给对方">' +
+          toolBtn(TOOL_ICONS.search) + '<span>换片</span></button>' +
         '<button type="button" class="wp-tool-btn" id="wpEpisodesBtn" title="剧集选单">' +
           toolBtn(TOOL_ICONS.episodes) + '<span>剧集</span></button>' +
+        '<label class="wp-tool-btn wp-tool-toggle" id="wpCacheProgWrap" hidden title="缓存进度：显示/隐藏双方本地缓存进度条">' +
+          '<input type="checkbox" id="wpCacheProgToggle">' +
+          toolBtn(TOOL_ICONS.cache) + '<span>缓存</span></label>' +
         '<label class="wp-tool-btn wp-tool-toggle" id="wpCanvasWrap" title="画布涂鸦：双方可同步绘画">' +
           '<input type="checkbox" id="wpCanvasToggle">' +
           toolBtn(TOOL_ICONS.canvas) + '<span>画布</span></label>' +
@@ -531,6 +539,12 @@
       if (toggle) head.insertBefore(tools, toggle);
       else head.appendChild(tools);
       // 事件只绑一次
+      $('#wpSearchTool', tools).addEventListener('click', openWpSearchModal);
+      $('#wpCacheProgToggle', tools).addEventListener('change', function () {
+        ui.showCacheProg = this.checked;
+        ui.roomSig = ''; // 主区重渲染以应用进度条显隐
+        render();
+      });
       var epBtn = $('#wpEpisodesBtn', tools);
       if (epBtn) epBtn.addEventListener('click', function () {
         try { if (typeof toggleEpisodesModal === 'function') toggleEpisodesModal(); } catch (e) { }
@@ -561,7 +575,7 @@
           '<div id="wpMsgs" class="wp-msgs"></div>' +
           '<div class="wp-chat-input-row">' +
             '<input id="wpChatInput" class="wp-chat-input" type="text" maxlength="500" placeholder="说点什么...（回车发送）">' +
-            '<button type="button" class="wp-send" id="wpSend">发送</button>' +
+            '<button type="button" class="wp-send" id="wpSend" aria-label="发送" title="发送">' + SEND_ICON + '</button>' +
           '</div>' +
         '</div>';
       ui.main = $('#wpMain', ui.body);
@@ -578,6 +592,7 @@
     }
     renderMain(rs);
     syncShareUI(rs);
+    syncM1Tools(rs);
     syncLockUI(rs);
     syncCanvasUI(canvasOn());
     updatePeerHint();
@@ -597,6 +612,20 @@
       t.disabled = rs.role !== 'host';
       if (wrap) wrap.classList.toggle('on', !!rs.shared);
     }
+  }
+
+  // 搜索换片工具可见性：与原 M1 选片入口同范围——仅在线共看（M1）且拥有控制权
+  // （房主或已共享）时显示；idle 主区已有完整选片卡、M2/M3 换片流程不同，均不显示。
+  // 缓存进度开关：进度为本地显示偏好（不涉及控制权），M1 期间所有人可见；
+  // 勾选状态随 ui.showCacheProg 回填（重进房/重渲染后保持一致）
+  function syncM1Tools(rs) {
+    var m1 = !!rs && rs.state === 'connected' && rs.mode === 'M1';
+    var st = document.getElementById('wpSearchTool');
+    if (st) st.hidden = !(m1 && canControl(rs));
+    var cp = document.getElementById('wpCacheProgWrap');
+    if (cp) cp.hidden = !m1;
+    var c = document.getElementById('wpCacheProgToggle');
+    if (c && c.checked !== !!ui.showCacheProg) c.checked = !!ui.showCacheProg;
   }
 
   // 纯观看锁定：未拥有控制权（未开共享）时禁用播放器控制类 UI——
@@ -642,7 +671,8 @@
   function renderMain(rs) {
     var cov = covSig(rs);
     var sig = [rs.state, rs.role, rs.shared ? 's' : '', rs.mode, rs.peer && rs.peer.uid, rs.peer && rs.peer.name,
-      ui.online, cov, ui.ownM3File ? 'f' : '', ui.ownM3Fp ? 'p' : '', ui.ownM3Checking ? 'c' : ''].join('|');
+      ui.online, cov, ui.ownM3File ? 'f' : '', ui.ownM3Fp ? 'p' : '', ui.ownM3Checking ? 'c' : '',
+      ui.showCacheProg ? 'b' : ''].join('|');
     if (sig === ui.roomSig) return;
     ui.roomSig = sig;
     var h = topHtml(rs);
@@ -674,7 +704,7 @@
     return ownPct + '/' + peerPct;
   }
 
-  // 顶区：房间码 + 复制邀请 + 成员气泡 + 状态点 + 角色/模式徽标
+  // 顶区：房间码 + 复制房间码 + 成员气泡 + 状态点 + 角色/模式徽标
   function topHtml(rs) {
     var w = wp();
     var meUid = w.uid();
@@ -687,16 +717,15 @@
     return '<div class="wp-top">' +
       '<div class="wp-code-row">' +
         '<span class="wp-code">' + esc(rs.code) + '</span>' +
-        '<button type="button" class="wp-btn wp-btn-ghost wp-btn-sm" id="wpCopy">复制邀请</button>' +
+        '<button type="button" class="wp-btn wp-btn-ghost wp-btn-sm" id="wpCopy">复制房间码</button>' +
       '</div>' +
       '<div class="wp-members">' +
         '<span class="wp-member">' +
-          '<span class="wp-avatar" style="background:' + hashColor(meUid) + '">' + esc(firstChar(meName)) + '</span>' +
+          '<span class="wp-avatar">' + PERSON_ICON + '</span>' +
           '<span class="wp-name">' + esc(meName) + '</span>' +
         '</span>' +
         '<span class="wp-member">' +
-          '<span class="wp-avatar" style="background:' + (hasPeer ? hashColor(rs.peer.uid) : 'rgba(155,180,218,0.3)') + '">' +
-            (hasPeer ? esc(firstChar(peerName)) : '?') + '</span>' +
+          '<span class="wp-avatar' + (hasPeer ? '' : ' wp-avatar-ph') + '">' + PERSON_ICON + '</span>' +
           '<span class="wp-name">' + esc(peerName) + '</span>' +
         '</span>' +
         '<span class="wp-dot ' + connCls + '" id="wpDot" title="' + esc(rttTitle) + '"></span>' +
@@ -717,13 +746,13 @@
     return (rs && (rs.role === 'host' || rs.shared)) || false;
   }
 
-  // 选片入口卡片网格（图标 + 标题 + 副标题，紧凑并排）
+  // 选片入口卡片网格（图标 + 标题 + 可选副标题，紧凑并排）
   // 标题/副标题包一层 .wp-src-card-txt：桌面观影模式卡片改横排胶囊（图标左、文字右）所需
   function srcCard(id, icon, title, sub, extraCls) {
+    var subHtml = sub ? '<span class="wp-src-card-sub">' + sub + '</span>' : '';
     return '<button type="button" class="wp-src-card ' + (extraCls || '') + '" id="' + id + '">' +
       '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg>' +
-      '<span class="wp-src-card-txt"><span class="wp-src-card-title">' + title + '</span>' +
-      '<span class="wp-src-card-sub">' + sub + '</span></span>' +
+      '<span class="wp-src-card-txt"><span class="wp-src-card-title">' + title + '</span>' + subHtml + '</span>' +
     '</button>';
   }
   var SRC_ICONS = {
@@ -733,6 +762,12 @@
     play: '<path d="M7 5.5v13l11-6.5z"/>',
     cache: '<path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/>'
   };
+  // 人形剪影头像（成员气泡占位，无背景色；与账号界面占位同形状）
+  var PERSON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+  // 发送图标（聊天输入框内嵌按钮）
+  var SEND_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>';
 
   // ---------- idle 无片源：选片三入口（搜索 / 影院 / 本地文件）并排卡片 ----------
   function idleSrcHtml(rs, role) {
@@ -752,16 +787,16 @@
       } else {
         // 无片源：搜索 / 影院 / 本地文件三入口一行并排
         h += '<div class="wp-src-grid">' +
-          srcCard('wpGoSearch', SRC_ICONS.search, '搜索影片', '在线共看', 'wp-src-primary') +
-          srcCard('wpPickCinema', SRC_ICONS.cinema, '我的影院', '收藏选片', '') +
-          srcCard('wpM3Pick', SRC_ICONS.file, '本地文件', 'M3 共看', '') +
+          srcCard('wpGoSearch', SRC_ICONS.search, '搜索影片', '', 'wp-src-primary') +
+          srcCard('wpPickCinema', SRC_ICONS.cinema, '我的影院', '', '') +
+          srcCard('wpM3Pick', SRC_ICONS.file, '本地文件', '', '') +
           '</div>' +
           '<p class="wp-hint wp-hint-center">选片后立即开播并自动同步给对方</p>';
       }
     } else {
       h += '<p class="wp-hint">等待房主选片并发起共看，你也可以先选择本地文件</p>' +
         '<div class="wp-src-grid">' +
-        srcCard('wpM3Pick', SRC_ICONS.file, '本地文件', 'M3 共看', '') +
+        srcCard('wpM3Pick', SRC_ICONS.file, '本地文件', '', '') +
         '</div>';
     }
     h += m3Html(rs, role, true);
@@ -876,7 +911,7 @@
     var title = document.getElementById('modalTitle');
     var content = document.getElementById('modalContent');
     if (!modal || !title || !content) { toast('弹窗组件未就绪，请刷新页面'); return; }
-    title.textContent = '搜索影片 · 房间内选片';
+    title.textContent = '搜索影片';
     content.innerHTML =
       '<div class="wp-search-wrap">' +
         '<div class="wp-url-row">' +
@@ -1022,23 +1057,20 @@
     // 片名展示已合并到视频下方大标题行（#videoTitle，WDTVPlayDirect 起播时同步刷新）；
     // 模式状态由成员区「M1 在线」徽标标示，小节不再重复（内容：缓存进度/换片操作自解释）
     var h = '<div class="wp-sec">';
-    // 双方本地缓存进度：双方 ≥99% 后房主自动无缝切换 M2 缓存模式（零网络流量）
+    // 双方本地缓存进度：默认隐藏（头部工具条「缓存」开关控制，ui.showCacheProg），
+    // 双方 ≥99% 后房主自动无缝切换 M2 缓存模式（零网络流量）——开关只影响显示，
+    // 覆盖率上报与自动切换不受影响
     var own = ownCoverage();
     var peer = peerReady(rs);
     var ownPct = own && typeof own.percent === 'number' ? Math.round(own.percent) : null;
     var peerPct = peer && typeof peer.percent === 'number' ? Math.round(peer.percent)
       : (typeof ui.lastPeerCached === 'number' ? Math.round(ui.lastPeerCached) : null);
-    if (ownPct !== null || peerPct !== null) {
+    if ((ownPct !== null || peerPct !== null) && ui.showCacheProg) {
       h += '<div class="wp-sec-title">本地缓存进度</div>' + progHtml('我', ownPct) + progHtml('对方', peerPct);
-      h += rs.role === 'host'
-        ? '<p class="wp-hint">双方缓存完成后将自动切换到缓存播放（M2），抗卡顿零流量</p>'
-        : '<p class="wp-hint">双方缓存完成后房主将切换到缓存播放（M2）</p>';
     }
     if (canControl(rs)) {
-      h += '<div class="wp-src-grid">' +
-        srcCard('wpSearchSwitch', SRC_ICONS.search, '搜索换片', '在线选片', 'wp-src-primary') +
-        srcCard('wpSwitchM2', SRC_ICONS.cache, '切换缓存', '预缓存 M2', '') +
-        '</div>';
+      // 搜索换片入口在头部工具条（wpSearchTool，与剧集/画布等并排）；
+      // 不设「切换缓存」按钮——双方缓存 ≥99% 后自动无缝切换 M2，无需手动触发
       if (cur && roomUrl && String(cur) !== String(roomUrl)) {
         h += '<button type="button" class="wp-btn wp-btn-primary wp-btn-block" id="wpSwitchM1">更换为当前影片</button>';
       }
@@ -1129,9 +1161,11 @@
     } else if (ui.ownM3File) {
       h += '<p class="wp-hint">已选：' + esc(ui.ownM3File.name) + '</p>';
     }
-    h += '<p class="wp-hint">' +
-      (ui.ownM3Checking ? '指纹校验中...' : (ownFp ? '本端文件已就绪' : '双方需选择同一个本地文件')) + '</p>' +
-      (peer && peer.fp ? '<p class="wp-hint">对方文件已就绪' + (peer.name ? '：' + esc(peer.name) : '') + '</p>' : '');
+    // 本端状态提示：仅在本端已选择本地文件（校验中/已就绪）后才显示，
+    // 未选择文件前不出现任何引导文案
+    var ownSt = ui.ownM3Checking ? '指纹校验中...' : (ownFp ? '本端文件已就绪' : '');
+    if (ownSt) h += '<p class="wp-hint">' + ownSt + '</p>';
+    h += (peer && peer.fp ? '<p class="wp-hint">对方文件已就绪' + (peer.name ? '：' + esc(peer.name) : '') + '</p>' : '');
     if (fpOk) h += '<div class="wp-fp ok">文件一致</div>';
     else if (fpBad) h += '<div class="wp-fp bad">双方文件不一致</div>';
     if (rs.mode === 'M3') {
@@ -1154,14 +1188,10 @@
     if (sw) sw.addEventListener('click', function () { doStartCoWatch('M1'); });
     var s2 = $('#wpStartM2', ui.main);
     if (s2) s2.addEventListener('click', function () { doStartCoWatch('M2'); });
-    var sw2 = $('#wpSwitchM2', ui.main);
-    if (sw2) sw2.addEventListener('click', function () { doStartCoWatch('M2'); });
     var goSearch = $('#wpGoSearch', ui.main);
     if (goSearch) goSearch.addEventListener('click', function () {
       openWpSearchModal(); // 房间内搜索弹窗选片（不再跳首页）
     });
-    var searchSwitch = $('#wpSearchSwitch', ui.main);
-    if (searchSwitch) searchSwitch.addEventListener('click', openWpSearchModal);
     var pick = $('#wpPickCinema', ui.main);
     if (pick) pick.addEventListener('click', function () {
       ui.cinemaOpen = true; ui.cinemaEpFav = null; ui.roomSig = ''; render();
@@ -1424,15 +1454,15 @@
   }
 
   // ============================================================
-  // 复制邀请链接（clipboard + execCommand 兜底）
+  // 复制房间码（clipboard + execCommand 兜底；不复制网站链接）
   // ============================================================
   function copyInvite(code) {
-    var link = location.origin + '/player.html?room=' + encodeURIComponent(code);
-    var done = function () { toast('邀请链接已复制'); };
+    var text = String(code == null ? '' : code);
+    var done = function () { toast('房间码已复制'); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(link).then(done, function () { fallbackCopy(link, done); });
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text, done); });
     } else {
-      fallbackCopy(link, done);
+      fallbackCopy(text, done);
     }
   }
 

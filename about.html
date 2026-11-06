@@ -4,15 +4,51 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>关于我们 - WDTV</title>
+	<!-- 主题预绘制：与 js/theme.js 同一套 dark class 语义，CSS link 之前执行避免闪白；默认深色 -->
+	<script>
+	(function(){
+	  var dark = true;
+	  try{
+	    var m = localStorage.getItem('wdtvTheme'); if (['light','dark','system'].indexOf(m) === -1) m = 'dark';
+	    dark = (m === 'dark');
+    if (m === 'system') { dark = true; try { if (window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches) dark = false; } catch (e) {} }
+	  }catch(e){}
+	  try{
+	    document.documentElement.classList.toggle('dark', dark);
+	    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+	    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+	  }catch(e){}
+	})();
+	</script>
 	<script src="libs/tailwindcss.min.js"></script>
 	<link rel="stylesheet" href="css/styles.css">
+	<link rel="stylesheet" href="css/states.css?v=1">
 	<link rel="manifest" href="manifest.json">
+	<script defer src="js/theme.js?v=3"></script>
 	<style>
 		/* 覆盖 Tailwind 默认颜色以适配浅色液态玻璃主题 */
 		.text-gray-500 { color: #6e6e73 !important; }
 		.text-gray-600 { color: #6e6e73 !important; }
 		.text-gray-700 { color: #1d1d1f !important; }
 		.hover\:text-blue-500:hover { color: #007aff !important; }
+
+		/* 深色主题：本页只引 css/styles.css（浅色 :root），这里补一套深色变量随 dark class 切换；
+		   html:not(.dark) 保持 css/styles.css 原浅色不变。深色下背景深、文字浅，
+		   不加白描边/白底/重投影，既有容器（header/卡片）样式原样保留。 */
+		html.dark{
+			--text-color:#e0e6f2;--text-muted:#adb8d0;
+			--border-color:rgba(200,220,245,0.14);
+			--glass-bg:rgba(28,36,58,0.62);--glass-bg-strong:rgba(28,36,58,0.78);--glass-bg-subtle:rgba(28,36,58,0.4);
+			--glass-border:rgba(200,220,245,0.16);--glass-border-strong:rgba(200,220,245,0.24);
+			--glass-highlight:rgba(200,220,245,0.12);--glass-shadow:rgba(0,0,0,0.35);
+			--page-gradient-1:#181e32;--page-gradient-2:#181e32;--page-gradient-3:#181e32;--page-gradient-4:#181e32;
+			--card-gradient-start:rgba(38,48,80,0.7);--card-gradient-end:rgba(38,48,80,0.5);
+			--card-accent:rgba(80,128,176,0.16);--card-hover-border:rgba(114,168,216,0.35);
+		}
+		/* css/styles.css 的 .page-bg 背景为硬编码 #ffffff，深色下必须覆盖，否则浅色文字不可读 */
+		html.dark body.page-bg{background:#181e32}
+		/* footer 直接贴在深色 body 上，text-gray-500 的 !important 深灰需改浅色保证可读 */
+		html.dark .footer,html.dark .footer p,html.dark .footer a{color:var(--text-color) !important}
 	</style>
 
 	<!-- Favicon -->

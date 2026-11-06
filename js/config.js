@@ -133,6 +133,21 @@ window.API_SITES = API_SITES;
 window.extendAPISites = extendAPISites;
 window.normalizeRuyiPicUrl = normalizeRuyiPicUrl;
 
+// 数据源订阅（批次3）：按 key 前缀整体移除某订阅导入的源。
+// 订阅导入的源 key 形如 sub_<订阅hash>_<源hash>，移除/重新同步订阅时用前缀一次性清理，
+// 不影响 extendAPISites 的合并语义，也不触碰内置源与手动添加的源（customer_site）。
+window.removeAPISitesByPrefix = function (prefix) {
+    if (!prefix) return 0;
+    var removed = 0;
+    Object.keys(API_SITES).forEach(function (key) {
+        if (key.indexOf(prefix) === 0) {
+            delete API_SITES[key];
+            removed++;
+        }
+    });
+    return removed;
+};
+
 
 // 添加聚合搜索的配置选项
 const AGGREGATED_SEARCH_CONFIG = {
@@ -149,7 +164,12 @@ const API_CONFIG = {
         // 修改搜索接口为返回更多详细数据（包括视频封面、简介和播放列表）
         path: '/api.php/provide/vod/?ac=videolist&wd=',
         pagePath: '/api.php/provide/vod/?ac=videolist&wd={query}&pg={page}',
-        maxPages: 2, // 最大获取页数（过大时每个源会放大数十倍请求量，拖慢整体搜索）
+        // 首次搜索每源最多获取页数（第 1 页立即返回，其余在后台并行补抓）。
+        // 仅放大该值会让每个源的请求量成倍增加、拖慢整体搜索，因此超出部分不自动抓，
+        // 由用户翻页时按需补抓（每源每次最多 loadMorePages 页）。
+        maxPages: 3,
+        loadMorePages: 3, // 翻页补抓时每源最多抓取的页数
+        resultsPerPage: 60, // 搜索结果每页展示条数（前端分页栏按此切分）
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': 'application/json'
@@ -182,6 +202,10 @@ const PLAYER_CONFIG = {
     autoPlayNext: true,  // 默认启用自动连播功能
     adFilteringEnabled: true, // 默认开启分片广告过滤
     adFilteringStorage: 'adFilteringEnabled', // 存储广告过滤设置的键名
+    adAutoSkipEnabled: false, // 低置信度可疑广告区域播放时自动 seek 跳过（默认关闭）
+    adAutoSkipStorage: 'adAutoSkipEnabled', // 存储广告自动跳过设置的键名
+    skipMarksEnabled: false, // 批次4：片头/中段/片尾跳过标记（默认关闭，与「广告自动跳过」是两回事）
+    skipMarksStorage: 'wdtvSkipMarks', // 存储 { enabled, marks } 的单一键，纳入云同步
     showCacheButtonStorage: 'showCacheButton', // 是否在播放器控制栏显示缓存按钮（默认关闭）
     autoCacheStorage: 'autoCacheEnabled' // 播放时是否自动后台缓存整集（默认开启）
 };

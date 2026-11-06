@@ -8,7 +8,7 @@
 
 ## 📺 项目简介
 
-WDTV 是一个轻量级、免费的在线视频搜索与观看平台，提供来自多个视频源的内容搜索与播放服务，并内置基于弹弹play 开放生态的**第三方弹幕（仅观看、不发送）**。无需注册，即开即用，支持多种设备访问。项目结合了前端技术和后端代理功能，可部署在支持服务端功能的各类网站托管服务上。
+WDTV 是一个轻量级、免费的在线视频搜索与观看平台，提供来自多个视频源的内容搜索与播放服务，并内置基于弹弹play 开放生态的**第三方弹幕（仅观看、不发送）**。无需注册，即开即用，支持多种设备访问。项目结合了前端技术和后端代理功能，部署在 Cloudflare Pages 上。
 
 > 本项目基于 [LibreTV](https://github.com/bestzwei/LibreTV) 深度定制，播放器由 DPlayer 迁移至 ArtPlayer，并新增弹幕观看、账号云同步等增强功能。
 
@@ -46,75 +46,40 @@ WDTV 是一个轻量级、免费的在线视频搜索与观看平台，提供来
 
 转发层自带边缘缓存（`/search/episodes` 30 分钟、其余 6 小时，Cache API 无配额限制）与同源 Referer 校验（防被当开放代理滥用）。
 
+## 📋 详细部署指南（Cloudflare Pages）
 
-## 📋 详细部署指南
-
-### Cloudflare Pages
+> ⚠️ 本项目仅支持 Cloudflare Pages 部署。不要直接执行 `npx wrangler pages deploy .` 部署根目录——
+> wrangler 不读取 `.assetsignore`，会把 server.mjs、data/ 等本地文件当作静态资源公开。
+> 必须使用 `deploy-pages.mjs` 按白名单构建 `deploy-dist/` 后部署。
 
 1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)，进入 Pages 服务
-2. 点击"创建项目"，连接 Git 仓库，使用以下设置：
-   - 构建命令：留空（无需构建）
-   - 输出目录：留空（默认为根目录）
-   - 项目配置（环境变量等）由仓库根目录的 `wrangler.toml` 提供，Dashboard 中的同名变量会被忽略
-3. （可选，推荐）创建 KV 命名空间作为 M3U8 代理缓存：
+2. 点击"创建项目"：
+   - **CLI 直传（本项目使用的方式）**：
+     ```bash
+     node deploy-pages.mjs
+     ```
+     脚本会先把白名单文件复制到 `deploy-dist/`（仅前端页面、css/js/libs/image 与 Pages 平台配置），再执行 `npx wrangler pages deploy`
+   - **Git 集成**：构建命令填 `node deploy-pages.mjs --build-only`，输出目录填 `deploy-dist`
+3. 项目配置（环境变量等）由仓库根目录的 `wrangler.toml` 提供，Dashboard 中的同名变量会被忽略
+4. （可选，推荐）创建 KV 命名空间作为 M3U8 代理缓存：
    ```bash
    npx wrangler kv namespace create LIBRETV_PROXY_KV
    ```
-   将返回的 `id` 填入 `wrangler.toml` 的 `[[kv_namespaces]]` 段并取消注释；未绑定 KV 时代理仍正常工作
-4. CLI 手动部署（可选）：`npx wrangler pages deploy . --project-name=wdtv`
+   将返回的 `id` 填入 `wrangler.toml` 的 `[[kv_namespaces]]` 段；未绑定 KV 时代理仍正常工作
 
-**与 Vercel 版对齐的优化（Cloudflare 专属文件）：**
+**Cloudflare 专属文件：**
 
 | 文件 | 作用 |
 | --- | --- |
 | `_headers` | 静态资源缓存：`/js/` `/css/` `/image/` 缓存 1 天，`/libs/` 长缓存 1 年（immutable） |
 | `_redirects` | `/s=xxx` 搜索短链重写到首页（200 重写，非跳转） |
 | `_routes.json` | 仅 `/proxy/*`、`/api/*`、`/danmu/*` 走 Pages Function，其余请求纯静态直出（更低延迟、不消耗 Functions 配额） |
-| `wrangler.toml` | Pages 项目配置：环境变量（`CACHE_TTL`/`M3U8_CACHE_TTL`/`ALLOW_REGISTER`/弹幕转发层 `DANMU_BASE` 等）与 KV、D1 绑定 |
+| `wrangler.toml` | Pages 项目配置：环境变量（`CACHE_TTL`/`M3U8_CACHE_TTL`/`ALLOW_REGISTER`/弹幕转发层等）与 KV、D1 绑定 |
+| `deploy-pages.mjs` | 部署脚本：按白名单构建 `deploy-dist/` 暂存目录后上传，防止本地文件泄露 |
 
-代理函数 `functions/proxy/[[path]].js` 与 Vercel 版行为一致：m3u8 短缓存（120s）与 ts 分片长缓存（24h）分离、KV 缓存处理后的 m3u8、上游 30s 超时保护、豆瓣 Referer 防盗链、二进制透传响应头过滤。
+代理函数 `functions/proxy/[[path]].js`：m3u8 短缓存（120s）与 ts 分片长缓存（24h）分离、KV 缓存处理后的 m3u8、上游 30s 超时保护、豆瓣 Referer 防盗链、二进制透传响应头过滤。
 
-### Vercel
-
-1. 登录 [Vercel](https://vercel.com/)，点击"New Project"
-2. 导入您的仓库，使用默认设置
-3. 点击"Deploy"
-
-
-### Docker
-
-仓库自带 Dockerfile（Node 服务端，含代理功能），构建运行：
-
-```
-docker build -t wdtv .
-docker run -d \
-  --name wdtv \
-  --restart unless-stopped \
-  -p 8899:8080 \
-  wdtv
-```
-
-### Docker Compose
-
-`docker-compose.yml` 文件：
-
-```yaml
-services:
-  wdtv:
-    build: .
-    container_name: wdtv
-    ports:
-      - "8899:8080" # 将内部 8080 端口映射到主机的 8899 端口
-    restart: unless-stopped
-```
-启动 WDTV：
-
-```bash
-docker compose up -d
-```
-访问 `http://localhost:8899` 即可使用。
-
-### 本地开发环境
+## 🧑‍💻 本地开发环境
 
 项目包含后端代理功能，需要支持服务器端功能的环境：
 
@@ -176,14 +141,23 @@ WDTV 支持标准的苹果 CMS V10 API 格式。添加自定义 API 时需遵循
 - **F 键**: 全屏/退出全屏
 - **Esc 键**: 退出全屏
 
+片头/中段/片尾跳过标记（需在设置中开启「片头片尾跳过标记」，标记类快捷键一律需要 Shift）：
+
+- **Shift + I**: 标记片头结束点（从 0 到当前位置）
+- **Shift + O**: 标记片尾起点（从当前位置到结尾）
+- **Shift + S**: 记录中段起点
+- **Shift + E**: 闭合中段终点（生成一条中段标记）
+- **Shift + P**: 打开/关闭标记面板（可删除单条或清空本剧）
+
+自动跳过时会显示 12 秒提示条，可点击「撤销」；撤销后本集不再自动跳该片段。
+
 ## 🛠️ 技术栈
 
 - HTML5 + CSS3 + JavaScript (ES6+)
 - Tailwind CSS
 - HLS.js 用于 HLS 流处理
 - ArtPlayer 5.x 视频播放器 + artplayer-plugin-danmuku 弹幕插件（均本地化）
-- Cloudflare Pages Functions / Vercel / Netlify Serverless Functions
-- 服务端 HLS 代理和处理技术
+- Cloudflare Pages Functions（服务端 HLS 代理和处理）
 - Cloudflare D1（账号数据）与 KV（代理缓存）
 - localStorage 本地存储（弹幕缓存、匹配记忆、播放进度等）
 

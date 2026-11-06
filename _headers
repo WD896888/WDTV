@@ -1,4 +1,4 @@
-# Cloudflare Pages 静态资源缓存策略（与 vercel.json 的 headers 配置对齐）
+# Cloudflare Pages 静态资源缓存策略
 # 注意：_headers 仅对静态资源生效，/proxy/* 由 Functions 返回自己的缓存头
 
 /js/*

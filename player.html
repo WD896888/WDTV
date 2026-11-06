@@ -24,11 +24,31 @@
     })();
     </script>
 
+    <!-- 主题预绘制：与 js/theme.js 同一套 dark class 语义，CSS link 之前执行避免闪白；默认深色 -->
+    <script>
+    (function(){
+      var dark = true;
+      try{
+        var m = localStorage.getItem('wdtvTheme'); if (['light','dark','system'].indexOf(m) === -1) m = 'dark';
+        dark = (m === 'dark');
+        if (m === 'system') { dark = true; try { if (window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches) dark = false; } catch (e) {} }
+      }catch(e){}
+      try{
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+      }catch(e){}
+    })();
+    </script>
+
     <script src="libs/tailwindcss.min.js"></script>
     <link rel="stylesheet" href="css/styles.css">
-    <link rel="stylesheet" href="css/player.css?v=100">
+    <link rel="stylesheet" href="css/player.css?v=101">
     <link rel="stylesheet" href="css/downloader.css?v=4">
-    <link rel="stylesheet" href="css/watch-party.css?v=40">
+    <link rel="stylesheet" href="css/watch-party.css?v=50">
+    <link rel="stylesheet" href="css/states.css?v=1">
+    <!-- 批次4 A2：跳过标记色带 / 12s 撤销条 / 非模态面板（类名独立，不与内联样式冲突） -->
+    <link rel="stylesheet" href="css/skip-marks.css?v=2">
 
     <meta http-equiv="Cache-Control" content="no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -54,6 +74,17 @@
       --text-primary:rgba(236,244,255,0.96);--text-secondary:rgba(180,200,230,0.7);--text-muted:rgba(180,200,230,0.5);
       --transition:cubic-bezier(0.4,0,0.2,1);
       --gw-ar:1.924779;--gw-h:100vh;--gw-w:100vw;
+    }
+
+    /* 亮色主题：仅当 <html> 没有 dark class 时覆盖同名变量（与 index.html 的 html:not(.dark) 同一套浅色值）。
+       head 预绘制脚本默认打 dark class，用户主动切浅色才生效；浅色下背景浅、文字深。
+       变量集合以本页 :root 为准逐项给值；--transition 与 --gw-* 尺寸变量不覆盖，保持播放页布局不变。 */
+    html:not(.dark){
+      --bg-deep:#f2f5fa;--bg-mid:#e6ecf6;
+      --mist:#6b7280;--silver:#4b5563;--light:#374151;--pale:#1f2937;--white:#111827;
+      --accent:#2f6ba8;--accent-light:#4a86c6;
+      --glass-bg:rgba(255,255,255,0.62);--glass-border:rgba(31,41,55,0.12);--glass-shadow:rgba(0,0,0,0.08);
+      --text-primary:#1f2937;--text-secondary:#4b5563;--text-muted:#6b7280;
     }
 
     body.player-page-bg{
@@ -413,20 +444,28 @@
     <script defer src="libs/artplayer.min.js" crossorigin="anonymous"></script>
     <script defer src="libs/artplayer-plugin-danmuku.min.js" crossorigin="anonymous"></script>
 
-    <script defer src="js/config.js?v=14"></script>
+    <script defer src="js/config.js?v=19"></script>
+    <script defer src="js/states.js?v=1"></script>
+    <script defer src="js/focus-trap.js?v=1"></script>
+    <script defer src="js/theme.js?v=3"></script>
     <script defer src="js/customer_site.js?v=8"></script>
-    <script defer src="js/ui.js?v=12"></script>
-    <script defer src="js/api.js?v=13"></script>
-    <script defer src="js/search.js?v=10"></script>
-    <script defer src="js/video-cache.js?v=94"></script>
-    <script defer src="js/downloader.js?v=20"></script>
-    <script defer src="js/cinema.js?v=16"></script>
-    <script defer src="js/danmu.js?v=24"></script>
-    <script defer src="js/watch-party.js?v=25"></script>
-    <script defer src="js/watch-party-local.js?v=6"></script>
-    <script defer src="js/watch-party-ui.js?v=38"></script>
-    <script defer src="js/player.js?v=149"></script>
-    <script src="js/cloud-sync.js?v=1"></script>
+    <script defer src="js/ui.js?v=16"></script>
+    <script defer src="js/source-health.js?v=3"></script>
+    <script defer src="js/api.js?v=16"></script>
+    <script defer src="js/search.js?v=13"></script>
+    <script defer src="js/ad-filter.js?v=3"></script>
+    <script defer src="js/video-cache.js?v=96"></script>
+    <script defer src="js/downloader.js?v=22"></script>
+    <script defer src="js/cinema.js?v=17"></script>
+    <script defer src="js/danmu.js?v=27"></script>
+    <script defer src="js/watch-party.js?v=26"></script>
+    <script defer src="js/watch-party-local.js?v=7"></script>
+    <script defer src="js/watch-party-ui.js?v=47"></script>
+    <!-- 批次4：A3 错误恢复纯决策 / A2 跳过标记纯计算，均须在 player.js 之前加载 -->
+    <script defer src="js/playback-recovery.js?v=2"></script>
+    <script defer src="js/skip-marks.js?v=3"></script>
+    <script defer src="js/player.js?v=159"></script>
+    <script defer src="js/cloud-sync.js?v=8"></script>
 
     <!-- Preloader -->
     <script>

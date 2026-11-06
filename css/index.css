@@ -868,279 +868,309 @@
 .wdtv-cinema-empty-btn:hover{background:rgba(255,255,255,0.14);border-color:rgba(255,255,255,0.32);transform:translateY(-1px)}
 .wdtv-cinema-empty-btn:active{transform:translateY(0) scale(.97)}
 
-/* ---- 页面：观影空间（预留占位，极简玻璃） ---- */
+/* ---- 页面：观影空间（外层舞台容器） ---- */
+/* 与 .wdtv-cinema 同惯例：上边距交给 .wdtv-header 的 margin-bottom:32px，自身不用
+   margin/padding 上顶——margin 折叠依赖页面流内状态（非活动页绝对定位时不折叠），
+   会导致切换动画中标题跳位；align-items:flex-start 让舞台贴顶 */
 .wdtv-space{
     min-height:52vh;
     display:flex;
-    align-items:center;
+    align-items:flex-start;
     justify-content:center;
-    padding:24px 0 8px;
-}
-.wdtv-space-card{
-    position:relative;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    text-align:center;
-    gap:14px;
-    padding:56px 64px;
-    border-radius:24px;
-    border:1px solid rgba(255,255,255,0.12);
-    background:rgba(255,255,255,0.04);
-    backdrop-filter:blur(16px);
-    -webkit-backdrop-filter:blur(16px);
-    overflow:hidden;
-}
-.wdtv-space-icon{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    width:68px;height:68px;
-    border-radius:22px;
-    border:1px solid rgba(255,255,255,0.16);
-    background:rgba(255,255,255,0.06);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,0.08);
-}
-.wdtv-space-icon svg{
-    width:32px;height:32px;
-    stroke:rgba(236,244,255,0.72);
-    fill:none;
-    stroke-width:1.5;
-    stroke-linecap:round;
-    stroke-linejoin:round;
-}
-.wdtv-space-title{
-    font-family:'Cormorant Garamond',serif;
-    font-size:1.5rem;
-    font-weight:400;
-    letter-spacing:.2em;
-    color:var(--pale);
-}
-.wdtv-space-badge{
-    padding:5px 18px;
-    border-radius:9999px;
-    border:1px solid rgba(255,255,255,0.18);
-    background:rgba(255,255,255,0.06);
-    color:rgba(222,234,250,0.66);
-    font-size:.72rem;
-    letter-spacing:.16em;
+    margin:0 0 8px;
 }
 
 /* ================================================================
-   页面：观影空间 Hub（双人共同观影入口：方式卡 / 创建 / 加入 / 最近房间）
-   全部选择器带 wdtv-hub- 前缀避免冲突；玻璃基调与 .wdtv-space* 一致
+   页面：观影空间（双人共同观影入口 · 双面板式）
+   结构：品牌头 → 创建/加入双面板 → 最近房间胶囊 → 模式脚注
+   全部选择器带 wsp- 前缀（watch space party），玻璃基调与全站一致
    ================================================================= */
-.wdtv-space-hub{
+.wsp-stage{
     width:100%;
-    max-width:560px;
+    max-width:620px;
     display:flex;
     flex-direction:column;
-    gap:20px;
-    padding:32px 28px 28px;
-    border-radius:24px;
-    border:1px solid rgba(255,255,255,0.12);
-    background:rgba(255,255,255,0.05);
-    backdrop-filter:blur(16px);
-    -webkit-backdrop-filter:blur(16px);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,0.08);
+    gap:18px;
     font-family:'Noto Sans SC',sans-serif;
 }
-.wdtv-hub-head{
+.wsp-brand{ /* 与我的影院页头同惯例：左对齐小节标题，避免与网站大标题双居中打架 */
     display:flex;
-    flex-direction:column;
-    align-items:center;
-    text-align:center;
-    gap:8px;
+    align-items:baseline;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:4px 12px;
+    padding:0 2px;
 }
-.wdtv-hub-icon{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    width:64px;height:64px;
-    border-radius:20px;
-    border:1px solid rgba(255,255,255,0.16);
-    background:rgba(255,255,255,0.06);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,0.08);
-}
-.wdtv-hub-icon svg{
-    width:30px;height:30px;
-    stroke:rgba(236,244,255,0.72);
-    fill:none;
-    stroke-width:1.5;
-    stroke-linecap:round;
-    stroke-linejoin:round;
-}
-.wdtv-hub-sub{
+.wsp-brand-title{
     margin:0;
-    color:var(--text-muted);
-    font-size:.8rem;
-    letter-spacing:.14em;
+    font-family:'Noto Sans SC',sans-serif;
+    font-size:1.2rem;
+    font-weight:700;
+    letter-spacing:.06em;
+    color:var(--pale);
 }
-.wdtv-hub-modes{
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:12px;
-}
-.wdtv-hub-mode{
-    display:flex;
-    flex-direction:column;
-    gap:6px;
-    padding:16px 14px;
-    border-radius:18px;
-    border:1px solid rgba(255,255,255,0.1);
-    background:rgba(255,255,255,0.04);
-    text-align:left;
-}
-.wdtv-hub-mode-icon{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    width:34px;height:34px;
-    border-radius:11px;
-    border:1px solid rgba(255,255,255,0.14);
-    background:rgba(255,255,255,0.05);
-    color:rgba(214,231,252,0.8);
-}
-.wdtv-hub-mode-icon svg{
-    width:17px;height:17px;
-    stroke-width:1.5;
-    stroke-linecap:round;
-    stroke-linejoin:round;
-}
-.wdtv-hub-mode-title{
-    margin:2px 0 0;
-    color:rgba(238,244,252,0.9);
-    font-size:.85rem;
-    letter-spacing:.04em;
-}
-.wdtv-hub-mode-desc{
+.wsp-brand-sub{
     margin:0;
     color:var(--text-muted);
     font-size:.72rem;
-    line-height:1.55;
+    letter-spacing:.1em;
 }
-.wdtv-hub-actions{
+.wsp-actions{
     display:flex;
     flex-direction:column;
     gap:12px;
 }
-.wdtv-hub-join{
+/* 创建房间：大号淡色透明玻璃 CTA 按钮——与加入卡同族玻璃语言，淡蓝色调区分主次 */
+.wsp-cta{
     display:flex;
+    align-items:center;
+    justify-content:center;
     gap:10px;
+    width:100%;
+    padding:16px 20px;
+    border-radius:18px;
+    border:1px solid rgba(140,180,240,0.38);
+    background:rgba(106,154,224,0.14);
+    backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);
+    color:rgba(228,240,254,0.95);
+    font-size:1rem;
+    font-weight:600;
+    letter-spacing:.2em;
+    text-indent:.1em; /* 抵消末位字距，视觉居中 */
+    cursor:pointer;
+    font-family:'Noto Sans SC',sans-serif;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.1);
+    transition:transform .25s,border-color .25s,background .25s;
+    -webkit-tap-highlight-color:transparent;
 }
-.wdtv-hub-btn{
-    padding:11px 22px;
+.wsp-cta svg{
+    flex:none;
+    width:19px;height:19px;
+    fill:none;
+    stroke:currentColor;
+    stroke-width:2.2;
+    stroke-linecap:round;
+}
+.wsp-cta:hover{
+    transform:translateY(-1px);
+    background:rgba(106,154,224,0.24);
+}
+.wsp-cta:active{transform:translateY(0) scale(.985)}
+.wsp-cta:disabled{opacity:.55;cursor:default;transform:none}
+.wsp-cta-hint{
+    margin:-4px 0 0;
+    color:var(--text-muted);
+    font-size:.72rem;
+    letter-spacing:.05em;
+    text-align:center;
+}
+.wsp-panel--join::before{ /* 加入卡右上角氤氲光晕（靛紫），轻微区别于创建动作 */
+    content:'';
+    position:absolute;
+    top:-70px;
+    right:-40px;
+    width:190px;
+    height:150px;
+    border-radius:50%;
+    background:radial-gradient(closest-side,var(--wsp-glow),transparent);
+    opacity:.5;
+    pointer-events:none;
+}
+.wsp-panel--join{--wsp-glow:rgba(150,132,230,0.2)}
+.wsp-action-body{
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    flex:1;
+    min-width:0;
+}
+.wsp-action-title{
+    display:block;
+    font-size:1rem;
+    font-weight:500;
+    letter-spacing:.1em;
+    color:rgba(240,246,254,0.94);
+}
+.wsp-action-desc{
+    display:block;
+    color:var(--text-muted);
+    font-size:.74rem;
+    line-height:1.5;
+}
+.wsp-panel--join .wsp-action-body{flex:1 1 auto}
+/* 加入房间：横向信息条，第二行码格；输满 6 位自动加入（无提交按钮） */
+.wsp-panel--join{
+    position:relative;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:14px;
+    padding:16px 18px;
+    border-radius:20px;
+    border:1px solid rgba(255,255,255,0.1);
+    background:rgba(255,255,255,0.04);
+    backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.07);
+    overflow:hidden;
+    transition:transform .25s,border-color .25s,background .25s;
+    -webkit-tap-highlight-color:transparent;
+}
+.wsp-panel--join:hover{
+    transform:translateY(-2px);
+    background:rgba(255,255,255,0.06);
+}
+.wsp-panel-icon{
+    position:relative;
+    flex:none;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:44px;height:44px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,0.16);
+    background:rgba(255,255,255,0.07);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.1);
+    color:rgba(222,235,252,0.85);
+}
+.wsp-panel-icon svg{
+    width:20px;height:20px;
+    fill:none;
+    stroke:currentColor;
+    stroke-width:1.5;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+}
+.wsp-panel--join .wsp-action-body{flex:1 1 auto}
+.wsp-panel--join .wsp-code{
+    position:relative;
+    flex:1 1 100%;
+}
+.wsp-btn{
+    padding:12px 20px;
     border-radius:14px;
     border:1px solid rgba(255,255,255,0.18);
     background:rgba(255,255,255,0.07);
-    color:rgba(238,244,252,0.9);
-    font-size:.86rem;
-    letter-spacing:.08em;
+    color:rgba(238,244,252,0.92);
+    font-size:.88rem;
+    letter-spacing:.14em;
     cursor:pointer;
     font-family:'Noto Sans SC',sans-serif;
     transition:all .2s;
     -webkit-tap-highlight-color:transparent;
     white-space:nowrap;
 }
-.wdtv-hub-btn:hover{
+.wsp-btn:hover{
     background:rgba(255,255,255,0.13);
-    border-color:rgba(255,255,255,0.3);
 }
-.wdtv-hub-btn:active{transform:scale(.97)}
-.wdtv-hub-btn:disabled{opacity:.55;cursor:default;transform:none}
-.wdtv-hub-btn-primary{
+.wsp-btn:active{transform:scale(.97)}
+.wsp-btn:disabled{opacity:.55;cursor:default;transform:none}
+.wsp-btn--primary{
     border-color:rgba(106,154,224,0.55);
     background:linear-gradient(135deg,#6a9ae0,#5c8bd4);
     color:#f4f8ff;
 }
-.wdtv-hub-btn-primary:hover{
+.wsp-btn--primary:hover{
     background:linear-gradient(135deg,#7ba7e6,#6a9ae0);
-    border-color:rgba(150,190,240,0.7);
 }
-.wdtv-hub-input{
-    flex:1;
+
+/* 房间码：6 格分段输入（grid 六等分，不随 input 固有宽度挤压变形） */
+.wsp-code{
+    display:grid;
+    grid-template-columns:repeat(6,1fr);
+    gap:8px;
+}
+.wsp-code-seg{
+    width:100%;
     min-width:0;
-    padding:11px 16px;
-    border-radius:9999px;
+    height:52px;
+    padding:0;
+    border-radius:13px;
     border:1px solid rgba(255,255,255,0.14);
-    background:rgba(10,16,28,0.42);
+    background:rgba(255,255,255,0.07);
     color:var(--pale);
-    font-size:.9rem;
-    letter-spacing:.32em;
-    text-transform:uppercase;
     font-family:'Cormorant Garamond',serif;
+    font-size:clamp(1.05rem,4vw,1.35rem);
+    font-weight:500;
+    text-align:center;
+    text-transform:uppercase;
+    caret-color:rgba(122,167,230,0.9);
     outline:none;
-    transition:border-color .2s,background .2s;
+    font-variant-numeric:tabular-nums;
+    transition:border-color .2s,background .2s,box-shadow .2s;
 }
-.wdtv-hub-input::placeholder{
-    color:rgba(210,224,244,0.38);
-    letter-spacing:.14em;
-    font-family:'Noto Sans SC',sans-serif;
-    font-size:.8rem;
+.wsp-code-seg:focus{
+    border-color:rgba(106,154,224,0.65);
+    background:rgba(255,255,255,0.12);
+    box-shadow:0 0 0 3px rgba(106,154,224,0.14);
 }
-.wdtv-hub-input:focus{
-    border-color:rgba(106,154,224,0.6);
-    background:rgba(10,16,28,0.55);
-}
-.wdtv-hub-result{
+.wsp-code-seg.is-filled{border-color:rgba(122,167,230,0.45)}
+
+/* 创建成功结果块（嵌在创建面板内） */
+.wsp-created{
     display:flex;
     flex-direction:column;
     align-items:center;
-    gap:12px;
-    padding:20px 16px;
-    border-radius:18px;
+    gap:11px;
+    padding:16px 14px;
+    border-radius:16px;
     border:1px solid rgba(106,154,224,0.35);
-    background:rgba(106,154,224,0.08);
+    background:rgba(106,154,224,0.09);
     text-align:center;
 }
-.wdtv-hub-result[hidden]{display:none}
-.wdtv-hub-result-label{
+.wsp-created[hidden]{display:none}
+.wsp-created-label{
     margin:0;
     color:rgba(222,234,250,0.72);
-    font-size:.76rem;
-    letter-spacing:.1em;
+    font-size:.74rem;
+    letter-spacing:.08em;
 }
-.wdtv-hub-code{
+.wsp-created-code{
     font-family:'Cormorant Garamond',serif;
-    font-size:2.3rem;
+    font-size:2.1rem;
     font-weight:500;
-    letter-spacing:.42em;
-    text-indent:.42em; /* 抵消末位字距，视觉居中 */
+    letter-spacing:.4em;
+    text-indent:.4em; /* 抵消末位字距，视觉居中 */
     color:var(--pale);
     line-height:1.1;
     font-variant-numeric:tabular-nums;
 }
-.wdtv-hub-result-actions{
+.wsp-created-actions{
     display:flex;
-    gap:10px;
+    gap:8px;
     flex-wrap:wrap;
     justify-content:center;
 }
-.wdtv-hub-countdown{
-    margin:0;
-    color:var(--text-muted);
-    font-size:.74rem;
-    letter-spacing:.08em;
-    min-height:1.2em;
-}
-.wdtv-hub-recent{
-    display:flex;
-    flex-direction:column;
-    gap:8px;
-}
-.wdtv-hub-recent[hidden]{display:none}
-.wdtv-hub-recent-title{
+.wsp-created-count{
     margin:0;
     color:var(--text-muted);
     font-size:.72rem;
-    letter-spacing:.18em;
+    letter-spacing:.08em;
+    min-height:1.2em;
 }
-.wdtv-hub-recent-list{
+
+/* 最近房间：横向滚动胶囊 */
+.wsp-recent{
+    display:flex;
+    flex-direction:column;
+    gap:9px;
+}
+.wsp-recent[hidden]{display:none}
+.wsp-recent-title{
+    margin:0;
+    color:var(--text-muted);
+    font-size:.7rem;
+    letter-spacing:.22em;
+    text-align:center;
+}
+.wsp-recent-list{
     display:flex;
     flex-direction:column;
     gap:8px;
 }
-.wdtv-hub-recent-item{
+.wsp-recent-chip{
     display:flex;
     align-items:center;
     gap:12px;
@@ -1149,48 +1179,158 @@
     border-radius:14px;
     border:1px solid rgba(255,255,255,0.1);
     background:rgba(255,255,255,0.04);
-    color:rgba(238,244,252,0.85);
-    font-size:.82rem;
+    color:rgba(238,244,252,0.86);
+    font-size:.8rem;
     cursor:pointer;
     font-family:'Noto Sans SC',sans-serif;
     text-align:left;
     transition:all .2s;
     -webkit-tap-highlight-color:transparent;
 }
-.wdtv-hub-recent-item:hover{
+.wsp-recent-chip:hover{
     background:rgba(255,255,255,0.1);
-    border-color:rgba(255,255,255,0.24);
 }
-.wdtv-hub-recent-item:active{transform:scale(.985)}
-.wdtv-hub-recent-code{
+.wsp-recent-chip:active{transform:scale(.985)}
+.wsp-recent-code{
+    flex:none;
     font-family:'Cormorant Garamond',serif;
-    font-size:1rem;
-    letter-spacing:.24em;
-    color:rgba(214,231,252,0.9);
+    font-size:.95rem;
+    letter-spacing:.18em;
+    color:rgba(214,231,252,0.95);
     font-variant-numeric:tabular-nums;
 }
-.wdtv-hub-recent-name{
+.wsp-recent-name{
     flex:1;
     min-width:0;
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
 }
-.wdtv-hub-recent-time{
+.wsp-recent-time{
     color:var(--text-muted);
-    font-size:.7rem;
+    font-size:.66rem;
     white-space:nowrap;
 }
 
-/* 观影空间 Hub 手机端：方式卡单列、内边距收紧 */
+/* 观影空间交互件：悬浮/点击均不出白色方框描边——悬浮只以背景/位移反馈（边框不提亮），
+   点击不显示浏览器默认焦点环（与 .wdtv-dock-btn 的 outline:none 同惯例） */
+.wsp-cta,.wsp-panel--join,.wsp-btn,.wsp-recent-chip,.wsp-modes-summary{outline:none}
+
+/* 观影方式：底部不起眼的小字折叠备注——去掉卡片/边框/图标方块，
+   与「最近房间」的胶囊记录拉开差距，收在页面底部做弱化脚注 */
+.wsp-modes{
+    border:none;
+    background:none;
+    border-radius:0;
+}
+.wsp-modes-summary{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-wrap:wrap;
+    gap:3px 7px;
+    padding:5px 10px;
+    border-radius:8px;
+    cursor:pointer;
+    list-style:none;
+    user-select:none;
+    -webkit-user-select:none;
+    color:rgba(126,144,178,0.72);
+    font-size:.64rem;
+    letter-spacing:.14em;
+    transition:color .2s;
+    -webkit-tap-highlight-color:transparent;
+}
+.wsp-modes-summary::-webkit-details-marker{display:none}
+.wsp-modes-summary:hover{
+    color:rgba(173,184,208,0.92);
+}
+.wsp-modes-hint{
+    color:rgba(126,144,178,0.5);
+    font-size:.6rem;
+    letter-spacing:.08em;
+}
+.wsp-modes-hint::before{
+    content:"·";
+    margin-right:7px;
+    opacity:.7;
+}
+.wsp-modes-chevron{
+    flex:none;
+    width:11px;height:11px;
+    fill:none;
+    stroke:currentColor;
+    stroke-width:2;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+    opacity:.55;
+    transition:transform .25s;
+}
+.wsp-modes[open] .wsp-modes-chevron{transform:rotate(180deg)}
+.wsp-modes-list{
+    display:flex;
+    flex-direction:column;
+    gap:5px;
+    padding:3px 6px 1px;
+    border-top:1px dashed rgba(255,255,255,0.05);
+}
+/* 每条目结构统一：图标+标题一行（基线对齐）、描述固定第二行——不按内容长度
+   随机换行（此前 flex-wrap 导致短内容挤一行、长内容折成三行，三条目排法不一） */
+.wsp-modes-item{
+    display:flex;
+    align-items:baseline;
+    justify-content:center;
+    flex-wrap:nowrap;
+    gap:7px;
+    padding:2px 8px;
+    animation:wspModesIn .3s ease both;
+}
+@keyframes wspModesIn{
+    from{opacity:0;transform:translateY(-3px)}
+    to{opacity:1;transform:none}
+}
+.wsp-modes-item-icon{
+    flex:none;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:13px;height:13px;
+    color:rgba(126,144,178,0.65);
+}
+.wsp-modes-item-icon svg{
+    width:12px;height:12px;
+    stroke-width:1.6;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+}
+.wsp-modes-item-body{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:2px;
+    min-width:0;
+}
+.wsp-modes-item-body b{
+    font-weight:500;
+    font-size:.7rem;
+    letter-spacing:.06em;
+    color:rgba(216,230,248,0.6);
+}
+.wsp-modes-item-body i{
+    font-style:normal;
+    font-size:.62rem;
+    line-height:1.5;
+    color:rgba(126,144,178,0.6);
+}
+
+/* 观影空间手机端：按钮与横条收紧、码格压扁 */
 @media (max-width:640px){
-    .wdtv-space-hub{padding:24px 18px 20px;gap:16px}
-    .wdtv-hub-modes{grid-template-columns:1fr;gap:10px}
-    .wdtv-hub-mode{padding:13px 14px}
-    .wdtv-hub-join{flex-wrap:wrap}
-    .wdtv-hub-join .wdtv-hub-input{min-width:0}
-    .wdtv-hub-join .wdtv-hub-btn{flex:0 0 auto}
-    .wdtv-hub-code{font-size:1.9rem}
+    .wsp-stage{gap:16px}
+    .wsp-cta{padding:15px 18px;font-size:.95rem}
+    .wsp-panel--join{padding:14px 15px;gap:12px}
+    .wsp-code{gap:6px}
+    .wsp-code-seg{height:46px}
+    .wsp-created-code{font-size:1.8rem}
 }
 
 /* ---- 三端响应式：平板 / 手机缩小 Dock 尺寸 ---- */
@@ -1213,13 +1353,14 @@
     .wdtv-dock-indicator{top:6px;bottom:6px;border-radius:16px}
     .wdtv-dock-btn{width:78px;height:39px;border-radius:16px}
     .wdtv-dock-btn svg{width:19px;height:19px}
-    .wdtv-space-card{padding:44px 40px}
     .wdtv-space{min-height:46vh}
 }
 
 /* 减弱动态效果偏好：关闭页面与指示器过渡 */
 @media (prefers-reduced-motion:reduce){
     .wdtv-page,.wdtv-page:not(.is-active),.wdtv-dock,.wdtv-dock-indicator{transition:none;animation:none}
+    .wsp-cta,.wsp-btn,.wsp-recent-chip,.wsp-modes-chevron{transition:none}
+    .wsp-modes-item{animation:none}
 }
 
 /* ================================================================
@@ -1257,7 +1398,7 @@
 }
 #account-btn:active{transform:scale(.96)}
 
-/* 按钮内头像：圆形，占位为首字/人形图标（内容由 cloud-sync-ui.js 渲染）；
+/* 按钮内头像：圆形，占位为人形剪影图标（无背景色，内容由 cloud-sync-ui.js 渲染）；
    无底色无边框——占位图标直接平铺在背景上，保持"无感融入" */
 .wdtv-ab-avatar{
     display:flex;
@@ -1274,13 +1415,6 @@
     width:100%;height:100%;
     object-fit:cover;
     display:block;
-}
-.wdtv-ab-avatar .wdtv-ab-ph{
-    font-family:'Noto Serif SC',serif;
-    font-size:.92rem;
-    font-weight:500;
-    color:rgba(200,220,245,0.85);
-    line-height:1;
 }
 .wdtv-ab-avatar svg{
     width:16px;height:16px;
@@ -1455,13 +1589,6 @@
     width:100%;height:100%;
     object-fit:cover;
     display:block;
-}
-.wdtv-am-avatar-btn .wdtv-am-ph{
-    font-family:'Noto Serif SC',serif;
-    font-size:1.4rem;
-    font-weight:500;
-    color:rgba(42,58,92,0.78);
-    line-height:1;
 }
 .wdtv-am-avatar-btn svg.wdtv-am-ph-icon{
     width:24px;height:24px;

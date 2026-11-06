@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WDTV × LibreTV 深度对比分析</title>
+<style>
+:root{--bg:#faf9f7;--surface:#ffffff;--line:#e6e3dd;--line2:#d3d0c8;--text:#23221f;--muted:#6b6862;--faint:#96928a;--accent:#185fa5;--accent-bg:#e6f1fb;--green:#3b6d11;--green-bg:#eaf3de;--amber:#854f0b;--amber-bg:#faeeda;--red:#a32d2d;--red-bg:#fcebeb;--purple:#534ab7;--purple-bg:#eeedfe}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1060px;margin:0 auto;padding:0 32px 100px}
+header{padding:64px 0 32px;border-bottom:1px solid var(--line)}
+h1{font-size:30px;font-weight:600;letter-spacing:-.5px;margin:0 0 10px}
+.sub{color:var(--muted);font-size:14px;margin:0}
+.meta{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+.pill{font-size:12px;padding:3px 10px;border-radius:20px;background:var(--surface);border:1px solid var(--line);color:var(--muted)}
+h2{font-size:20px;font-weight:600;margin:52px 0 18px;padding-top:10px;letter-spacing:-.2px}
+h3{font-size:16px;font-weight:600;margin:30px 0 10px}
+h4{font-size:14px;font-weight:600;margin:20px 0 6px;color:var(--text)}
+p{margin:10px 0}
+ul,ol{margin:10px 0;padding-left:22px}
+li{margin:5px 0}
+code{font:12.5px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:#f1efe9;padding:1px 5px;border-radius:4px;color:#3c3489}
+pre{background:#f5f3ee;border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;font:12.5px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;color:#3a3833;margin:12px 0}
+pre code{background:none;padding:0;color:inherit}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:#f5f3ee;font-weight:600;color:var(--muted);font-size:12.5px;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td:first-child{font-weight:500}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:14px 0}
+.callout{border-left:3px solid var(--accent);background:var(--accent-bg);padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0;font-size:13.5px}
+.callout.warn{border-color:var(--amber);background:var(--amber-bg)}
+.callout.danger{border-color:var(--red);background:var(--red-bg)}
+.callout.good{border-color:var(--green);background:var(--green-bg)}
+.tag{display:inline-block;font-size:11px;line-height:1.6;padding:1px 8px;border-radius:5px;font-weight:600;white-space:nowrap}
+.t-lt{background:var(--accent-bg);color:var(--accent)}
+.t-wd{background:var(--purple-bg);color:var(--purple)}
+.t-both{background:var(--green-bg);color:var(--green)}
+.t-risk{background:var(--red-bg);color:var(--red)}
+.t-mid{background:var(--amber-bg);color:var(--amber)}
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 22px;margin:26px 0;columns:2;column-gap:32px}
+.toc a{display:block;color:var(--muted);text-decoration:none;font-size:13px;padding:2px 0;break-inside:avoid}
+.toc a:hover{color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.prio{display:grid;grid-template-columns:54px 1fr;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+.prio:last-child{border-bottom:none}
+.prio .n{font-size:12px;font-weight:600;color:var(--surface);background:var(--accent);border-radius:6px;height:22px;line-height:22px;text-align:center}
+.prio .n.p1{background:var(--amber)}.prio .n.p2{background:var(--muted)}
+.prio h4{margin:0 0 4px;font-size:14px}
+.prio p{margin:2px 0;font-size:13px;color:var(--muted)}
+.small{font-size:12.5px;color:var(--muted)}
+footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px}
+@media(max-width:760px){.wrap{padding:0 18px 60px}.grid2{grid-template-columns:1fr}.toc{columns:1}table{font-size:12px}th,td{padding:7px 8px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>WDTV × LibreTV 深度对比分析</h1>
+  <p class="sub">同一血统的两代架构：功能实现方式、技术优劣势与可借鉴清单</p>
+  <div class="meta">
+    <span class="pill">分析对象：WDTV v1.2.0（vanilla JS 分支）</span>
+    <span class="pill">LibreTV v2.21.1（Next.js 重构版）</span>
+    <span class="pill">2026-11-04</span>
+    <span class="pill">基于源码逐文件核对</span>
+  </div>
+</header>
+
+<div class="toc">
+  <a href="#s0">0. 结论速览</a>
+  <a href="#s1">1. 血缘、定位与规模</a>
+  <a href="#s2">2. 架构与请求链路</a>
+  <a href="#s3">3. 全功能矩阵</a>
+  <a href="#s4">4. LibreTV 设计上更优的 11 处</a>
+  <a href="#s5">5. WDTV 更优、不该被重构掉的部分</a>
+  <a href="#s6">6. 技术优劣势逐项判定</a>
+  <a href="#s7">7. 可借鉴清单（按 ROI 排序）</a>
+  <a href="#s8">8. 落地约束与缓存发布约定</a>
+  <a href="#s9">9. 风险清单</a>
+  <a href="#s10">10. 建议路线图</a>
+</div>
+
+<h2 id="s0">0. 结论速览</h2>
+<div class="callout">
+<strong>一句话：</strong>WDTV 在「播放链路深度 + 社交/账号 + 离线能力」上明显领先，LibreTV 在「内容发现 + 源治理 + 工程化 + 安全」上明显领先。两者不是新旧替代关系，而是互补：值得做的是把 LibreTV 的<strong>产品设计与治理机制</strong>移植进 WDTV 现有架构，而不是把 WDTV 迁到 Next.js。
+</div>
+<ul>
+<li><strong>不是"LibreTV 功能更多"。</strong>WDTV 早已实现换源测速、画质探测、hover 预取详情、下一集 manifest 预取、广告分片过滤、整集离线缓存、下载器、录屏、弹幕、共看房间、账号云同步——这些 LibreTV 重构版大多没有或更浅。</li>
+<li><strong>LibreTV 真正领先的是"把复杂度收拢起来"的方式</strong>：服务端聚合搜索与逐源流式返回、跨源同名卡片聚合、数据源订阅与阶梯式健康度、片头/中段/片尾跳过标记、播放错误恢复策略、画质探测队列、统一状态组件与错误边界、37 个单测文件 + TypeScript + CI。</li>
+<li><strong>最值得先做的三件事</strong>：① 跨源同名卡片聚合（纯前端、收益立竿见影）；② 播放错误恢复的"决策/执行分离 + 连续失败换源"（WDTV 当前错误路径散落在 6433 行 player.js 里）；③ 片头片尾跳过标记（用户感知最强，且 WDTV 的播放器基础设施完全够用）。</li>
+<li><strong>最该修的不是功能，是安全</strong>：<code>functions/proxy/[[path]].js</code> 明确写着"代理层不做密码校验"，且没有 SSRF 防护，是一个可被任意第三方利用的开放代理；而 LibreTV 有 DNS 解析后校验 + 逐跳重定向重校验 + 会话签名 + 登录限流。这一项优先级高于所有体验改进。</li>
+</ul>
+
+<h2 id="s1">1. 血缘、定位与规模</h2>
+<p>WDTV 的 README 明写"基于 LibreTV 深度定制"，而 <code>LibreTV/</code> 目录里是官方的 <strong>Next.js 重构版 v2.21.1</strong>（README 也注明旧版静态 HTML + Express 代码在 <code>backup-2025</code> 分支）。所以准确说：<strong>WDTV 是旧版 LibreTV 的一个深度定制分支，与目录里的重构版是平行演进的两条线</strong>，二者共享 MacCMS 采集站协议、ArtPlayer + hls.js 播放内核、<code>/proxy/</code> 转发思路，但架构已经完全不同。</p>
+
+<table>
+<tr><th>维度</th><th>WDTV（当前项目）</th><th>LibreTV v2.21.1（对照项目）</th></tr>
+<tr><td>技术栈</td><td>原生 HTML/CSS/ES6+，零构建，全局 IIFE + <code>window.*</code> 命名空间</td><td>Next.js 15 App Router + React 19 + TypeScript 5 + Tailwind 3</td></tr>
+<tr><td>状态管理</td><td>localStorage + 全局变量 + CustomEvent；部分模块用 IndexedDB</td><td>Zustand（persist 版本迁移）+ Dexie/IndexedDB + React Query</td></tr>
+<tr><td>生产代码量</td><td>约 38,400 行（JS 24,323 / CSS 7,666 / HTML 3,281 / 服务端 3,162）</td><td>约 21,760 行生产代码 + 6,481 行测试（合计 28,241）</td></tr>
+<tr><td>最大单文件</td><td><code>js/player.js</code> 6,433 行；<code>js/app.js</code> 2,524 行；<code>js/video-cache.js</code> 2,134 行</td><td><code>source-manager.tsx</code> 1,357 行；<code>player-shell.tsx</code> 1,067 行；<code>store.ts</code> 1,043 行</td></tr>
+<tr><td>服务端</td><td>Express 5 本地开发服务器 + Cloudflare Pages Functions（4 个路由入口 + 2 个共享库）+ 独立 Durable Object Worker</td><td>18 个 Route Handler（<code>proxy</code>↔<code>proxy/[url]</code>、<code>live/stream</code>↔<code>live/stream/[url]</code> 是兼容网关 URL 归一化的新旧双形态，功能上 16 组 + <code>status</code>/<code>auth</code> 两个公开端点），全部 <code>runtime='nodejs'</code>，单一进程</td></tr>
+<tr><td>数据层</td><td>D1（账号整包）+ KV（m3u8 缓存）+ 浏览器 localStorage/IndexedDB/Cache Storage</td><td>无服务端数据库；全部在浏览器 IndexedDB（6 张表，Dexie v1→v3 迁移）</td></tr>
+<tr><td>鉴权</td><td>注册/登录/JWT/PBKDF2，D1 持久化，跨设备云同步</td><td>单一 <code>PASSWORD</code> 环境变量 + HMAC 签名 Cookie（httpOnly、SameSite=Lax、Secure 按协议推导）+ IP 限流 10 次/10 分钟</td></tr>
+<tr><td>测试</td><td>1 个文件（<code>test/ad-filter.test.mjs</code>，约 400 行）</td><td>37 个 <code>*.test.ts</code>，6,481 行，Vitest；覆盖 ssrf / cms-parser / m3u8 / store / quality-probe / live probe 等</td></tr>
+<tr><td>工程化</td><td>无 lint / typecheck / CI；手工 <code>deploy-dist/</code> 镜像 + <code>?v=</code> 版本号 + SW changelog</td><td>ESLint、<code>tsc --noEmit</code>、Vitest、3 个 GitHub Actions（镜像/standalone 包）、Docker 双架构、版本号以 package.json 为单一来源</td></tr>
+<tr><td>部署</td><td>Cloudflare Pages 免费额度（静态 + Functions + KV + D1 + DO）</td><td>Docker / Next standalone / <code>next start</code>，需常驻 Node 进程</td></tr>
+</table>
+<p class="small">规模差异本身就是结论：WDTV 用近两倍的代码量实现了更"重"的播放与离线能力，但几乎没有自动化测试护栏；LibreTV 用 23% 的代码量写测试，把复杂度换成了可验证性。</p>
+
+<h2 id="s2">2. 架构与请求链路</h2>
+
+<div class="grid2">
+<div class="card">
+<h4>WDTV：浏览器为中心 + 边缘函数</h4>
+<pre>浏览器
+ ├─ 搜索/详情 ─直连采集站─┐
+ │      └失败→ /proxy/    │
+ ├─ m3u8/ts ─/proxy/ → CF KV + Cache API
+ ├─ 弹幕 ─/danmu/ → 弹弹play
+ ├─ 账号 ─/api/ → D1
+ ├─ 共看 ─WebSocket→ Durable Object
+ ├─ 离线 ─Service Worker + IndexedDB + Cache Storage
+ └─ 静态 ─CDN（?v= 版本化）</pre>
+<p class="small">核心思想：能放浏览器就放浏览器，服务端只做必须同源的转发与账号。静态资源几乎零成本，视频流走边缘缓存。</p>
+</div>
+<div class="card">
+<h4>LibreTV：服务端为中心 + 全栈单体</h4>
+<pre>浏览器(React)
+ ├─ /api/search  ← 服务端并行聚合 N 个源
+ ├─ /api/detail  ← 服务端解析 CMS/详情页
+ ├─ /api/proxy   ← Cookie 会话 + SSRF 校验
+ ├─ /api/live/*  ← M3U/EPG/测速/流转发
+ ├─ /api/quality ← 流式画质探测
+ └─ 本地 IndexedDB（历史/进度/分片缓存）
+      ↑ 所有用户数据不出浏览器</pre>
+<p class="small">核心思想：把不可控的第三方请求全部收拢进服务端，浏览器只负责渲染；数据源、订阅、健康度由服务端统一治理。</p>
+</div>
+</div>
+
+<h3>2.1 搜索链路：最大差异</h3>
+<table>
+<tr><th></th><th>WDTV</th><th>LibreTV</th></tr>
+<tr><td>发起方</td><td>浏览器对每个采集站各发一个请求（<code>js/api.js</code> 的 <code>fetchWithFallback</code>：直连 2500ms → 失败回退 <code>/proxy/</code>，总预算 12s）</td><td>浏览器只发一个 <code>POST /api/search</code>，服务端并行请求所有源</td></tr>
+<tr><td>分页</td><td>首页 3 页，翻页时按需补抓 3 页；60 条/页前端切分</td><td>第一页读取源站 <code>pagecount</code>，<code>min(pagecount, SEARCH_MAX_PAGES=5)</code>，后续页并行；单页失败只丢该页</td></tr>
+<tr><td>超时控制</td><td>每请求独立 budget；外部 <code>AbortSignal</code> 联动新搜索 abort 旧请求</td><td>每源一条<strong>总死线</strong>（默认 10s）：AbortController + <code>Promise.race</code>，到点 abort 该源所有在途分页请求，并先挂 catch 防未处理 rejection</td></tr>
+<tr><td>返回形态</td><td>全量等齐；<code>js/app.js</code> 另有 250ms 节流增量渲染，只追加新卡片</td><td><code>?stream=1</code> 用 NDJSON 逐源推送 type=source 事件，健康源结果不必等坏源超时；最后推 done</td></tr>
+<tr><td>缓存</td><td>会话内结果缓存；hover 预取详情（<code>detailPrefetchCache</code>）</td><td>服务端 60s 内存 TTL 缓存，键 = 关键词 + 成人过滤 + 排序后的源 URL 集合（不用哈希避免碰撞）</td></tr>
+<tr><td>清洗</td><td>HTML 转义、图片域名归一（如意资源图床）、屏蔽规则、时长区间筛选、同名筛选下拉</td><td><code>normalizeTitle</code> 归一化后精确命中排最前、<code>filterRelevantResults</code> 过滤 OR 模糊匹配噪声、成人过滤、按 <code>sourceKey_vodId</code> 去重</td></tr>
+<tr><td>健康度</td><td>localStorage 10 分钟 TTL，记录 <code>ok</code>/<code>direct</code> 两个维度；失败源延后发起、跳过直连</td><td><code>recordSourceHealth</code> 连续失败触发<strong>阶梯停用</strong>：30 分钟 → 24 小时 → 长期停用（需手动恢复），成功一次降一级</td></tr>
+</table>
+<div class="callout good"><strong>WDTV 的优势别丢：</strong>直连优先 + 失败回退代理，比 LibreTV"所有请求都过服务端"少一跳，在国内网络环境下首屏更快，也省 Functions 配额；<code>linkAbortSignal</code> 把"新搜索 abort 旧请求"和请求自身超时合并，是写得很干净的一段。LibreTV 的劣势是代理成为单点且所有源站流量都吃服务器带宽。</div>
+<div class="callout warn"><strong>但 WDTV 的代价：</strong>浏览器直连会向采集站暴露用户真实 IP、绕过同源策略依赖对方 CORS、无法做服务端缓存；且 <code>/proxy/</code> 是<strong>无鉴权、无 SSRF 校验的开放代理</strong>。</div>
+
+<h3>2.2 播放链路</h3>
+<p>两边都用 ArtPlayer + hls.js，且都实现了广告分片过滤、自动连播、进度记忆、倍速/快捷键。差异在"精细化程度"和"策略组织"：</p>
+<ul>
+<li><strong>WDTV 更激进也更深</strong>：<code>js/ad-filter.js</code> 是 694 行的多机制融合引擎（SCTE35/DATERANGE 标记层 → DISCONTINUITY 区间评分层 → 广告域名黑名单层 → 运行时 seek 兜底），带 40% 删除预算、剩余分片下限、BYTERANGE/合法区间一票否决、规则版本签名注入（<code>#WDTV-ADF:</code> 变更即缓存失效），并且是唯一有单元测试的模块。<code>js/video-cache.js</code> 2,134 行实现 IndexedDB 整集缓存 + hls loader 读写穿透 + 12 并发后台下载 + 缓冲不足自动让路 + 3GB/3天/3集 LRU + 孤儿对账；<code>player.js</code> 还实现了"始终锁定最高画质"（取消 ABR 降档）、档位探测的 <code>tierProbeToken</code> 竞态令牌、首分片预取、下一集 manifest 预取、换源测速（Range 流式实测码率 + 吞吐）、录屏/截图（安卓 captureStream 直捕 + VP8 软编码取舍）。</li>
+<li><strong>LibreTV 更克制也更有章法</strong>：把策略从播放器里拆成可单测的纯函数模块——<code>playback-recovery.ts</code> 只产出 <code>RecoveryDecision</code> 不碰 hls 实例，区分硬失败（直接换源）与网络抖动（退避重试），<code>FRAG_LOADED</code> 即把连续失败计数归零、动作后 3s 静默窗防噪声；<code>quality-probe-queue.ts</code> 是全局单例队列（同 key 共享 Promise、50ms 合批、最多 2 个在飞/每批 8 条、看门狗防槽位占死、<code>onStart</code> 才显示"探测中"）；<code>video-prefetcher.ts</code> 刻意不在循环体里读播放状态，所以暂停/切后台仍继续缓存；<code>live-cache.ts</code> 因通用缓存超限时整体 clear() 会连带清掉热点数据，专门做了独立的按字节 + 条目双上限 TTL 缓存。</li>
+</ul>
+<div class="callout"><strong>这一组的判定：</strong>WDTV 的"能力"更强，LibreTV 的"可维护性"更好。WDTV 的这些逻辑全塞在 <code>player.js</code> 里靠注释和全局令牌维护，改一处容易踩另一处；LibreTV 每个策略都能单独跑测试。借鉴时应当学它的<strong>拆分方式</strong>，而不是替换 WDTV 已有的能力。</div>
+<p>还有四处实现细节值得单独记下，都是低成本可移植的：</p>
+<ul>
+<li><strong>换集不重建播放器实例。</strong><code>player-shell.tsx</code> 的 <code>loadSource</code> 在切集/换源时只 <code>hls.destroy()</code> → 复用同一个 <code>&lt;video&gt;</code> → <code>attachMedia</code> → 等 <code>loadedmetadata</code>，ArtPlayer 实例、主题、倍速、音量、字幕、控制条、跳过标记全部跨集保留；倍速由 <code>sessionStorage</code> 记忆并只从 watch 页写入，避免跨页串扰。<strong>WDTV 走的是相反路线</strong>："整条 URL 换源重建播放器 + 进度无缝恢复"（<code>player.js</code> 第 800 行注释），好处是状态干净，代价是每次换集都要重挂弹幕插件、缓存 loader、下载面板等一整套东西。</li>
+<li><strong>播放层也有直连→代理回退。</strong><code>hls-loader.ts</code> 的 <code>buildCandidateUrls</code> 按「direct→proxy→imgproxy」给每个分片生成候选，<code>switchToProxyOnRepeatedFailures()</code> 连续直连失败 2 次后把该集剩余分片全部改走代理，成功后用同一个开关切回直连。这与 WDTV <code>js/api.js</code> 的 <code>fetchWithFallback</code> 思路一致，只是 WDTV 作用在搜索/详情请求，LibreTV 作用在播放分片。</li>
+<li><strong>缓存命中不能让 ABR 误判带宽。</strong><code>video-cache.ts</code> 把预取时记录的真实 <code>costMs</code> 存进 <code>segmentMeta</code>，命中本地分片时合成进 hls.js 的 stats，否则"本地秒回"会被 ABR 当成带宽暴涨而盲目升档再抖动。WDTV 因取消 ABR 锁最高档，恰好没有这个问题——这是架构取舍带来的意外收益。</li>
+<li><strong>URL 驱动可分享状态。</strong>搜索词写进 <code>/?s=</code>、播放状态写进 <code>/watch?source=&amp;id=&amp;index=&amp;title=</code>、直播写进 <code>/live?url=</code> 且<strong>故意不含 EPG</strong>（避免刷新必重拉大文件），换集用 <code>replaceState</code> 不污染历史；<code>popstate</code> 单独处理浏览器前进后退。进度条用原生 <code>input[type=range]</code> 而非 ArtPlayer 自带控件，因为后者暂停时隐藏、无法在暂停态 seek。</li>
+</ul>
+
+<h2 id="s3">3. 全功能矩阵</h2>
+<table>
+<tr><th>功能域</th><th>WDTV</th><th>LibreTV v2.21.1</th><th>判定</th></tr>
+<tr><td>多源聚合搜索</td><td>浏览器并行，直连优先 + 代理回退，增量渲染</td><td>服务端并行，单源总死线，NDJSON 流式，60s 缓存</td><td><span class="tag t-both">各有优势</span></td></tr>
+<tr><td>跨源同名处理</td><td>同名<strong>筛选下拉</strong>（列出出现≥2 次的片名），卡片仍扁平铺开</td><td>同名<strong>卡片聚合</strong>：按名称+年份分桶，卡片显示「N 个来源」，展开按画质降序逐源选择</td><td><span class="tag t-lt">LibreTV 优</span></td></tr>
+<tr><td>片源管理</td><td>内置 14 个源 + 自定义接口，勾选/全选；连接测试面板逐源诊断并复制日志</td><td>点播/直播源管理、批量探活、健康度阶梯自动停用、详情地址配置、成人内容标记与过滤</td><td><span class="tag t-lt">LibreTV 优</span></td></tr>
+<tr><td>数据源订阅</td><td>无（仅账号云同步里的"订阅"字样，非源列表订阅）</td><td>LibreTV-SourceList JSON / TVBOX 配置 / 接口目录三格式自动识别、服务端拉取免 CORS、按订阅前缀整体替换、多归属直播源引用计数、自动刷新周期、连续失败 3 次暂停、导出 JSON / 发布为链接（paste.rs → 0x0.st 降级）</td><td><span class="tag t-lt">LibreTV 独有</span></td></tr>
+<tr><td>换源</td><td>换源弹窗按需测速（实测码率 + 吞吐，会话内缓存），整页跳转并保留进度/集名</td><td>跨源搜索同名资源 + 测速排序，一键切换保留集数位置</td><td><span class="tag t-both">WDTV 更深</span></td></tr>
+<tr><td>画质</td><td>始终锁定最高画质、档位探测自动升档、竞态令牌、下载时选画质</td><td>卡片画质徽章 + 视口触发的探测队列 + 播放后实测分辨率回填 + 未测到给出可重试提示</td><td><span class="tag t-both">互补</span></td></tr>
+<tr><td>广告处理</td><td>四层融合评分引擎（标记层 / 区间评分层 / 域名黑名单层 / 运行时 seek 兜底）+ 40% 删除预算与多条防误伤硬规则，带单测与 <code>#WDTV-ADF:</code> 规则版本签名</td><td><code>m3u8.ts</code> 四级保守启发式：URL 特征段（段内全命中才删）、「两长夹一短」中插、片头插入段（含多分组同构检测防误删正片）、清理失效 DISCONTINUITY；只删分片、保留段内 KEY/MAP</td><td><span class="tag t-both">两条路线，WDTV 更细</span></td></tr>
+<tr><td>片头/片尾跳过</td><td>无（只有"广告自动跳过"，语义不同）</td><td>片头/中段/片尾三类标记，Shift+I/O/S/E 快捷键，自动跳过 + 12s 撤销 + 进度条着色 + 边界微调 + 试跳 + 按剧共享、逐剧开关、非模态侧栏不挡画面</td><td><span class="tag t-lt">LibreTV 独有</span></td></tr>
+<tr><td>播放错误恢复</td><td>hls.js ENDED 回跳兜底、直连/代理双路竞速、缓冲跑道，但策略散落在 player.js</td><td>独立决策模块：硬失败直接换源、网络抖动退避重试、成功即归零、静默窗防抖</td><td><span class="tag t-lt">LibreTV 优（结构）</span></td></tr>
+<tr><td>预取 / 缓存</td><td>hover 预取详情、首分片预取、下一集 manifest 预取、整集 IndexedDB 缓存、SW 运行时缓存、3GB LRU、缓存管理面板</td><td>前向片段预取（暂停/后台继续）、Cache Storage + segmentMeta LRU、播放恢复、无 Service Worker</td><td><span class="tag t-wd">WDTV 明显优</span></td></tr>
+<tr><td>下载</td><td>1,613 行：TS/MP4、批量下载、断点、并发控制、下载管理器、格式/画质选择</td><td>m3u8-downloader + download-saver + download-manager，播放页「下载本集」</td><td><span class="tag t-wd">WDTV 更深</span></td></tr>
+<tr><td>截图 / 录屏</td><td>有，且针对安卓做了 captureStream 直捕、VP8 软编码、容器时长回写等修复</td><td>无</td><td><span class="tag t-wd">WDTV 独有</span></td></tr>
+<tr><td>弹幕</td><td>弹弹play 协议客户端，标题 bigram 匹配 + 集数对齐 + 时长校验，三源热切换降级，30 天匹配记忆，本地剧集缓存，无弹幕自动隐藏按钮</td><td>无</td><td><span class="tag t-wd">WDTV 独有</span></td></tr>
+<tr><td>共同观影</td><td>Durable Object 房间 + WebSocket，选片、同步、断线重连、画布工具、本地模拟模式</td><td>无</td><td><span class="tag t-wd">WDTV 独有</span></td></tr>
+<tr><td>账号 / 云同步</td><td>注册登录 + JWT + D1 整包；按 key 类型分别合并（历史按 id+timestamp、搜索历史按 text、收藏并集、进度按时间戳大者胜）、写入拦截 + 防抖推送 + 定时轮询 + 关页 flush + 409 冲突重试</td><td>无账号；仅单密码访问门；所有数据留在本机 IndexedDB</td><td><span class="tag t-wd">WDTV 独有</span></td></tr>
+<tr><td>首页推荐</td><td>豆瓣热门（可开关）</td><td>三源可切换：豆瓣分类、Bangumi 新番放送表、影视榜单（豆瓣周榜 + 百度热播，经 60s API）；服务端直连 + 缓存</td><td><span class="tag t-lt">LibreTV 优</span></td></tr>
+<tr><td>直播 / IPTV</td><td>无</td><td>完整：M3U/M3U8 订阅、XMLTV EPG 节目单、分组筛选 + 搜索、频道列表虚拟化、批量测活、HLS + HTTP-FLV、直连失败自动走长连接代理、频道收藏、导出标准 M3U</td><td><span class="tag t-lt">LibreTV 独有</span></td></tr>
+<tr><td>观影空间 / 我的影院</td><td>有（<code>wd.html</code>、<code>space.js</code>、<code>cinema.js</code>）</td><td>无（仅观看历史面板 + 详情页收藏）</td><td><span class="tag t-wd">WDTV 独有</span></td></tr>
+<tr><td>PWA / 主题</td><td>manifest + SW（HTML Network-First、静态 SWR）；无亮暗主题切换</td><td>manifest + icons + 亮暗双主题且<strong>无首屏闪烁</strong>；无 SW</td><td><span class="tag t-lt">LibreTV 优（主题）</span></td></tr>
+<tr><td>UI 工程</td><td>6 个 CSS 文件 7,666 行、大量 <code>onclick=</code> 内联、无统一状态组件</td><td>统一 <code>Spinner/LoadingState/EmptyState/ErrorState</code>、<code>Drawer</code>（focus trap、body 锁滚动、非模态模式）、<code>error.tsx</code> + <code>global-error.tsx</code> 错误边界、<code>SmartImage</code> 图片降级链、Tailwind 设计 token</td><td><span class="tag t-lt">LibreTV 明显优</span></td></tr>
+<tr><td>无障碍</td><td>基本无（无 focus trap、aria 覆盖有限）</td><td>useFocusTrap / aria-expanded / 键盘可达 / 减少动态效果</td><td><span class="tag t-lt">LibreTV 优</span></td></tr>
+<tr><td>安全</td><td>密码 PBKDF2 + HMAC、弹幕层 Referer 校验；<strong>代理层无鉴权无 SSRF</strong></td><td>DNS 解析后 SSRF 校验、逐跳重定向重校验、同源 httpOnly 签名 Cookie 会话鉴权（本版本已<strong>移除</strong>代理 URL 签名）、登录限流、未登录仅放行图片代理</td><td><span class="tag t-lt">LibreTV 明显优</span></td></tr>
+</table>
+
+<h2 id="s4">4. LibreTV 设计上更优的 11 处（含实现细节与借鉴方式）</h2>
+
+<h3>4.1 服务端聚合搜索 + NDJSON 逐源返回</h3>
+<p><code>src/app/api/search/route.ts</code>：每源先取第一页读 <code>pagecount</code>，再并行抓后续页（上限 5）；每源一个 <code>AbortController</code> + 定时器组成总死线（默认 10s），与 <code>Promise.race([runPromise, deadline])</code> 竞速，到点 abort 在途请求并把该源标记为 timedOut；<code>?stream=1</code> 用 <code>ReadableStream</code> 以 NDJSON 逐源推送，<code>X-Accel-Buffering: no</code> 防反代缓冲，客户端 <code>React Query</code> 管理状态、已就绪源数实时显示。</p>
+<p><strong>为什么好：</strong>一个坏源不再拖垮整次搜索；失败源在结果区顶部非阻塞提示；服务端可缓存；浏览器不暴露 IP。<strong>借鉴：</strong>WDTV 不建议整体改成服务端聚合（会丢直连速度优势、增加 Functions 配额），但可以借鉴<strong>单源总死线</strong>和<strong>逐源结算的失败归因</strong>——目前 <code>fetchWithFallback</code> 只有单请求预算，一个源的多页补抓没有整体死线；另外可把"已就绪 N/M 个源"和"失败源提示"做成非阻塞条，替代现在的整块 loading。</p>
+
+<h3>4.2 跨源同名卡片聚合</h3>
+<p><code>src/components/video-card.tsx</code> 的 <code>aggregateResults()</code>：按 <code>normalizeTitle</code> 后的名称分桶，桶内年份不一致时按年份再拆（同名翻拍），无年份条目并入年份桶；卡片显示「N 源」徽章，点击展开源列表，展开时<strong>按画质探测结果降序</strong>排列并标出最佳源；单源卡片则进视口 500ms 后才交给全局队列探测。</p>
+<p><strong>为什么好：</strong>十几个源搜同一部片时结果页不再被重复海报淹没，且把"选哪个源"这个决策从播放页前移到搜索页，配合画质徽章一次做对。<strong>WDTV 现状：</strong><code>js/app.js</code> 只有"同名筛选下拉"（统计出现 ≥2 次的片名让用户过滤），卡片仍是扁平的；用户要进详情/换源弹窗才知道有几个源。<strong>借鉴成本最低、收益最高</strong>：结果数据已在 <code>app.js</code> 的 <code>currentSearchResults</code> 里，只需在渲染前加一个分桶函数 + 卡片展开面板，复用现有 <code>.wdtv-search-grid</code> 样式即可。</p>
+
+<h3>4.3 源健康度阶梯停用 + 订阅体系</h3>
+<p><code>src/lib/store.ts</code>：连续失败的源按「30 分钟 → 24 小时 → 长期停用」逐级加重，成功一次降一级，长期停用只能手动恢复；<code>subscription-sync.ts</code> 用订阅 URL 前缀整体替换该订阅名下的源、保留用户勾选状态、同步失败不调用即无副作用（旧数据自动保留）；<code>tvbox-parser.ts</code> 兼容 TVBOX 配置里的 <code>//</code> 注释、尾随逗号、字符串内未转义换行，并如实报告"跳过 96 个不可用条目（Spider 引擎 92、XML 接口 4）"。</p>
+<p>更细的工程细节值得单独记下：<code>src/app/api/source-list/route.ts</code> 的 <code>parseAndValidate()</code> 用<strong>内容嗅探</strong>而非让用户选格式——按 <code>sources/liveSources</code> → <code>sites/lives</code>（TVBOX）→ 裸数组全带 <code>baseUrl</code>（接口目录）依次试探，且 TVBOX 与 LibreTV-SourceList 同为对象时靠 <code>sites/api.php/provide/vod</code> 三重特征+阈值判定（≥1 个 API 特征，且 <code>sites.length &gt; sources.length</code> 或 <code>liveSources.length &gt; sites.length</code>），防误判；JSONC 清洗用状态机跳过字符串内 <code>//</code>、去尾逗号、把字符串内裸换行转义为 <code>\\n</code>；<code>/api/publish</code> 用 <code>AbortSignal.timeout(8000)</code> 串行试 paste.rs → 0x0.st。自动刷新只在 <code>providers.tsx</code> 挂载时检查一次（并发 2、单次最多 5 个、页面不可见或离线跳过、不阻塞首屏），连续失败 3 次自动暂停订阅。</p>
+<p><strong>为什么好：</strong>采集站经常批量失效，用户不需要手动逐个取消勾选；订阅让源配置可分享、可远程更新。<strong>WDTV 现状：</strong><code>js/api.js</code> 的健康度只有 10 分钟 TTL 的"延后发起/跳过直连"，没有停用；源列表硬编码在 <code>js/config.js</code> 的 <code>API_SITES</code> 里，改源要改代码。<strong>借鉴：</strong>把健康度升级为阶梯停用（约 80 行），并增加"远程源列表 URL + 每日静默刷新"（可与现有 <code>cloud-sync</code> 结合，把源配置也纳入同步包）。</p>
+
+<h3>4.4 片头 / 中段 / 片尾跳过标记</h3>
+<p>最见产品功力的一处。<code>src/lib/skip-marks.ts</code> 定义三类片段、颜色、最小 3s 长度、5s 最小间隔、片尾 2s 保护、10s 连续步进上限，以及 <code>skipMarkKey(title, fallback)</code> 让同剧各集与同名资源共用标记；<code>player-shell.tsx</code> 实现自动跳过（片头/中段跳到片段末尾，片尾直接结束本集并交给自动连播）、<strong>12 秒撤销窗口</strong>（撤销后把该片段从"已处理"移除，否则回到片段内会被 timeupdate 立刻再跳走形成死循环）、进度条着色（<code>data-skip-segment</code> 元素在 durationchange/fullscreen/resize 时重绘）；<code>skip-mark-panel.tsx</code> 用 <code>modal=false</code> 的非模态抽屉，不遮画面、不锁 body、不抢焦点，可以一边看一边标，还能微调边界、试跳起终点（记录/试跳前先暂停）。</p>
+<p><strong>借鉴：</strong>WDTV 的 ArtPlayer 实例、进度条 DOM、设置面板都已就绪，缺的只是"标记数据 + 规则 + 提示 UI"。建议先做最小集：本地按剧保存 opening/ending 两个区间 → timeupdate 命中自动 seek → 提示条带撤销 → 设置里总开关；再做进度条着色与非模态面板。注意 WDTV 已有"广告自动跳过"开关，两者语义要在设置里明确区分，避免用户混淆。</p>
+
+<h3>4.5 播放错误恢复：决策与执行分离</h3>
+<p><code>src/lib/playback-recovery.ts</code> 的注释直接点明了旧实现的问题："遇致命错误就无条件 <code>hls.startLoad()</code>，errorCount 只增不减，源站挂掉时形成无限重试风暴，且永远不会换源"。它的做法是纯函数产出决策：硬失败（manifestParsingError / incompatibleCodecs / levelEmpty）直接换源，网络类失败退避重试；<code>FRAG_LOADED</code>（含本地缓存命中）即视为链路恢复、计数归零；动作后 3s 静默窗内成功不清零，防重试瞬间的噪声。</p>
+<p><strong>但要公平：</strong>WDTV 的错误恢复<strong>能力本身不弱</strong>，只是写法不同。<code>player.js</code> 的 <code>Hls.Events.ERROR</code>（:2075）已实现坏缓存自愈（<code>FRAG_PARSING_ERROR</code>/<code>BUFFER_APPEND*</code> → <code>VideoCache.invalidateFragment()</code> 删缓存强制走网络）、<code>bufferAppendError</code> 累计 ≥3 次 <code>recoverMediaError()</code>、致命 <code>NETWORK_ERROR→startLoad()</code> / <code>MEDIA_ERROR→recoverMediaError()</code>、其余累计 &gt;3 次才弹错，另有 hls.js 1.6 ENDED 态 seek 卡死的兜底；<code>video-cache.js</code> 还有 <code>FAKE_CACHED_SPEED_BPS=3Mbps</code> 合成速率防 ABR 误判，与 LibreTV 的 <code>costMs</code> 是同一个洞见。<strong>差距只在结构</strong>：这些分支与缓存、弹幕、录屏状态交织在 6,433 行里，无法单测、阈值散落、改一处容易踩另一处。所以借鉴的是「抽成纯决策模块 + 补测」，不是「补功能」。</p>
+<p><strong>借鉴：</strong>把 <code>player.js</code> 里散落的 hls 错误处理抽成独立 <code>js/playback-recovery.js</code>（IIFE，纯函数，可仿照 <code>ad-filter.js</code> 那样写 <code>.test.mjs</code>），播放器只执行决策。这是<strong>降低 6433 行巨石维护风险</strong>最划算的一刀。</p>
+
+<h3>4.6 画质探测队列</h3>
+<p><code>quality-probe-queue.ts</code>：同 key 共享 Promise、50ms 合批、最多 2 个在飞 / 每批 8 条、单批失败不影响队列、服务端提前关流时按"已取消"收尾、看门狗防 2 个并发槽被永久占死、<code>onStart</code> 在批次真正发出时才回调（排队期间不谎报"探测中"）。配合 <code>use-in-view.ts</code>（进视口后再等 500ms，快速滚过不触发，一旦置位永久保持）。</p>
+<p><strong>借鉴：</strong>WDTV 的 <code>app.js</code> 已有「联网探测时长」功能（<code>probeItemDuration</code>，仅探测当前页、会话内缓存），若把跨源同名聚合 + 画质徽章一起做，必须同时引入这类队列，否则一屏十几张卡会瞬间打满请求，重蹈 WDTV 曾经"搜索时 hover 预取挤占连接池"的覆辙（源码里已有这个教训的注释）。</p>
+
+<h3>4.7 首页推荐多数据源</h3>
+<p>豆瓣分类浏览 / Bangumi 新番放送表 / 影视榜单（豆瓣周榜 + 百度热播，60s API，每小时最多 6 次请求），设置里可切换，服务端直连 + 缓存，免 key。实现上三源都做了<strong>单上游失败不拖垮整体</strong>：<code>bangumi.ts</code> 按周日分组并发拉日历（最多 4 个源、单源 5s 死线、成功即缓存 3 小时）、<code>/api/douban</code> 的 <code>kind</code> 白名单 + 30 分钟缓存 + 直连失败降级 <code>FALLBACK_CORS_PROXY</code>、<code>/api/hot-list</code> 双榜单 1 小时缓存且单榜失败仍返回另一榜。<strong>WDTV 只有豆瓣热门一个开关</strong>（<code>index.html</code> 设置面板 + <code>js/douban.js</code> 855 行）。借鉴时优先加"榜单/新番"这两个免费源，成本主要在 <code>/api/</code> 增加一个转发与缓存，前端复用现有推荐区渲染。</p>
+
+<h3>4.8 直播 / IPTV 全套</h3>
+<p>M3U 解析、XMLTV EPG、频道分组/搜索/虚拟化列表（<code>@tanstack/react-virtual</code>）、批量测活、HLS + HTTP-FLV、直连失败自动走 <code>/api/live/stream</code> 长连接代理（该路由特意用 <code>headerTimeoutMs</code> 只对响应头限时，否则无限长 FLV 流会被整体超时切断）、频道收藏、导出标准 M3U、<code>LIVE_ALLOW_PRIVATE=1</code> 放行内网自建源。这是 WDTV 完全没有的产品域，<strong>属于"要不要扩品类"的战略选择而非体验优化</strong>，建议放到最后评估。</p>
+
+<h3>4.9 统一状态组件、错误边界与无障碍</h3>
+<p><code>states.tsx</code> 的注释很能说明问题："此前各处以 h-5/h-8/h-9 × border-2/3/4 的多种 spinner、「图标+标题」/虚线框/❌ emoji/纯文字四种空态混用，这里收敛为三个组件"。另有 <code>app/error.tsx</code> + <code>global-error.tsx</code> 双层错误边界、<code>useFocusTrap</code>（打开时记忆来源、Tab 在容器内循环、关闭归还焦点）、<code>SmartImage</code>（直连 → 公共镜像 → 内置代理的逐级降级链 + <code>referrerPolicy=no-referrer</code> + 全部失败回调占位）、PWA 亮暗主题无首屏闪烁。</p>
+<p><strong>借鉴：</strong>这几项都是<strong>低风险纯增量</strong>。WDTV 只需新增一个 <code>js/states.js</code> + 一段 CSS，把各处 loading/空态/错误收敛；给 <code>.wdtv-modal</code>、<code>.wsp-panel</code> 等弹层补一个 focus trap；给搜索卡片补图片 <code>onerror</code> 降级链（WDTV 已有 <code>normalizeRuyiPicUrl</code> 这类数据层修补，可统一收编）。</p>
+<p>再补几个"看起来小、体验差很多"的设计：<code>error.tsx</code> 的 reset 区<strong>刻意不放 Header</strong>——注释写明 Header 依赖 store，store 本身可能就是崩溃源，放进去会二次崩溃；<code>ConfirmDialog</code> 按危险度分级（danger 按钮、自动聚焦取消项、Enter=取消防误触、销毁性操作要二次确认）；<code>ToastProvider</code> 支持 action 撤销（删除订阅后"撤销"可恢复完整快照 <code>RemovedLiveSnapshot</code>）；主题靠 <code>layout.tsx</code> 内联脚本在创建 DOM 时读 localStorage 打 <code>.dark</code> + <code>color-scheme</code>，所以无首屏白闪；移动端抽屉用 <code>bottom sheet</code> + <code>touch-action:none</code> 手势关闭；长列表用 <code>react-virtual</code>（频道数可达上万）。这些都是 vanilla JS 完全能做到的，不需要引入 React。</p>
+
+<h3>4.10 工程化：类型、测试、版本单一来源、CI</h3>
+<p>37 个 Vitest 测试文件 6,481 行，覆盖 SSRF、CMS 解析、M3U8/转封装、store 状态迁移、画质探测、直播探测、订阅同步、跳过标记等；<code>next.config.ts</code> 构建时从 <code>package.json</code> 读版本注入 <code>APP_VERSION</code>，<code>/api/status</code> 可核对线上版本；3 个 GitHub Actions 产出镜像与 standalone 包。<strong>WDTV 对照：</strong>版本散落在 <code>config.js</code> 的 <code>SITE_CONFIG.version='1.0.8'</code>、<code>package.json</code> 的 <code>1.2.0</code>、<code>video-cache.js</code> 的 <code>VC_VERSION=94</code>、各资源 <code>?v=N</code>、SW changelog 里，全靠人工同步；只有 1 个测试文件。<strong>借鉴：</strong>不引入 TypeScript 也能做——加一个 <code>package.json</code> 的 <code>test</code> 脚本 + <code>node --test</code>，把纯逻辑模块（ad-filter 已有先例）逐步补测；写一个构建脚本自动生成 <code>?v=</code> 与 SW changelog 条目。</p>
+
+<h3>4.11 安全模型</h3>
+<p><code>src/lib/ssrf.ts</code>：协议白名单 + 字面量 IP 黑名单 + IPv4-mapped IPv6 归一化（<code>::ffff:c0a8:164</code> 也要能识别）+ <code>dns.lookup(all:true)</code> 解析后校验，任一解析结果落私网即拒绝；<code>fetch-utils.ts</code> 的 <code>fetchWithSafeRedirects</code> 用 <code>redirect:'manual'</code> <strong>逐跳重新校验</strong>（注释："预检之后 fetch 自动跟随的 3xx 可把请求带进内网/元数据地址，绕过对首跳的校验"），最多 5 跳，并返回 <code>finalUrl</code> 供 manifest 相对地址解析使用；<code>auth.ts</code> 的签名 Cookie + IP 限流；代理路由要求会话，未登录仅放行图片类目标。</p>
+<p><strong>WDTV 对照（最高优先级风险）：</strong><code>functions/proxy/[[path]].js</code> 第 15 行注释明确"前端不携带 auth 参数……代理层不做密码校验"，<code>getTargetUrlFromPath()</code> 只校验 <code>^https?://</code>，没有 host 白名单 / 私网 IP 判定 / 逐跳重定向校验，<code>fetch(targetUrl,{redirect:'follow'})</code> 自动跟随 302；响应还是 <code>Access-Control-Allow-Origin: *</code>。而 <code>/proxy/</code> 并不只代理视频——<code>js/api.js</code>、<code>js/douban.js</code>、<code>js/app.js</code>、<code>js/connection-test.js</code> 都把 CMS 搜索/详情、豆瓣图片、连接测试塞进同一个代理，等于一个<strong>无鉴权、无目标白名单的通用开放代理</strong>。</p>
+<p>更讽刺的是<strong>本地比生产安全</strong>：<code>server.mjs</code> 的 <code>isValidUrl()</code> 有 <code>BLOCKED_HOSTS</code> + <code>BLOCKED_IP_PREFIXES</code>（172.16/12 逐段列出避免误伤公网）+ 协议白名单，但 <code>.env.example</code> 里的 <code>BLOCKED_HOSTS</code>/<code>BLOCKED_IP_PREFIXES</code>/<code>FILTERED_HEADERS</code> 这些变量<strong>云端 Functions 一行都不读</strong>（云端过滤列表是硬编码的），容易让部署者误以为生产也有防护。<strong>这一项应优先于任何体验改进</strong>：至少加协议/私网 IP 黑名单 + 同源 Referer 校验 + 目标域名白名单（限定采集站与已知图床），手动跟随重定向并逐跳校验；注意 Workers 无 <code>node:dns</code>，LibreTV 的 DNS 解析后校验无法照搬。</p>
+<p><strong>但别把 LibreTV 的安全模型神化，逐文件核对后发现几处同样明显的缺口：</strong>① 仓库里没有 <code>middleware.ts</code>，鉴权靠每个 Route Handler 手动调 <code>guardRequest(req)</code>（内部 <code>sessionFromCookieHeader</code> → <code>verifySession</code>），新增路由极易漏挂；<code>/api/auth</code> 和 <code>/api/status</code> 才是有意豁免。② 只校验 Cookie，<strong>没有入站 Origin / CSRF token 校验</strong>——代码里的 <code>Referer</code> 是伪装成上游站点的<strong>出站</strong>请求头，勿混淆；之所以风险可控，靠的是 Cookie <code>SameSite=Lax</code> + <code>application/json</code> 触发预检，属于"恰好安全"而非显式设计。③ 登录态的 <code>isBlockedByDNS</code> 解析失败时返回 <code>false</code> 放行（注释写明"解析失败不阻断，交给后续请求处理"），而后续 <code>fetchUpstream</code> 仅在 <code>safeRedirects</code> 开启时才重查 DNS，理论上存在 DNS rebinding 窗口。④ 限流、搜索缓存、画质探测结果、直播缓存全是<strong>进程内 Map</strong>，多实例部署各自为政，README 里也提示多实例要显式设置 <code>PROXY_SECRET</code>。⑤ 无服务端数据库、无账号体系，<code>db.ts</code> 只有 6 张浏览器表；<strong>无实时推送式跨标签页同步</strong>（全仓 <code>BroadcastChannel</code> / <code>storage</code> 事件零命中），但<strong>有懒重读缓解</strong>：<code>download-manager.tsx</code> 靠抽屉打开时重读 <code>loadDownloadSettings()</code>、<code>use-quality-probe.ts</code> 的 <code>sharedQueue</code> 只是当前标签页的模块级单例；两个标签页并发写入仍是后写覆盖、无版本号仲裁。Zustand persist 靠 800ms 节流 + <code>skipHydration</code> 手动 rehydrate，仅在 <code>visibilitychange(hidden)</code> / <code>beforeunload</code> flush，仍可能丢最后几次写入。⑥ 服务端 60s 搜索缓存只在同一进程有效，且代理默认 <code>s-maxage=300</code> 只对公开 CDN 生效；⑦ <code>ssrf.ts</code> 是<strong>黑名单式防护</strong>（拒绝内网）而非<strong>出站域名白名单</strong>，登录用户仍可让它代理任意公网 URL，实质仍是"有额度约束的开放代理"；<code>checkUpstreamAllowed</code> 与 <code>checkLiveUrlAllowed</code> 还是"两把尺子"（后者可由 <code>LIVE_ALLOW_PRIVATE=1</code> 放行内网 IPTV）。<br><strong>所以准确结论是程度差，不是有无差：</strong>WDTV 生产端是「零校验 + 完全匿名」的开放代理，LibreTV 是「有校验 + 需登录 + 有额度约束」的开放代理。WDTV 连登录这层都没有，仍是全篇最严重的风险点，定位不变。</p>
+
+<h2 id="s5">5. WDTV 更优、不该被"重构掉"的部分</h2>
+<div class="callout good">
+迁移到 Next.js 会真正失去、且重构版<strong>零实现</strong>的是这六项（已对 <code>src</code> 全量检索确认）：<strong>弹幕</strong>（弹弹play 匹配 + 三源降级）、<strong>Durable Object 共看房间</strong>、<strong>D1 账号云同步</strong>（按 key 类型合并的冲突解决）、<strong>Service Worker 页面级离线</strong>、<strong>截图 / 录屏</strong>、<strong>观影空间 / 我的影院</strong>。此外还会引入常驻 Node 进程成本、丢掉 Cloudflare 边缘缓存与 <code>_routes.json</code> 的"静态直出不消耗 Functions 配额"设计。<br><br><strong>但不要夸大差距：</strong>广告过滤、视频缓存、下载器三项重构版<strong>都有对等实现</strong>——<code>m3u8.ts</code> 四级启发式经 <code>hls-loader.ts</code> 的 <code>onSuccess</code> 接入（设置里「广告切片过滤」开关）、<code>video-cache.ts</code> + <code>video-prefetcher.ts</code>（Cache Storage + Dexie 两轮 LRU，默认单集 800MB / 全局 2GB）、<code>download-manager.tsx</code> + <code>m3u8-downloader.ts</code>（并发 8、WebCrypto AES-128、mux.js 流式转封装、断点续传）+ <code>download-saver.ts</code>（FS Access 磁盘直写）。差别是<strong>策略与深度</strong>：WDTV 更细、默认更激进（3GB / 自动缓存默认开），重构版更保守、且无 SW 所以页面离线仍不可用。
+</div>
+<p>另外 WDTV 有些实现细节明显更贴合真实网络环境，例如 <code>video-cache.js</code> 的 <code>FRAG_DIRECT_TTFB_MS=6000</code> 注释记录了"蜂窝网冷启动普遍 >3.5s，旧版按总时长 3.5s 掐会误杀可用直连，把整个会话锁进跨境代理导致卡顿"；<code>player.js</code> 的"始终锁定最高画质、取消 ABR 自动降档"；<code>ad-filter.js</code> 的规则签名缓存失效。这些都是踩坑换来的。LibreTV 的广告过滤走的是另一条<strong>保守启发式</strong>路线（宁可漏删也不误删，见 3. 功能矩阵），画质上保留 hls.js 原生 ABR 而非锁最高档，两者都是"稳"优先于"狠"的取舍，不能简单判为落后。</p>
+<p>还有一条架构优势：WDTV 的 <code>_routes.json</code> 只让 <code>/proxy/* /api/* /danmu/*</code> 走 Function，其余纯静态直出；<code>_headers</code> 对 <code>/libs/</code> 设 1 年 immutable；代理内部又把 m3u8（120s）与 ts 分片（24h）缓存分离，并用 <code>caches.default</code> 显式边缘缓存（注释记录了"Function 响应即便带 Cache-Control 也恒为 CF-Cache-Status: DYNAMIC"这个实测结论）。这套边缘缓存精细度是 LibreTV 的内存 Map 缓存比不了的。</p>
+<p>还有一处容易被忽略的工程亮点：<code>js/downloader.js</code> 用 <strong>Web Locks API</strong>（<code>navigator.locks.request</code> 的 <code>ifAvailable/steal</code>）+ localStorage 心跳（检测持锁页签被冻结）+ <code>PUMP_EPOCH_KEY</code> 代数让位，实现了<strong>跨页签下载调度</strong>；另有 <code>wakeLock</code> 防手机锁屏冻结、IndexedDB 800ms 节流落库支持刷新续传、<code>EXT-X-DISCONTINUITY</code> 造成的 PTS 重置逐分片重排时间线。反倒是重构版的下载管理器只管当前标签页，跨页签靠"抽屉打开时重读设置"的懒同步——这一项 WDTV 做得更完整，也说明"跨标签页状态"在两边都是局部解决、不是系统能力。</p>
+
+<h2 id="s6">6. 技术优劣势逐项判定</h2>
+<table>
+<tr><th>维度</th><th>WDTV</th><th>LibreTV</th><th>判定</th></tr>
+<tr><td>首屏与播放延迟</td><td>静态直出 + 浏览器直连采集站 + 边缘缓存，少一跳；但 SW 的 SWR 会让首次改版仍返回旧文件（项目已有 <code>?v=</code> + changelog 约定缓解）</td><td>所有第三方请求经服务端，多一跳；SSR/RSC 首屏有 HTML，但需常驻 Node</td><td><span class="tag t-wd">WDTV 优</span></td></tr>
+<tr><td>托管成本</td><td>CF Pages 免费额度内可跑（静态 + Functions + KV + D1 + DO）</td><td>需 VPS / 容器 / Node 常驻进程，内存与带宽随用户数线性增长</td><td><span class="tag t-wd">WDTV 优</span></td></tr>
+<tr><td>可维护性</td><td>38k 行无类型、全局变量通信、6.4k 行单文件、内联 onclick、无 lint/CI</td><td>TS 类型 + 组件化 + Zustand 单一 store + 纯函数策略模块 + 37 个测试</td><td><span class="tag t-lt">LibreTV 明显优</span></td></tr>
+<tr><td>可测试性</td><td>1 个测试文件；逻辑与 DOM 强耦合，难以单测</td><td>策略层刻意做成"只决策不执行"，可独立单测；CI 强制</td><td><span class="tag t-lt">LibreTV 明显优</span></td></tr>
+<tr><td>用户体验容错</td><td>错误路径散落，无统一错误边界；部分失败静默</td><td>React 错误边界 + 统一 ErrorState + 非阻塞失败源提示 + 撤销机制</td><td><span class="tag t-lt">LibreTV 优</span></td></tr>
+<tr><td>数据一致性</td><td>localStorage（5MB 配额风险）+ IndexedDB + SW 缓存 + D1 云同步四处状态，靠 <code>?v=</code> 与人工约定串联</td><td>单一 Zustand store（persist 版本迁移）+ Dexie 6 表（v1→v3 迁移），无服务端状态</td><td><span class="tag t-lt">LibreTV 优</span></td></tr>
+<tr><td>跨设备</td><td>D1 账号整包同步，含按 key 分类的冲突合并</td><td>无账号，数据只在本机；换设备即丢（仅能手工导出/导入配置 JSON）</td><td><span class="tag t-wd">WDTV 明显优</span></td></tr>
+<tr><td>安全</td><td>账号侧做得细（PBKDF2 + HMAC + JWT），但代理层无鉴权无 SSRF</td><td>SSRF DNS + 逐跳重定向校验 + 签名 Cookie + 限流；但只是单密码门，密码明文 POST（README 自己提示要上 HTTPS）</td><td><span class="tag t-lt">LibreTV 优</span></td></tr>
+<tr><td>扩展能力上限</td><td>受 CF Functions 10ms CPU / 无 Node 内置模块限制（弹幕层注释提到"不解析 body，规避 10ms CPU 限制"），复杂解析（TVBOX、XMLTV、探针）放不进边缘</td><td>Node runtime 无 CPU 硬限，可跑 DNS 查询、大 XML 解析、长连接 FLV 代理、批量测活</td><td><span class="tag t-lt">LibreTV 优</span></td></tr>
+<tr><td>本地开发一致性</td><td>Express 本地服务器需"同形实现"CF Functions 的 API，两套代码容易漂移；<code>deploy-dist/</code> 手工镜像（曾出现 48 → 12 文件事故）</td><td><code>next dev</code> 与生产同构，Docker 一键，standalone 包可核对版本</td><td><span class="tag t-lt">LibreTV 优</span></td></tr>
+<tr><td>厂商锁定</td><td>深绑 Cloudflare（Pages Functions / KV / D1 / DO / Cache API），迁走要重写服务端</td><td>标准 Node，任意容器/裸机可跑</td><td><span class="tag t-lt">LibreTV 优</span></td></tr>
+<tr><td>离线 / PWA</td><td>SW + 整集缓存 + 下载，真正可离线看</td><td>manifest 可安装，但无 SW，离线只能靠片段缓存</td><td><span class="tag t-wd">WDTV 明显优</span></td></tr>
+<tr><td>功能广度</td><td>播放链路深、社交与账号强，但无直播、无源订阅、无跳过标记</td><td>内容发现/源治理/直播强，但无弹幕、共看、云同步、录屏</td><td><span class="tag t-both">互补</span></td></tr>
+</table>
+
+<h3>6.1 别把"工程化领先"误读成"全面领先"</h3>
+<p>逐文件核对后，LibreTV 重构版自身也有明确的代价，这对判断"该抄什么、不该抄什么"很关键：</p>
+<ul>
+<li><strong>几乎全是 CSR。</strong>首页、watch、live、about 都标 <code>'use client'</code>，所有 API 路由显式 <code>runtime='nodejs'</code>。SSR 阶段输出的只是一层壳与 Spinner：布局会先渲染 <code>&lt;div class="min-h-screen bg-base"&gt;</code>，再靠 <code>Providers</code> 的 <code>useEffect</code> 把 auth 状态改成已验证才渲染 Header；<code>QueryClientProvider</code> 还要 <code>useState</code> 懒创建。也就是说首屏内容、搜索、推荐全靠客户端 JS 拉取，SEO 与低端机首屏都不占优。WDTV 的页面结构随 HTML 直出、数据源由浏览器直连，不必等服务端聚合，Functions 全挂时仍能搜索，这一项确实更皮实。<strong>但别把 WDTV 当成"轻量静态页"</strong>：<code>index.html</code> 同步加载 407KB 的浏览器内 Tailwind JIT（<code>libs/tailwindcss.min.js</code>）、约 500 行内联 CSS 与约 700 行内联 canvas 水波/雨滴特效 JS，18 个业务脚本全是同步 <code>&lt;script src&gt;</code>（无 defer / module），首屏阻塞并不小；而 <code>player.html</code> 又全用 <code>defer</code>（唯 <code>cloud-sync.js</code> 例外），两页加载策略还不一致。准确结论是"<strong>无服务端数据依赖</strong>"，不是"无 JS 开销"。</li>
+<li><strong>依赖体积大。</strong>Next/React 19/React DOM + hls.js + artplayer + mpegts.js + mux.js + Dexie + Zustand + TanStack Query/Virtual + Tailwind；且因上游图片地址运行时不可枚举，<code>images.unoptimized:true</code> 关闭了图片优化，仍用原生 <code>&lt;img&gt;</code>。WDTV 零构建、依赖全部本地化在 <code>libs/</code>，没有 CDN 运行时依赖。</li>
+<li><strong>测试偏科。</strong>37 个测试文件几乎全是纯逻辑单测（ssrf、cms-parser、m3u8、store、quality-probe、tvbox-parser…），<strong>没有 React 组件测试、没有 E2E、没有 jsdom</strong>；恰恰最复杂的 <code>source-manager.tsx</code>（1,357 行）与 <code>player-shell.tsx</code>（1,067 行）没有测试覆盖。<code>PlayerShell</code> 为"切集不重建播放器"引入 <code>propsRef</code> 让闭包读最新 props，作为补偿也把数据流隐式化了。</li>
+<li><strong>PWA 是半套。</strong>有 manifest + 全尺寸 icons + <code>display:standalone</code>，但<strong>没有 Service Worker</strong>，离线连页面都打不开；视频片段缓存只解决播放不解决页面。WDTV 的 SW + 整集缓存才是完整离线方案（见第 5 节）。</li>
+<li><strong>强服务端绑定。</strong>所有第三方请求（含搜索、详情、画质探测、订阅解析）必须经同源 Next 服务，部署者必须常驻 Node；离开服务端整个应用不可用。WDTV 的"浏览器直连 + 边缘代理兜底"在可用性上更皮实，代价是安全与隐私（见 4.11）。</li>
+<li><strong>本地数据也有配额风险。</strong>Dexie 6 表 + Cache Storage 默认 2GB 上限、会请求持久化存储（可能被浏览器拒绝）；WDTV 是 3GB 软上限 + 3 集/3 天 LRU。两者都需要配额兜底，不是某一方独有问题。</li>
+</ul>
+
+<h3>6.2 四个更底层的架构对照（最容易被表面结论掩盖）</h3>
+<ol>
+<li><strong>冷启动 / 常驻，两边都有成本，形态不同。</strong>LibreTV 是常驻 Node 进程，不存在函数冷启动；真正的启动成本在「每次进程重启后内存缓存全空 + Next 首次编译/加载」，以及平台缩容到零后的首请求延迟（其 Docker/standalone 部署模型下不必然发生）。WDTV 的 Pages Functions / D1 / KV 是<strong>按请求拉起的无状态边缘运行时</strong>，而 <code>sync-worker</code> 的 Durable Object 走的是 <code>WebSocket Hibernation API</code>（<code>state.acceptWebSocket(server)</code> + <code>webSocketMessage</code> / <code>webSocketClose</code> 事件唤醒），<code>webSocketClose</code> 后立即 <code>delete this.room</code>，<strong>无连接时不占常驻内存、不计费，靠 SQLite 事务表续命</strong>。准确说法是"WDTV 用 DO 的 hibernation 换掉了长连接常驻成本，LibreTV 根本不提供实时协同所以没有这项成本"，而不是笼统说"Serverless 一定比常驻便宜"。</li>
+<li><strong>状态跨实例共享，两边<strong>都不彻底</strong>，只是断在不同边界。</strong>WDTV 的边界是<strong>运行时</strong>：生产端所有共享态外置到 KV（m3u8 缓存）/ D1（账号与快照）/ DO（房间），Functions 无状态；但本地 <code>server.mjs</code> 把会话、房间、密码、日志全放在进程内 <code>Map</code>，重启即丢、多实例无共享——<strong>生产无状态、开发有状态</strong>，这正是"同形 API"最容易掩盖的漂移。LibreTV 的边界是<strong>边缘渲染层 / 应用状态层</strong>：SSR 元数据与客户端 Zustand（IndexedDB + localStorage）刻意分离，靠 rehydrate 合流；以及<strong>集群边界</strong>：搜索缓存、鉴权限流、画质探测队列订阅者、直播缓存全是进程内 Map，多副本部署各自为政，README 才提示多实例要显式设 <code>PROXY_SECRET</code>。<br>一句话：WDTV 把共享态推给了云基础设施，LibreTV 把共享态留在了进程里。两边都没有做"多实例完全一致"，只是 WDTV 在生产环境做对了。</li>
+<li><strong>账号模型差在三项能力，不只是"有没有注册"。</strong>① <em>全局鉴权层</em>：WDTV 在 <code>functions/api/_lib.mjs</code> 显式做 <code>verifyAuth()</code> 并逐路由调用，LibreTV <strong>没有 middleware.ts</strong>，靠每个 Route Handler 手写 <code>guardRequest(req)</code>，新增路由漏挂的风险更高；② <em>会话可吊销性</em>：WDTV 是 stateless JWT，<strong>没有黑名单/会话表</strong>，签发后到过期前无法单端吊销，只能靠 <code>logout</code> 删本地 token（改密码强制下线靠 <code>tokenVersion+1</code> 间接实现）；LibreTV 的签名 Cookie 同样无服务端吊销列表，两边都靠短 TTL（7 天 / 4 小时）兜底，这一项<strong>都不完整</strong>；③ <em>多端实时同步</em>：只有 WDTV 具备（D1 云端快照 + <code>revision</code> CAS 乐观锁 + DO 房间 WebSocket），LibreTV 的观看历史/进度/收藏只在本机 IndexedDB，换设备即丢。所以 WDTV 在账号能力上是更完整的那一方，别因为"LibreTV 更现代"就误判。</li>
+<li><strong>构建与版本口径。</strong>LibreTV 的 <code>output:'standalone'</code> 是<strong>条件开启</strong>（<code>DOCKER_BUILD === '1'</code> 才生效，因为本地 <code>next start</code> 不支持 standalone），版本号由 <code>next.config.ts</code> 构建期读 <code>package.json</code> 注入 <code>APP_VERSION</code>、<code>/api/status</code> 可核对——这是 WDTV 最该抄的一条（见 4.10）。测试口径也应对齐：LibreTV <code>vitest.config.ts</code> 环境为 <code>node</code>、仅收 <code>src/**/*.test.ts</code>，37 个文件中 5 个是 route 级、32 个是 lib 级，<strong>零组件测试、零 E2E、零浏览器环境</strong>；WDTV 只有 <code>test/ad-filter.test.mjs</code>，且 <code>package.json</code> 连 <code>test</code> 脚本都没有，靠手工 <code>node test/xxx.mjs</code> 运行。</li>
+</ol>
+
+<h2 id="s7">7. 可借鉴清单（按 ROI 排序）</h2>
+<div class="card">
+<div class="prio"><div class="n">P0</div><div><h4>代理层安全加固（SSRF + Referer + 域名白名单 + 逐跳校验）</h4><p>改动：<code>functions/proxy/[[path]].js</code> + <code>functions/danmu/[[path]].js</code> 参照；风险最高、成本最低、无 UI 变更。注意 CF Workers 无 <code>node:dns</code>，DNS 解析后校验无法照搬，需用字面量 IP/跳转目标校验 + 目标域名白名单替代。</p></div></div>
+<div class="prio"><div class="n">P0</div><div><h4>跨源同名卡片聚合</h4><p>改动：<code>js/app.js</code> 渲染前分桶 + <code>css/index.css</code> 展开面板；复用现有搜索结果网格与 hover 预取缓存。收益最直观。</p></div></div>
+<div class="prio"><div class="n">P0</div><div><h4>片头 / 片尾跳过标记（最小集）</h4><p>改动：新增 <code>js/skip-marks.js</code> + <code>player.js</code> 的 timeupdate 钩子 + 设置开关 + 提示条撤销。WDTV 播放器基础设施完全够用，别把"广告自动跳过"混进来。</p></div></div>
+<div class="prio"><div class="n">P0</div><div><h4>播放错误恢复策略抽离</h4><p>改动：新增 <code>js/playback-recovery.js</code>（纯决策）+ <code>test/playback-recovery.test.mjs</code>，仿 <code>ad-filter.js</code> 的 IIFE + 双环境导出。降低 6,433 行巨石的回归风险。</p></div></div>
+<div class="prio"><div class="n">P1</div><div><h4>统一状态组件 + 错误边界 + 图片降级链 + focus trap</h4><p>改动：新增 <code>js/states.js</code>、<code>css/states.css</code>，逐步替换各页面散落的 loading/空态；给弹层补焦点管理。纯增量，可分批上线。</p></div></div>
+<div class="prio"><div class="n">P1</div><div><h4>源健康度阶梯停用 + 失败源非阻塞提示</h4><p>改动：<code>js/api.js</code> 健康度模块升级 + <code>index.html</code> 结果区提示条；把"已就绪 N/M 源"暴露出来。</p></div></div>
+<div class="prio"><div class="n">P1</div><div><h4>数据源订阅（远程 JSON / TVBOX 兼容）与源配置云同步</h4><p>改动：新增 <code>js/source-subscription.js</code> + 一个 <code>/api/source-list</code> Function（服务端拉取免 CORS）；或先做简版：把源配置纳入 <code>cloud-sync</code> 的同步包。TVBOX 解析因 10ms CPU 限制不宜放边缘，可放浏览器端。</p></div></div>
+<div class="prio"><div class="n">P1</div><div><h4>画质探测队列 + 卡片画质徽章</h4><p>改动：新增 <code>js/probe-queue.js</code>，配合 4.2 的聚合卡片展开使用；务必加并发闸门与视口延迟，否则会打满请求。</p></div></div>
+<div class="prio"><div class="n">P1</div><div><h4>一组"半天级"交互细节（性价比最高的一组）</h4><p>① URL 驱动状态：<code>history.replaceState</code> 把搜索词 / 集数 / 进度写进地址，天然获得分享、刷新与前进后退；② 倍速跨集保持：监听 <code>ratechange</code> 让 <code>defaultPlaybackRate</code> 恒等于用户倍速（要跳过归位那次赋值）；③ 进度恢复等 <code>loadedmetadata/durationchange/canplay</code> 拿到有效 duration 再 seek，别只赌 <code>MANIFEST_PARSED</code>；④ 删除/清空改走 Toast 撤销，只有销毁性操作才用确认弹窗且默认焦点放"取消"；⑤ 卡片 <code>role=button</code> + Enter/Space + <code>stopPropagation</code>；⑥ 骨架屏结构对齐真实卡片。<strong>不用照搬</strong>：长按倍速 WDTV 已有 12 档 <code>setupLongPressSpeedControl()</code>，比重构版固定 3 倍速更全。</p></div></div>
+<div class="prio"><div class="n p1">P2</div><div><h4>首页推荐增源（Bangumi 新番 / 影视榜单）</h4><p>改动：<code>js/douban.js</code> 旁新增模块 + <code>/api/</code> 转发缓存 + 设置里切换。免 key，但需要新的上游依赖与失败降级。</p></div></div>
+<div class="prio"><div class="n p1">P2</div><div><h4>工程化：node --test 脚本、版本号单一来源、自动生成 ?v= 与 SW changelog</h4><p>改动：<code>package.json</code> + 新构建脚本。解决当前版本散落 5 处、全靠人工同步的问题，也能防止"改了样式用户看不到"。</p></div></div>
+<div class="prio"><div class="n p2">P3</div><div><h4>直播 / IPTV 全套</h4><p>属于品类扩张，不是体验优化；需 M3U/XMLTV 解析、FLV 支持、长连接代理，且与 CF Functions CPU 限制冲突较大。建议独立评估。</p></div></div>
+<div class="prio"><div class="n p2">✕</div><div><h4>不建议：整体迁移 Next.js / TypeScript / React</h4><p>会同时丢掉弹幕、共看、云同步、SW 离线、整集缓存、下载与录屏，并引入常驻服务器成本。正确做法是把 LibreTV 的<strong>设计与治理机制</strong>移植进现有架构，最多对新增纯逻辑模块渐进引入类型与测试。</p></div></div>
+</div>
+
+<h2 id="s8">8. 落地约束（本项目特有，务必遵守）</h2>
+<div class="callout warn">
+<ul style="margin:0">
+<li><strong>Service Worker 缓存：</strong>HTML 走 Network-First，<code>/css/ /js/ /libs/ /image/</code> 走 Stale-While-Revalidate，<strong>同一个 <code>?v=N</code> 网址会持续返回旧文件</strong>。凡修改 CSS/JS，必须同步：① 升 <code>index.html</code>（及 <code>deploy-dist/index.html</code> 镜像）里对应资源的 <code>?v=</code>；② 在 <code>service-worker.js</code>（及镜像）顶部 changelog 加 <code>vN（日期）：改动说明… 升 ?v=N</code>。否则线上永远拿不到新代码。另注意当前 <code>service-worker.js</code> 顶部 changelog 已记到 <strong>v62</strong>，而 <code>CACHE_VERSION = 'wdtv-sw-v55'</code>（<code>install</code>/<code>activate</code> 用它 purge 旧缓存）——两者已经漂移，意味着 v56~v62 的改动没有触发缓存名变更，只能靠 <code>?v=</code> 换 URL 生效；建议下次发版把 CACHE_VERSION 一并递增或在构建脚本里自动关联。手工 <code>?v=</code> 也已出现漂移实例：<code>video-cache.js</code> 在 <code>index.html</code> 是 <code>?v=95</code>、在 <code>player.html</code> 是 <code>?v=96</code>；此外 <code>VC_VERSION=94</code>、<code>RULES_VERSION=1</code> 又各有独立版本号。</li>
+<li><strong>deploy-dist 镜像：</strong>与根目录同构，改动需两边同步；发布前自检 <code>find deploy-dist -type f | wc -l</code> 应为 <strong>48</strong>（曾出现只剩 12 个根文件导致线上静态资源 404）。</li>
+<li><strong>_routes.json：</strong>当前 <code>include</code> 为 <code>/proxy/* /api/* /danmu/*</code>；新增 <code>/api/source-list</code> 等路由已被覆盖，但若新增其他路径前缀必须同步加白名单，否则纯静态直出会 404。</li>
+<li><strong>Functions 10ms CPU：</strong>弹幕层已有"不解析 body"的规避注释。复杂的 TVBOX/XMLTV 解析、批量探测不要放进 Pages Function，放浏览器端或独立 Worker。</li>
+<li><strong>AUTH_SECRET：</strong>同时决定 JWT 签名与密码哈希，部署后<strong>永远不要改</strong>，否则全部账号立即无法登录；且未设置时 <code>functions/api/_lib.mjs</code> 会回退到<strong>硬编码公开默认值</strong>（与本地开发一致），线上必须先执行 <code>npx wrangler pages secret put AUTH_SECRET</code>，可用 <code>/api/config</code> 的 <code>authSecretSet</code> 字段自检。Durable Object Worker 必须设成同值。</li>
+<li><strong>部署白名单是安全边界，不是构建细节：</strong>切勿 <code>npx wrangler pages deploy .</code>——wrangler 不读 <code>.assetsignore</code>，会把 <code>data/account-dev.json</code>（含 salt 与 password_hash）、<code>server.mjs</code>、<code>schema.sql</code>、测试脚本一并当静态资源公开。</li>
+<li><strong>部署环境：</strong>bash 里 <code>node</code> 不在 PATH，需用 <code>C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2-6/node.exe</code>；<code>npx wrangler</code> 可用。<code>node deploy-pages.mjs</code> 在本机曾静默失败，可靠做法是手动 <code>cp -f</code> 白名单根文件 + <code>cp -R css js libs image deploy-dist/</code> 再 <code>npx wrangler pages deploy</code>。</li>
+</ul>
+</div>
+
+<h2 id="s9">9. 风险清单</h2>
+<table>
+<tr><th>级别</th><th>问题</th><th>位置 / 说明</th></tr>
+<tr><td><span class="tag t-risk">高</span></td><td>开放代理无鉴权、无 SSRF 校验、自动跟随重定向</td><td><code>functions/proxy/[[path]].js</code> 第 15 行注释 + <code>redirect:'follow'</code>；可被当任意 URL 转发器滥用</td></tr>
+<tr><td><span class="tag t-risk">高</span></td><td>浏览器直连采集站暴露用户 IP，且依赖对方 CORS</td><td><code>js/api.js</code> <code>fetchWithFallback</code>；这是性能取舍，但至少应在设置里提供"强制走代理"开关</td></tr>
+<tr><td><span class="tag t-mid">中</span></td><td>localStorage 5MB 配额；观看历史存全集 URL 列表易爆</td><td>LibreTV 的 <code>db.ts</code> 注释明确记录了旧版这个坑，改为只存定位信息 + 按需重拉详情，WDTV 可借鉴</td></tr>
+<tr><td><span class="tag t-mid">中</span></td><td>6,433 行 player.js 承担播放、弹幕、缓存、下载、录屏、换源、测速、共看</td><td>任何改动都缺回归护栏；建议按 4.5 的方式逐步抽出纯逻辑模块并补测</td></tr>
+<tr><td><span class="tag t-mid">中</span></td><td>版本信息散落 5 处，发布靠人工</td><td><code>config.js</code> 1.0.8 / <code>package.json</code> 1.2.0 / <code>VC_VERSION=94</code> / <code>?v=N</code> / SW changelog</td></tr>
+<tr><td><span class="tag t-mid">中</span></td><td>本地 Express 与 CF Functions 是两套"同形"实现</td><td><code>server.mjs</code> vs <code>functions/</code>；行为漂移只能靠人工核对</td></tr>
+<tr><td><span class="tag t-mid">中</span></td><td>仅 1 个测试文件、无 lint / typecheck / CI</td><td><code>test/ad-filter.test.mjs</code>；新增体验功能时回归成本高</td></tr>
+<tr><td><span class="tag t-risk">高</span></td><td><code>AUTH_SECRET</code> 未设置时回退硬编码公开默认值</td><td><code>functions/api/_lib.mjs</code> 的 <code>DEFAULT_AUTH_SECRET='wdtv-dev-secret'</code>；它同时是 JWT 签名、密码哈希 pepper、roomToken HMAC、DO 内部接口密钥（四合一），未配置即可离线伪造任意用户 JWT。部署后可用 <code>/api/config</code> 的 <code>authSecretSet</code> 自检</td></tr>
+<tr><td><span class="tag t-risk">高</span></td><td>登录限速形同虚设</td><td><code>_lib.mjs</code> 的 <code>loginAttempts = new Map()</code> 只在单个 isolate 内有效，CF 多 colo 各自计数、重启清零，无 KV/D1/DO 持久化，10 次/10 分钟锁定可轻易绕过</td></tr>
+<tr><td><span class="tag t-mid">中</span></td><td>线上调试补丁把异常堆栈返回客户端</td><td><code>functions/danmu/[[path]].js</code> 第 151–158 行 <code>{fatal:true, message, stack}</code>，注释自承"排查 1101；定位后移除"却仍在；<code>proxy</code> 错误响应也回传 <code>targetUrl</code> 与含 hostname/addr/port 的 <code>errorDetails</code></td></tr>
+<tr><td><span class="tag t-mid">中</span></td><td>四层缓存无主动 purge，缓存键不含请求头</td><td>SW + CDN + <code>caches.default</code> + KV；m3u8 最长陈旧 120s、ts/封面 24h；<code>edgeCacheKey = new Request(request.url,{method:'GET'})</code> 忽略 Accept/Referer，不同请求可能互相污染</td></tr>
+<tr><td><span class="tag t-mid">中</span></td><td>四五套存储并存、无统一抽象</td><td>sessionStorage（搜索 5min）/ SW Cache API / 三套 IndexedDB（video-cache、downloader、cinema）/ localStorage / D1；靠 <code>housekeep()</code>、<code>listEntries()</code> 对账、<code>#WDTV-ADF</code> 签名、<code>invalidateFragment()</code>、Web Locks 等补丁式机制维持一致</td></tr>
+<tr><td><span class="tag t-mid">中</span></td><td>文档与实现偏差、无障碍薄弱</td><td>README 列的 M 静音 / Esc 退出全屏在 <code>handleKeyboardShortcuts()</code> 中不存在（<code>hotkey:false</code> 已关内置热键）；README 说 <code>ac=detail</code> 而代码用 <code>ac=videolist&amp;ids=</code>；大量 <code>outline:none</code> 无 <code>:focus-visible</code> 兜底、无焦点陷阱、内联 <code>onclick</code> 与 <code>addEventListener</code> 混用；响应式断点散落 11 个数值</td></tr>
+<tr><td><span class="tag t-mid">中</span></td><td>投屏能力与硬编码外部端点</td><td>投屏仅 <code>airplay:true</code> + WebKit 原生 Remote Playback，无 DLNA/Chromecast 实现；<code>danmu.js</code> 内置公共端点与 <code>地址|口令</code> 明文，<code>config.js</code> 的 <code>SITE_CONFIG.url</code> 仍指向 libretv.is-an.org</td></tr>
+<tr><td><span class="tag t-mid">中</span></td><td>Cloudflare 深度锁定 + 10ms CPU 限制</td><td>复杂解析无法放边缘，迁移成本高；直播/大 XML 解析会撞墙；弹幕层只能纯流式搬运不解析 body</td></tr>
+</table>
+
+<h2 id="s10">10. 建议路线图</h2>
+<ol>
+<li><strong>第一步（安全 + 零风险收益）</strong>：代理层 SSRF/Referer/白名单加固；跨源同名卡片聚合；统一状态组件与图片降级链。三者都不碰播放内核。</li>
+<li><strong>第二步（播放器体验）</strong>：片头片尾跳过标记最小集 + 播放错误恢复策略抽离并补测；同时把 <code>player.js</code> 的错误处理路径收敛到新模块。</li>
+<li><strong>第三步（源治理）</strong>：健康度阶梯停用、失败源提示、远程源订阅/源配置云同步、画质探测队列与徽章。</li>
+<li><strong>第四步（工程化兜底）</strong>：<code>node --test</code> 脚本、版本号单一来源、自动生成 <code>?v=</code> 与 SW changelog、部署前 48 文件自检脚本化。</li>
+<li><strong>第五步（品类决策）</strong>：首页推荐增源、直播 IPTV 是否引入——这两项应先确认产品方向，再评估 CF 边缘限制。</li>
+</ol>
+<div class="callout good"><strong>总体判断：</strong>不要重构架构，要"抄设计"。LibreTV 最值钱的不是 Next.js，而是它把每一个踩过的坑都写成了一段可单测的纯逻辑和一个明确的产品决策（撤销窗口、阶梯停用、逐源流式、视口延迟探测、非模态侧栏）。把这些机制逐条搬进 WDTV，能在不动现有弹幕/共看/云同步/离线能力的前提下，把内容发现与播放容错提升一个档次。</div>
+
+<footer>本报告基于两个项目源码逐文件核对生成；行数为统计值，具体路径与函数名均可在对应仓库中检索。分析日期：2026-11-04。</footer>
+</div>
+</body>
+</html>

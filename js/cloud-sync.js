@@ -11,13 +11,19 @@
 
     // ========================= 常量 =========================
 
-    // 需要同步的列表 / 设置键（共 11 个；videoProgress_<id> 通过前缀单独扫描）
+    // 需要同步的列表 / 设置键（共 15 个；videoProgress_<id> 通过前缀单独扫描）
+    // wdtvSourceSubscriptions 为批次3 数据源订阅条目（含 url/周期/熔断状态，不含解析后的源集合）
+    // wdtvSkipMarks 为批次4 片头/中段/片尾跳过标记（默认关闭，_merge 按 updatedAt 整体覆盖）
     const SYNC_LIST_KEYS = [
+        'wdtvTheme',
+        'wdtvSourceSubscriptions',
+        'wdtvSkipMarks',
         'viewingHistory',
         'myCinemaFavorites',
         'videoSearchHistory',
         'selectedAPIs',
         'adFilteringEnabled',
+        'adAutoSkipEnabled',
         'doubanEnabled',
         'autoplayEnabled',
         'cacheEvictMode',
@@ -208,7 +214,11 @@
     async function request(method, path, body, opts) {
         const options = opts || {};
         const headers = { 'Content-Type': 'application/json' };
-        if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+        // 记录本次请求是否携带了登录凭证：只有"带 token 的已鉴权请求"被 401 拒绝
+        // 才意味着会话失效；未带 token 的请求（登录/注册/取盐）返回 401 是
+        // "用户名或密码错误"等业务失败，必须透传真实错误，不能误报"登录已过期"
+        const authed = !!state.token;
+        if (authed) headers['Authorization'] = 'Bearer ' + state.token;
         if (options.ifNoneMatch) headers['If-None-Match'] = options.ifNoneMatch;
 
         let resp;
@@ -223,7 +233,7 @@
             throw new Error('网络异常，同步暂不可用');
         }
 
-        if (resp.status === 401) {
+        if (resp.status === 401 && authed) {
             clearSession();
             notify();
             throw new Error('登录已过期，请重新登录');
@@ -600,6 +610,74 @@
         return result.slice(0, cap);
     }
 
+    // 纯对象判定（排除 null / 数组）：新键合并前做脏数据识别，避免脏数据被误合并
+    function isPlainObject(x) {
+        return x !== null && typeof x === 'object' && !isArray(x);
+    }
+
+    // 订阅条目归一化键：优先 url、其次 id，trim + 去尾斜杠（与 source-subscription.js 一致）。
+    // 元素不是对象或两者都缺失/非字符串时返回 null，交由调用方判定为脏数据。
+    function subNormKey(item) {
+        var raw = (item && typeof item === 'object') ? (item.url != null ? item.url : item.id) : null;
+        if (typeof raw !== 'string') return null;
+        var s = raw.trim().replace(/\/+$/, '');
+        return s || null;
+    }
+
+    // wdtvSkipMarks 专用合并：值形如 {enabled, marks:{[key]:{segments,enabled,updatedAt}}, updatedAt}
+    // - marks 按 key 取并集，同 key 按条目 updatedAt 大者胜（相等保留本地）
+    // - enabled 取顶层 updatedAt 较大一侧（相等保留本地）
+    // - 结果 value.updatedAt / entry.updatedAt 均取 max
+    function mergeSkipMarks(L, C, lv, cv) {
+        var mergedMarks = {};
+        var localMarks = lv.marks, cloudMarks = cv.marks;
+        Object.keys(localMarks).forEach(function (k) {
+            mergedMarks[k] = localMarks[k];
+        });
+        Object.keys(cloudMarks).forEach(function (k) {
+            var cm = cloudMarks[k];
+            if (!Object.prototype.hasOwnProperty.call(mergedMarks, k)) {
+                mergedMarks[k] = cm;
+            } else if (num(cm && cm.updatedAt) > num(mergedMarks[k] && mergedMarks[k].updatedAt)) {
+                mergedMarks[k] = cm;
+            }
+        });
+        var lUpd = num(lv.updatedAt), cUpd = num(cv.updatedAt);
+        var value = Object.assign({}, lv, {
+            enabled: cUpd > lUpd ? cv.enabled : lv.enabled,
+            marks: mergedMarks,
+            updatedAt: Math.max(lUpd, cUpd)
+        });
+        return { value: value, updatedAt: Math.max(num(L.updatedAt), num(C.updatedAt)) };
+    }
+
+    // wdtvSourceSubscriptions 专用合并：数组，元素含 url（或 id）
+    // - 按归一化 url 取并集，同 url 按条目 updatedAt 大者胜（相等保留本地，保留本地位置）
+    // - 本地顺序在前，云端独有追加在后
+    // - 结果 entry.updatedAt 取 max
+    function mergeSourceSubscriptions(L, C, lv, cv) {
+        var result = [];
+        var pos = new Map();
+        lv.forEach(function (item) {
+            var k = subNormKey(item);
+            if (k === null || pos.has(k)) return;
+            pos.set(k, result.length);
+            result.push(item);
+        });
+        cv.forEach(function (item) {
+            var k = subNormKey(item);
+            if (k === null) return;
+            var idx = pos.get(k);
+            if (idx === undefined) {
+                pos.set(k, result.length);
+                result.push(item);
+            } else if (num(item && item.updatedAt) > num(result[idx] && result[idx].updatedAt)) {
+                result[idx] = item;
+            }
+        });
+        return { value: result, updatedAt: Math.max(num(L.updatedAt), num(C.updatedAt)) };
+    }
+
     // 单键合并（双侧都有时）
     function mergeEntry(key, L, C) {
         const lv = L ? L.value : undefined;
@@ -613,6 +691,22 @@
         }
         if (key === 'myCinemaFavorites' && isArray(lv) && isArray(cv)) {
             return { value: mergeCinemaFavorites(lv, cv), updatedAt: Math.max(num(L.updatedAt), num(C.updatedAt)) };
+        }
+        // wdtvSkipMarks：仅当双侧均为「值对象 + marks 对象」时走专用合并；
+        // 非对象 / marks 缺失或非对象（字段缺失）等脏数据一律落到下方默认 last-write-wins，不抛错。
+        if (key === 'wdtvSkipMarks' && isPlainObject(lv) && isPlainObject(cv) &&
+            isPlainObject(lv.marks) && isPlainObject(cv.marks)) {
+            return mergeSkipMarks(L, C, lv, cv);
+        }
+        // wdtvSourceSubscriptions：仅当双侧均为数组、且每个元素都能归一化出 url 键时走专用合并；
+        // 非数组 / 元素缺 url/id（字段缺失）等脏数据一律落到下方默认 last-write-wins，不抛错。
+        if (key === 'wdtvSourceSubscriptions' && isArray(lv) && isArray(cv)) {
+            let subsClean = true;
+            for (let si = 0; si < lv.length + cv.length; si++) {
+                const it = si < lv.length ? lv[si] : cv[si - lv.length];
+                if (subNormKey(it) === null) { subsClean = false; break; }
+            }
+            if (subsClean) return mergeSourceSubscriptions(L, C, lv, cv);
         }
         // 播放进度：双侧均有值时按 value.timestamp 较大者胜
         if (key.indexOf(PROGRESS_PREFIX) === 0 && lv && cv) {
@@ -675,6 +769,20 @@
                 console.warn('CloudSync 应用数据失败(' + key + '):', e);
             }
         });
+
+        // 云同步拉取落地后主题键可能已变化，但 theme.js 只在模块加载时 apply() 一次，
+        // 不会因 localStorage 被外部改写而重刷 <html> 的 dark class。若本次落地含 wdtvTheme
+        // 且 WDTVTheme 已加载，补一次 apply() 让 B 设备本次会话立即生效。
+        // 已确认 theme.js 的 apply() 为无参函数（内部自行读 localStorage 的 wdtvTheme），
+        // 模块缺失或抛错一律静默，不影响同步流程。
+        if (Object.prototype.hasOwnProperty.call(items, 'wdtvTheme')) {
+            try {
+                if (typeof window !== 'undefined' && window.WDTVTheme &&
+                    typeof window.WDTVTheme.apply === 'function') {
+                    window.WDTVTheme.apply();
+                }
+            } catch (e) { /* 主题模块缺失 / 异常：静默 */ }
+        }
     }
 
     // ========================= 载荷裁剪 =========================
@@ -706,6 +814,72 @@
         const fav = items.myCinemaFavorites;
         if (fav && isArray(fav.value)) {
             while (fav.value.length > 0 && sizeOf() > MAX_PAYLOAD) fav.value.pop();
+        }
+
+        // ---- 新增键的保守裁剪：wdtvSkipMarks / wdtvSourceSubscriptions ----
+        // 这两键按剧 / 订阅条目无限累积，此前不裁剪会让 PUT 恒被服务端 413，云同步永久静默失效。
+        // 追加在既有三类之后，既有裁剪顺序保持不动；sizeOf 仍是 JSON.stringify().length（UTF-16 单元），
+        // 与服务端 .length 口径一致，不改成字节数。
+        const SKIP_MARKS_KEEP = 200;   // wdtvSkipMarks 至少保留最近 N 条 marks
+        const SUBS_KEEP = 50;          // wdtvSourceSubscriptions 最多保留最近 N 条
+
+        // wdtvSkipMarks 结构 { enabled, marks: { key: { segments, enabled, updatedAt } } }：
+        // 按 marks 条目的 updatedAt 从旧到新分批丢弃，保留至少最近 SKIP_MARKS_KEEP 条，绝不动 enabled。
+        // 按「批」删除、每批后才重新计算体积：marks 按剧无限累积可达数千条，
+        // 若每删一条都 stringify 整个 payload 会退化成 O(n²)（实测 8000 条约 9s 卡顿）。
+        const skip = items.wdtvSkipMarks;
+        if (skip && skip.value && skip.value.marks &&
+            typeof skip.value.marks === 'object' && !isArray(skip.value.marks)) {
+            const marks = skip.value.marks;
+            const markKeys = Object.keys(marks).sort(function (a, b) {
+                return num(marks[a] && marks[a].updatedAt) - num(marks[b] && marks[b].updatedAt);
+            });
+            const maxDrop = Math.max(0, markKeys.length - SKIP_MARKS_KEEP);
+            const MARK_BATCH = 100;
+            for (let mk = 0; mk < maxDrop && sizeOf() > MAX_PAYLOAD; mk += MARK_BATCH) {
+                const end = Math.min(mk + MARK_BATCH, maxDrop);
+                for (let k = mk; k < end; k++) delete marks[markKeys[k]];
+            }
+        }
+
+        // wdtvSourceSubscriptions 为数组（append 顺序，末尾最近）：从头部批量丢弃最旧条目，
+        // 条目数上限 SUBS_KEEP，保留最近 N 条；同样按批删除避免 O(n²) 体积计算。
+        const subs = items.wdtvSourceSubscriptions;
+        if (subs && isArray(subs.value)) {
+            const SUB_BATCH = 20;
+            while (subs.value.length > SUBS_KEEP && sizeOf() > MAX_PAYLOAD) {
+                subs.value.splice(0, Math.min(SUB_BATCH, subs.value.length - SUBS_KEEP));
+            }
+        }
+
+        // 兜底：以上都裁完仍超限 → 丢弃这两个键的主体但保留结构，避免每次 PUT 恒被 413。
+        // 不删除 entry 本身（否则云端 last-write-wins 合并会被当成整键删除），只把大体积主体置空。
+        if (sizeOf() > MAX_PAYLOAD) {
+            let dropped = false;
+            if (skip && skip.value && typeof skip.value === 'object' && skip.value.marks &&
+                typeof skip.value.marks === 'object' && !isArray(skip.value.marks)) {
+                skip.value.marks = {};                 // 保留 enabled 与 {enabled, marks:{}} 骨架
+                dropped = true;
+            }
+            if (subs && isArray(subs.value)) {
+                subs.value = [];                       // 保留数组结构
+                dropped = true;
+            }
+            if (dropped) {
+                console.warn('CloudSync: 载荷裁剪后仍超过 ' + MAX_PAYLOAD +
+                    ' 字符，已兜底清空 wdtvSkipMarks.marks / wdtvSourceSubscriptions 主体（保留结构）以避免 PUT 恒被 413；' +
+                    '若仍超限，可能来自其它未裁剪键');
+                // 兜底把大体积主体（marks 等）清空属于有损操作，派发可见事件供 UI 层提示用户。
+                // 无 window / CustomEvent / dispatchEvent（如 Node 自测）时静默，绝不影响同步流程。
+                try {
+                    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' &&
+                        typeof CustomEvent === 'function') {
+                        window.dispatchEvent(new CustomEvent('wdtv-sync-trimmed', {
+                            detail: { reason: 'payload-limit' }
+                        }));
+                    }
+                } catch (e) { /* 事件派发失败静默 */ }
+            }
         }
     }
 
@@ -868,7 +1042,8 @@
         isRegisterAllowed: isRegisterAllowed,
         _merge: _merge,                       // 供测试
         _collectItems: collectItems,          // 供测试
-        _applyItems: applyItems               // 供测试
+        _applyItems: applyItems,              // 供测试
+        _trimPayloadToLimit: trimPayloadToLimit  // 供测试
     };
 
     if (typeof window !== 'undefined') {
