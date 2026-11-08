@@ -470,6 +470,256 @@ async function handleAdminUserData(url, env) {
 }
 
 // ============================================================
+// 片头片尾只读数据源（内置，无上传入口）
+//   GET /api/skip-marks          —— 查 D1 公共表 skip_marks_public（只读）
+//   GET /api/skip-marks/introdb  —— 服务端代理 IntroDB 公开只读 API（解决 CORS）
+// 说明：IntroDB 的 CORS 只允许 introdb.app 自身，浏览器无法直连，必须由服务端转发；
+//       IMDb 标题解析同样走服务端，避免跨域。两个接口都只接受 GET。
+// ============================================================
+
+const SKIP_TIMEOUT_MS = 3000;       // 单次外部请求总预算（客户端统一超时约 3.2s）
+const SKIP_IMDB_TIMEOUT_MS = 1500;  // 标题 → IMDb ID 解析预算（实测冷启动约 0.8~1.3s）
+const SKIP_INTRODB_BASE = 'https://api.introdb.app/segments';
+const SKIP_IMDB_SUGGEST = 'https://v3.sg.media-imdb.com/suggestion/x/';
+const SKIP_SEGMENT_TYPES = new Set(['opening', 'middle', 'ending']);
+
+// 与 js/skip-marks.js 的 normalizeTitle 保持同规：折叠大小写/空白/标点/符号
+function normalizeSkipTitle(title) {
+    return String(title || '').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
+// 去掉集数、季数、清晰度等噪声，保留可检索的片名
+function cleanSkipTitle(raw) {
+    let s = String(raw || '').trim();
+    s = s.replace(/[（(\[【]?\s*(第\s*\d+\s*[集话話期]|EP?\.?\s*\d+|Episode\s*\d+)\s*[)）\]】]?/gi, ' ');
+    s = s.replace(/[（(\[【][^)）\]】]*(国语|粤语|中字|高清|蓝光|HD|4K|1080P|720P|全集|完结)[^)）\]】]*[)）\]】]/gi, ' ');
+    s = s.replace(/\s*(第\s*(?:\d+|[一二三四五六七八九十]+)\s*季|Season\s*\d+)\s*/gi, ' ');
+    s = s.replace(/[._]+/g, ' ');
+    return s.replace(/\s+/g, ' ').trim();
+}
+
+const CN_SEASON_DIGITS = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+
+function parseSeasonFromTitle(title) {
+    const s = String(title || '');
+    const m = /第\s*(\d+)\s*季/i.exec(s) || /Season\s*(\d+)/i.exec(s);
+    let n = m ? parseInt(m[1], 10) : NaN;
+    if (!Number.isFinite(n)) {
+        const cn = /第\s*([一二三四五六七八九十]+)\s*季/.exec(s);
+        n = cn && CN_SEASON_DIGITS[cn[1]] ? CN_SEASON_DIGITS[cn[1]] : NaN;
+    }
+    return Number.isFinite(n) && n > 0 && n <= 100 ? n : 0;
+}
+
+function clampConfidence(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 0.5;
+    return n < 0 ? 0 : (n > 1 ? 1 : n);
+}
+
+function intParam(url, name) {
+    const n = parseInt(url.searchParams.get(name) || '', 10);
+    return Number.isFinite(n) && n >= 0 && n <= 100000 ? n : 0;
+}
+
+async function fetchJsonTimed(url, timeoutMs) {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(() => { if (ctrl) { try { ctrl.abort(); } catch { /* ignore */ } } }, timeoutMs);
+    try {
+        const res = await fetch(url, {
+            method: 'GET',
+            headers: { accept: 'application/json' },
+            signal: ctrl ? ctrl.signal : undefined,
+        });
+        if (!res || !res.ok) throw new Error('http ' + (res ? res.status : 'unknown'));
+        return await res.json();
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// 模块级缓存：单个 isolate 内生效，减少重复解析与外部请求（非用户数据）
+const skipImdbCache = new Map();     // 归一化标题|年份 → { value, expires }
+const skipSegmentsCache = new Map(); // imdb|season|episode → { value, expires }
+
+function cacheGet(map, key) {
+    const hit = map.get(key);
+    if (!hit) return undefined;
+    if (Date.now() > hit.expires) {
+        map.delete(key);
+        return undefined;
+    }
+    return hit.value;
+}
+
+function cacheSet(map, key, value, ttlMs) {
+    map.set(key, { value, expires: Date.now() + ttlMs });
+    // 简单上限，避免 isolate 内无限增长
+    if (map.size > 200) {
+        const oldest = map.keys().next().value;
+        map.delete(oldest);
+    }
+}
+
+// 标题 → IMDb ID：只接受 tt 开头的候选；优先剧集，其次电影。
+async function resolveImdbId(title, year) {
+    const clean = cleanSkipTitle(title);
+    if (normalizeSkipTitle(clean).length < 2) return null;
+    const cacheKey = normalizeSkipTitle(clean) + '|' + (year || '');
+    const cached = cacheGet(skipImdbCache, cacheKey);
+    if (cached !== undefined) return cached;
+
+    let value = null;
+    try {
+        const data = await fetchJsonTimed(SKIP_IMDB_SUGGEST + encodeURIComponent(clean) + '.json', SKIP_IMDB_TIMEOUT_MS);
+        const list = data && Array.isArray(data.d) ? data.d : [];
+        const candidates = list.filter((x) => x && typeof x.id === 'string' && /^tt\d{5,}$/.test(x.id));
+        const pickSeries = () => candidates.find((x) => x.qid === 'tvSeries' || x.qid === 'tvMiniSeries');
+        const pickMovie = () => candidates.find((x) => x.qid === 'feature' || x.qid === 'movie' || x.qid === 'tvMovie');
+        let picked = null;
+        if (year) picked = candidates.find((x) => Number(x.y) === year) || null;
+        if (!picked) picked = pickSeries() || pickMovie() || candidates[0] || null;
+        if (picked) {
+            value = {
+                imdb_id: picked.id,
+                title: typeof picked.l === 'string' ? picked.l : '',
+                year: Number.isFinite(Number(picked.y)) ? Number(picked.y) : 0,
+                qid: typeof picked.qid === 'string' ? picked.qid : '',
+            };
+        }
+    } catch {
+        value = null;
+    }
+    // 命中结果缓存 24h；未匹配只短缓存 5 分钟，避免一次超时把标题永久判死。
+    cacheSet(skipImdbCache, cacheKey, value, value ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000);
+    return value;
+}
+
+function toIntrodbSegment(type, raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const start = Number(raw.start_sec);
+    const end = Number(raw.end_sec);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || !(end > start)) return null;
+    const votes = Number.isFinite(Number(raw.submission_count)) ? Math.max(0, Math.floor(Number(raw.submission_count))) : 0;
+    return {
+        type,
+        start,
+        end,
+        confidence: clampConfidence(raw.confidence),
+        votes,
+        sources: ['introdb'],
+        origin: 'introdb',
+        source: 'introdb',
+    };
+}
+
+async function handleSkipIntrodb(url) {
+    const title = (url.searchParams.get('title') || '').trim();
+    const seasonParam = intParam(url, 'season');
+    const episode = intParam(url, 'episode');
+    let imdb = (url.searchParams.get('imdb') || '').trim();
+    const year = intParam(url, 'year');
+    const startedAt = Date.now();
+
+    let resolved = null;
+    if (!/^tt\d{5,}$/.test(imdb)) {
+        if (!title) return json({ segments: [], source: 'introdb', error: 'missing title' });
+        resolved = await resolveImdbId(title, year);
+        if (!resolved) return json({ segments: [], source: 'introdb', error: 'not matched' });
+        imdb = resolved.imdb_id;
+    }
+
+    const isMovie = resolved ? (resolved.qid === 'feature' || resolved.qid === 'movie') : false;
+    const season = seasonParam || parseSeasonFromTitle(title) || 1;
+    const cacheKey = [imdb, isMovie ? 'm' : season, isMovie ? '' : episode].join('|');
+    const cached = cacheGet(skipSegmentsCache, cacheKey);
+    if (cached) {
+        return json({ segments: cached, source: 'introdb', imdb_id: imdb, matched: resolved }, 200, {
+            'Cache-Control': 'public, max-age=600',
+        });
+    }
+
+    const params = new URLSearchParams({ imdb_id: imdb });
+    if (isMovie) {
+        params.set('is_movie', 'true');
+    } else {
+        params.set('season', String(season));
+        if (episode > 0) params.set('episode', String(episode));
+    }
+
+    // 总预算 2.6s：扣掉标题解析已用时间，至少保留 800ms 给数据请求
+    const remain = Math.max(800, SKIP_TIMEOUT_MS - (Date.now() - startedAt));
+    let payload = null;
+    try {
+        payload = await fetchJsonTimed(SKIP_INTRODB_BASE + '?' + params.toString(), remain);
+    } catch (err) {
+        return json({ segments: [], source: 'introdb', imdb_id: imdb, error: err && err.message ? err.message : 'request failed' });
+    }
+
+    const segments = [];
+    const intro = toIntrodbSegment('opening', payload && payload.intro);
+    const outro = toIntrodbSegment('ending', payload && payload.outro);
+    if (intro) segments.push(intro);
+    if (outro) segments.push(outro);
+    cacheSet(skipSegmentsCache, cacheKey, segments, 30 * 60 * 1000);
+    return json(
+        { segments, source: 'introdb', imdb_id: imdb, matched: resolved || { imdb_id: imdb } },
+        200,
+        { 'Cache-Control': 'public, max-age=600' }
+    );
+}
+
+// D1 公共表只读查询；表不存在 / 未绑定都返回空结果，不影响播放。
+async function handleSkipPublic(url, env) {
+    const title = (url.searchParams.get('title') || '').trim();
+    const key = (url.searchParams.get('key') || '').trim();
+    const season = intParam(url, 'season');
+    const episode = intParam(url, 'episode');
+    const titleKey = key.startsWith('t:') ? key : (title ? 't:' + normalizeSkipTitle(title) : '');
+    const headers = { 'Cache-Control': 'public, max-age=60' };
+
+    if (!titleKey) return json({ segments: [], source: 'public' }, 200, headers);
+    if (!env || !env.WDTV_DB) return json({ segments: [], source: 'public', db: false }, 200, headers);
+
+    let rows = [];
+    try {
+        const res = await env.WDTV_DB
+            .prepare('SELECT title_key, title, season, episode, segment_type, start_sec, end_sec, votes, sources, origin, confidence FROM skip_marks_public WHERE title_key = ?')
+            .bind(titleKey)
+            .all();
+        rows = (res && res.results) || [];
+    } catch {
+        // 旧库尚未执行 schema.sql：静默降级为空，不把 500 抛给播放器
+        return json({ segments: [], source: 'public', db: false }, 200, headers);
+    }
+
+    const segments = [];
+    for (const row of rows) {
+        const type = row.segment_type;
+        if (!SKIP_SEGMENT_TYPES.has(type)) continue;
+        if (row.season != null && season > 0 && Number(row.season) !== season) continue;
+        if (row.episode != null && episode > 0 && Number(row.episode) !== episode) continue;
+        const start = Number(row.start_sec);
+        const end = Number(row.end_sec);
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || !(end > start)) continue;
+        segments.push({
+            type,
+            start,
+            end,
+            confidence: clampConfidence(row.confidence),
+            votes: Number.isFinite(Number(row.votes)) ? Math.max(0, Math.floor(Number(row.votes))) : 0,
+            sources: String(row.sources || '')
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean),
+            origin: typeof row.origin === 'string' && row.origin ? row.origin : 'wdtv',
+            source: 'public',
+        });
+    }
+    return json({ segments, source: 'public', db: true }, 200, headers);
+}
+
+// ============================================================
 // 主入口
 // ============================================================
 
@@ -479,6 +729,13 @@ export async function handleApi(request, env) {
         const url = new URL(request.url);
         const path = url.pathname;
         const method = request.method;
+
+        // ---- 片头片尾只读接口（内置数据源；只允许 GET，不提供任何上传/写入）----
+        if (path === '/api/skip-marks' || path === '/api/skip-marks/introdb') {
+            if (method !== 'GET') return json({ error: 'Method Not Allowed' }, 405);
+            if (path === '/api/skip-marks/introdb') return await handleSkipIntrodb(url);
+            return await handleSkipPublic(url, env);
+        }
 
         // ---- 管理端接口（X-Admin-Key 鉴权；未配置 ADMIN_KEY 时全部关闭）----
         if (path.startsWith('/api/admin/')) {

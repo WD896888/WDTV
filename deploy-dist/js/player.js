@@ -135,19 +135,34 @@ let adSkipRegions = null;       // 当前档位可疑区域 [{start,end,reason,c
 let adSkipToastShown = false;   // 本集是否已弹过剔除摘要
 let adSkipLastAt = 0;           // 上次自动跳过的 performance.now()（1s 冷却防 seek 循环）
 const filterStatsByUrl = new Map(); // 清单 URL → { removed, regions, stats }（LEVEL_LOADED 时按 details.url 取用）
-// ===== 批次4 A2：跳过标记运行态 =====
-// 存储键与默认开关统一取自 PLAYER_CONFIG（config.js 在 player.js 之前加载），
-// 否则 config.js 的两个键会成为「改了也不生效」的死配置。
+// ===== 片头片尾跳过（播放器内单开关 + 只读取数层）=====
+// 数据来源统一走 js/skip-source.js：公共只读接口优先，本地历史标记仅作兼容补齐；
+// 手动标记入口已移除，用户只需在播放器内开关一次，跨剧集生效。
+// 存储键统一取自 PLAYER_CONFIG（config.js 在 player.js 之前加载）。
 const WDTV_SKIP_STORAGE = (typeof PLAYER_CONFIG !== 'undefined' && PLAYER_CONFIG.skipMarksStorage) || 'wdtvSkipMarks';
+const WDTV_INTRO_SKIP_STORAGE = (typeof PLAYER_CONFIG !== 'undefined' && PLAYER_CONFIG.introSkipStorage) || 'wdtvIntroSkipEnabled';
+const WDTV_SKIP_CUSTOM_STORAGE = (typeof PLAYER_CONFIG !== 'undefined' && PLAYER_CONFIG.skipCustomStorage) || 'wdtvSkipCustom';
+const WDTV_SKIP_AUTO_STORAGE = (typeof PLAYER_CONFIG !== 'undefined' && PLAYER_CONFIG.skipAutoStorage) || 'wdtvSkipAutoEnabled';
+const WDTV_SKIP_CUSTOM_ENABLED_STORAGE = (typeof PLAYER_CONFIG !== 'undefined' && PLAYER_CONFIG.skipCustomEnabledStorage) || 'wdtvSkipCustomEnabled';
+const WDTV_LEGACY_SKIP_MODE_STORAGE = 'wdtvSkipMode'; // 旧版互斥模式键，仅用于一次性迁移
 const WDTV_SKIP_UNDO_MS = 12000;           // 12s 撤销窗
-let skipMarksEnabled = (typeof PLAYER_CONFIG !== 'undefined' && PLAYER_CONFIG.skipMarksEnabled === true); // 默认关；随后由 wdtvRefreshSkipMarksState() 用存储值覆盖
-let wdtvSkipStore = { enabled: false, marks: {} };
+let introSkipEnabled = true;               // 总开关：默认开启；随后由 wdtvRefreshSkipMarksState() 用存储值覆盖
+let wdtvAutoSkipEnabled = true;            // 子开关「自动跳过」
+let wdtvCustomSkipEnabled = false;         // 子开关「自定义跳过」
+let wdtvSkipSegments = [];                 // 当前集取数层输出（含 confidence / autoEligible）
+let wdtvSkipLoadToken = 0;                 // 换集令牌：旧请求返回时直接丢弃
 let skipMarksKey = '';                     // 当前剧的存储键（t:归一片名 或 fallback）
-let skipSuppressedThisEpisode = new Set(); // 撤销后的片段本集不再自动跳，换集清空
+let skipSuppressedThisEpisode = new Set(); // 撤销后的片段本集不再自动跳/不再提示，换集清空
 let skipUndoState = null;                  // { from, target, skipKey, timer }；12s 内可撤销
-let skipMiddlePending = null;              // Shift+S 记录的中段起点
 let skipLastPosition = 0;                  // 上次 timeupdate 的位置，供片尾连续播放判定
-let skipToastEl = null, skipPanelEl = null;
+let skipToastEl = null;
+let wdtvSkipCtaEl = null;                  // 画面内「跳过片头 / 片尾」按钮（低置信度才出现）
+let wdtvSkipSwitchEl = null;               // 播放器内的片头片尾跳过开关
+let wdtvSkipMenuEl = null;                 // 开关的弹出面板（总开关 / 自定义时长 / 保存 / 恢复自动）
+let wdtvSkipMenuOutsideHandler = null;     // 面板打开期间的「点击外部关闭」监听
+let wdtvSkipMenuEscHandler = null;         // 面板打开期间的 Esc 关闭监听
+let wdtvCustomCacheKey = '';               // 自定义时长缓存对应的剧键（换集/保存后失效）
+let wdtvCustomCacheVal = null;             // { opening, ending } 或 null
 // ===== 批次4 深度审查修复：跨函数共享的运行态（统一 wdtv 前缀，避免经典脚本全局词法重名）=====
 let wdtvEndingSkipPending = false; // 本次 video:ended 是否由「标记自动跳到片尾」触发（对齐 12s 撤销窗）
 let wdtvAutoPlayNextTimer = 0;     // video:ended 排队换集的 setTimeout 句柄（可取消 / 防重复排队）
@@ -365,7 +380,7 @@ function initializePageContent() {
     adFilteringEnabled = localStorage.getItem(PLAYER_CONFIG.adFilteringStorage) !== 'false'; // 默认为true
     // 广告自动跳过（低置信度可疑区域进入时 seek 跳走）：默认关
     adAutoSkipEnabled = localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) === 'true';
-    // 批次4 A2：片头/中段/片尾跳过标记（默认关）。与「广告自动跳过」是两个独立开关，
+    // 片头片尾跳过（播放器内单开关，默认开启）：与「广告自动跳过」相互独立，
     // 但共用 adAutoSkipCheck 的 1s 冷却 / isUserSeeking 避让 / 共看 guest 避让，杜绝双 seek 循环。
     wdtvRefreshSkipMarksState();
 
@@ -639,11 +654,13 @@ function initializePageContent() {
 
 // 处理键盘快捷键
 function handleKeyboardShortcuts(e) {
-    // 忽略输入框中的按键事件
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
-    // 批次4 A2：标记类快捷键一律 Shift（I/O/S/E/P），关闭状态下直接放行不劫持
-    if (wdtvHandleSkipShortcut(e)) return;
+    const target = e.target;
+    // 忽略输入框中的按键事件（含下拉、可编辑区域）
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' || target.isContentEditable)) return;
+    // 跳片头尾面板 / 右上角工具组的键盘操作不触发播放器快捷键（空格、方向键等）
+    if (target && typeof target.closest === 'function' &&
+        target.closest('.wdtv-skip-menu, .wdtv-dm-topbtns')) return;
 
     // Alt + 左箭头 = 上一集
     if (e.altKey && e.key === 'ArrowLeft') {
@@ -1394,6 +1411,8 @@ function ensureDanmuTopButtons() {
         detailBtn.type = 'button';
         detailBtn.title = '弹幕详情（显隐 / 数据源 / 透明度 / 字号等）';
         detailBtn.innerHTML = DANMU_SETTINGS_ICON;
+        // 弹幕设置入口按需求隐藏：保留按钮与浮层初始化，弹幕仍按默认值正常运行
+        detailBtn.style.display = 'none';
         // 顺序（左→右）：弹幕开关、弹幕设置、下载、缓存——缓存/下载的 setup 先行把按钮
         // 追加进容器，弹幕两钮插到最前即得目标顺序
         wrap.insertBefore(detailBtn, wrap.firstChild);
@@ -2438,7 +2457,7 @@ async function initPlayer(videoUrl) {
 
     art.on('video:loadedmetadata', function() {
         videoHasEnded = false; // 视频加载时重置结束标志
-        // 批次4 A2：换集/换源清空「本集不再跳」抑制、重算剧键、重绘色带
+        // 批次4 A2：换集/换源清空「本集不再跳」抑制、重算剧键、重新取数
         try { wdtvResetSkipEpisode(); } catch (e) { }
 
         // 弹幕跟随换集：非 WebKit 换集走 art.switch（不重建实例、插件不会自动重新匹配），
@@ -2501,7 +2520,7 @@ async function initPlayer(videoUrl) {
     // 全屏 / 窗口尺寸变化时进度条宽度改变，色带用百分比定位，仍需重绘确保容器存在
     art.on('fullscreen', function () { try { setTimeout(wdtvRenderSkipBand, 120); } catch (e) { } });
     // resize / fullscreenchange 绑在全局，initPlayer 换集重建时不能重复挂载；
-    // fullscreenchange 只在此处注册一次，进出原生全屏时迁移撤销条/标记面板到当前宿主
+    // fullscreenchange 只在此处注册一次，进出原生全屏时迁移撤销条 / 跳过按钮到当前宿主
     if (!window.__wdtvSkipResizeBound) {
         window.__wdtvSkipResizeBound = true;
         window.addEventListener('resize', function () { try { wdtvRenderSkipBand(); } catch (e) { } });
@@ -2533,6 +2552,8 @@ async function initPlayer(videoUrl) {
     setupDanmuQuickPanel();
     // 右上角弹幕按钮组常驻：开关按钮即时生效，数据加载后由 danmu:loaded 校正确认
     try { ensureDanmuTopButtons(); } catch (e) { }
+    // 片头片尾跳过开关：播放器内常驻，默认开启并持久化
+    try { wdtvEnsureSkipSwitch(); } catch (e) { }
 
     // 弹幕加载事件：右上角按钮组与设置浮层同步（弹幕成功加载后刷新按钮与浮层数据源等）。
     // 监听器随实例生命周期：命名函数注册，实例销毁时移除，避免跨实例累积
@@ -2667,7 +2688,13 @@ async function initPlayer(videoUrl) {
     });
     art.on('video:playing', function () {
         try { tryStallRateRestore(); } catch (e) { }
+        try { wdtvUpdateSkipCta(); } catch (e) { }
     });
+
+    // 跳过按钮显隐：暂停即隐藏；恢复播放 / seek 结束后按当前位置重算
+    art.on('video:pause', function () { try { wdtvHideSkipCta(); } catch (e) { } });
+    art.on('video:play', function () { try { wdtvUpdateSkipCta(); } catch (e) { } });
+    art.on('video:seeked', function () { try { wdtvUpdateSkipCta(); } catch (e) { } });
 
     // 跟踪用户拖拽状态：seeking 置位，正常播放心跳（timeupdate）复位
     art.on('video:seeking', function () {
@@ -2695,6 +2722,8 @@ async function initPlayer(videoUrl) {
         try { evaluateStallGuardRestore(); } catch (e) { }
         // 广告兜底：进入低置信度可疑区域时自动 seek 跳过（设置默认关，adAutoSkipCheck 内部全量避让）
         try { adAutoSkipCheck(); } catch (e) { }
+        // 低置信度 / 部分数据：位于片头片尾区间时显示手动跳过按钮
+        try { wdtvUpdateSkipCta(); } catch (e) { }
         // 剩余时长不足 60 秒（或不足 10%）时预取下一集 m3u8 文本，实现无缝连播
         if (art && art.video && isFinite(art.video.duration) && art.video.duration > 0) {
             const remaining = art.video.duration - art.video.currentTime;
@@ -2739,6 +2768,7 @@ async function initPlayer(videoUrl) {
             return;
         }
         videoHasEnded = true;
+        try { wdtvHideSkipCta(); } catch (e) { }
         // 消费「片尾自动跳过」标志：本次 ended 由标记跳片尾触发时，把换集延迟对齐到
         // 12s 撤销窗，给用户留出撤销时间；正常自然结束保持 1000ms。读后立即清零。
         const endingSkip = wdtvEndingSkipPending;
@@ -2982,27 +3012,80 @@ function wdtvSkipModule() {
         ? window.WDTVSkipMarks : null;
 }
 
-// 读取单一存储键并做结构迁移（缺省 enabled 视为 false，脏数据不抛错）
-function wdtvReadSkipStore() {
-    const S = wdtvSkipModule();
-    try {
-        const raw = localStorage.getItem(WDTV_SKIP_STORAGE);
-        const parsed = raw ? JSON.parse(raw) : null;
-        return S ? S.migrateSkipMarks(parsed) : { enabled: false, marks: {} };
-    } catch (e) { return { enabled: false, marks: {} }; }
+// 取数层（js/skip-source.js）：未加载时静默降级为「无数据」
+function wdtvSkipSourceModule() {
+    return (window.WDTVSkipSource && typeof window.WDTVSkipSource.resolve === 'function')
+        ? window.WDTVSkipSource : null;
 }
 
-function wdtvWriteSkipStore(store) {
+// 播放器内开关：默认开启（首次访问写入 true，便于云同步首日生效）
+function wdtvReadIntroSkipEnabled() {
     try {
-        store.updatedAt = Date.now();
-        localStorage.setItem(WDTV_SKIP_STORAGE, JSON.stringify(store));
-    } catch (e) { /* 存储不可用静默降级 */ }
+        const raw = localStorage.getItem(WDTV_INTRO_SKIP_STORAGE);
+        if (raw === null) {
+            localStorage.setItem(WDTV_INTRO_SKIP_STORAGE, 'true');
+            return true;
+        }
+        return raw !== 'false';
+    } catch (e) { return true; }
+}
+
+function wdtvWriteIntroSkipEnabled(on) {
+    try { localStorage.setItem(WDTV_INTRO_SKIP_STORAGE, on ? 'true' : 'false'); } catch (e) { }
+}
+
+function wdtvReadBool(key, fallback) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (raw === null) return fallback;
+        return raw !== 'false';
+    } catch (e) { return fallback; }
+}
+
+function wdtvWriteBool(key, on) {
+    try { localStorage.setItem(key, on ? 'true' : 'false'); } catch (e) { }
+}
+
+// 三个独立开关：总开关 + 自动跳过 + 自定义跳过（可同时开启）。
+// 旧版只有互斥的 wdtvSkipMode：有旧值就迁移成两个子开关并删除旧键；
+// 更早版本没有模式键时，若已有自定义时长则保持「自动 + 自定义」同时生效，避免升级丢失自定义。
+function wdtvMigrateSkipSwitches() {
+    let legacy = null;
+    try { legacy = localStorage.getItem(WDTV_LEGACY_SKIP_MODE_STORAGE); } catch (e) { }
+    if (legacy === 'auto' || legacy === 'custom') {
+        wdtvWriteBool(WDTV_SKIP_AUTO_STORAGE, legacy !== 'custom');
+        wdtvWriteBool(WDTV_SKIP_CUSTOM_ENABLED_STORAGE, legacy === 'custom');
+        try { localStorage.removeItem(WDTV_LEGACY_SKIP_MODE_STORAGE); } catch (e) { }
+        return;
+    }
+    let hasAuto = false, hasCustom = false;
+    try { hasAuto = localStorage.getItem(WDTV_SKIP_AUTO_STORAGE) !== null; } catch (e) { }
+    try { hasCustom = localStorage.getItem(WDTV_SKIP_CUSTOM_ENABLED_STORAGE) !== null; } catch (e) { }
+    if (!hasAuto && !hasCustom) {
+        const hasStore = Object.keys(wdtvReadCustomStore()).length > 0;
+        wdtvWriteBool(WDTV_SKIP_AUTO_STORAGE, true);
+        wdtvWriteBool(WDTV_SKIP_CUSTOM_ENABLED_STORAGE, hasStore);
+    } else {
+        if (!hasAuto) wdtvWriteBool(WDTV_SKIP_AUTO_STORAGE, true);
+        if (!hasCustom) wdtvWriteBool(WDTV_SKIP_CUSTOM_ENABLED_STORAGE, false);
+    }
+}
+
+function wdtvReadSkipSwitches() {
+    wdtvMigrateSkipSwitches();
+    wdtvAutoSkipEnabled = wdtvReadBool(WDTV_SKIP_AUTO_STORAGE, true);
+    wdtvCustomSkipEnabled = wdtvReadBool(WDTV_SKIP_CUSTOM_ENABLED_STORAGE, false);
 }
 
 function wdtvRefreshSkipMarksState() {
-    wdtvSkipStore = wdtvReadSkipStore();
-    skipMarksEnabled = wdtvSkipStore.enabled === true;
-    if (!skipMarksEnabled) wdtvHideSkipToast();
+    introSkipEnabled = wdtvReadIntroSkipEnabled();
+    wdtvReadSkipSwitches();
+    if (!introSkipEnabled) {
+        wdtvSkipSegments = [];
+        wdtvHideSkipToast();
+        wdtvHideSkipCta();
+    }
+    wdtvUpdateSkipSwitch();
     wdtvRenderSkipBand();
 }
 
@@ -3015,39 +3098,139 @@ function wdtvComputeSkipKey() {
     return S.skipMarkKey(currentVideoTitle, fallback);
 }
 
-function wdtvCurrentSegments(duration) {
+// ---- 自定义片头/片尾时长（用户显式设定，优先级高于自动检测）----
+// 存储形态：{ "t:归一片名": { opening: 90, ending: 60, updatedAt: 1699999999999 } }
+// 按归一化片名共享，因此同剧所有剧集、切集、刷新、重进播放器都生效。
+function wdtvReadCustomStore() {
+    try {
+        const raw = localStorage.getItem(WDTV_SKIP_CUSTOM_STORAGE);
+        if (!raw) return {};
+        const obj = JSON.parse(raw);
+        return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+    } catch (e) { return {}; }
+}
+
+function wdtvWriteCustomStore(store) {
+    try { localStorage.setItem(WDTV_SKIP_CUSTOM_STORAGE, JSON.stringify(store || {})); } catch (e) { }
+}
+
+// 当前剧的自定义时长：带剧键缓存，避免 timeupdate 高频读取 localStorage。
+function wdtvCustomForCurrentKey() {
+    if (!skipMarksKey) return null;
+    if (wdtvCustomCacheKey === skipMarksKey) return wdtvCustomCacheVal;
     const S = wdtvSkipModule();
-    if (!S || !skipMarksEnabled || !skipMarksKey) return [];
-    try { return S.resolveSegments(wdtvSkipStore.marks[skipMarksKey], duration); }
+    let val = null;
+    const rec = wdtvReadCustomStore()[skipMarksKey];
+    // 读取时统一过一遍校验：旧脏数据 / 手改存储里的非法值直接丢弃
+    if (rec && typeof rec === 'object' && S && typeof S.normalizeCustomDurations === 'function') {
+        const norm = S.normalizeCustomDurations(rec, 0);
+        if (norm && norm.ok && (norm.opening || norm.ending)) {
+            val = { opening: norm.opening, ending: norm.ending };
+        }
+    }
+    wdtvCustomCacheKey = skipMarksKey;
+    wdtvCustomCacheVal = val;
+    return val;
+}
+
+function wdtvCustomSegments(duration) {
+    const S = wdtvSkipModule();
+    const custom = wdtvCustomForCurrentKey();
+    if (!S || !custom || typeof S.buildCustomSegments !== 'function') return [];
+    try { return S.buildCustomSegments(custom, duration); } catch (e) { return []; }
+}
+
+// 当前集已解析段：自动与自定义可同时生效，按类型逐个取值。
+// 同类型（片头/片尾）自定义优先；自定义没设置的该类型继续用自动识别结果；
+// 两个子开关都关时不跳转；最后统一走 skip-marks 的时间轴校验（越界 / 过短 / 重叠过滤）。
+function wdtvResolvedSegments(duration) {
+    const S = wdtvSkipModule();
+    if (!S || !introSkipEnabled) return [];
+    if (!Number.isFinite(duration) || duration <= 0) return [];
+    if (!wdtvAutoSkipEnabled && !wdtvCustomSkipEnabled) return [];
+    const custom = wdtvCustomSkipEnabled ? wdtvCustomSegments(duration) : [];
+    const overridden = {};
+    custom.forEach(function (s) { if (s && s.type) overridden[s.type] = true; });
+    const auto = wdtvAutoSkipEnabled
+        ? wdtvSkipSegments.filter(function (s) { return s && !overridden[s.type]; })
+        : [];
+    const merged = custom.concat(auto);
+    if (!merged.length) return [];
+    try { return S.resolveSegments({ segments: merged, enabled: true }, duration); }
     catch (e) { return []; }
 }
 
-// 换集/换源：清空「本集不再跳」抑制、重算剧键、重绘色带；同时撤掉上一集残留的撤销条
+// 高置信：可直接自动 seek；低置信 / 只有部分数据：只显示按钮
+function wdtvAutoSegments(duration) {
+    return wdtvResolvedSegments(duration).filter(function (s) { return s.autoEligible === true; });
+}
+
+function wdtvPromptSegments(duration) {
+    return wdtvResolvedSegments(duration).filter(function (s) { return s.autoEligible !== true; });
+}
+
+// 取数层异步加载：失败 / 超时 / 无配置都只返回空列表，不影响播放
+function wdtvLoadSkipData() {
+    const S = wdtvSkipSourceModule();
+    const token = ++wdtvSkipLoadToken;
+    wdtvSkipSegments = [];
+    wdtvHideSkipCta();
+    wdtvRenderSkipBand();
+    if (!introSkipEnabled || !S) return;
+    const v = art && art.video;
+    const duration = (v && Number.isFinite(v.duration) && v.duration > 0) ? v.duration : 0;
+    // 数据源全部内置在 js/skip-source.js：公共 D1 表 + IntroDB 只读代理，无需任何用户配置。
+    Promise.resolve(S.resolve({
+        enabled: true,
+        key: skipMarksKey,
+        title: currentVideoTitle,
+        episode: currentEpisodeIndex + 1,
+        duration: duration,
+        localStorageKey: WDTV_SKIP_STORAGE
+    })).then(function (res) {
+        if (token !== wdtvSkipLoadToken) return; // 已换集：丢弃过期结果
+        wdtvSkipSegments = (res && Array.isArray(res.segments)) ? res.segments : [];
+        wdtvRenderSkipBand();
+        wdtvUpdateSkipCta();
+        // 数据到达后状态可能从「手动可跳」变为「自动」：同步按钮与已打开的面板
+        wdtvUpdateSkipSwitch();
+        if (wdtvSkipMenuEl && wdtvSkipMenuEl.classList.contains('is-open')) wdtvRefreshSkipMenu();
+    }, function () {
+        if (token !== wdtvSkipLoadToken) return;
+        wdtvSkipSegments = [];
+        wdtvUpdateSkipSwitch();
+    });
+}
+
+// 换集/换源：清空「本集不再跳」抑制、重算剧键、重新取数；撤掉上一集残留的撤销条与按钮
 function wdtvResetSkipEpisode() {
     skipSuppressedThisEpisode.clear();
-    skipMiddlePending = null;
     skipLastPosition = 0;
     wdtvEndingSkipPending = false; // 换集/换源：撤销残留的片尾自动跳过标志
     wdtvHideSkipToast();
-    skipMarksKey = skipMarksEnabled ? wdtvComputeSkipKey() : '';
+    wdtvCloseSkipMenu();
+    skipMarksKey = wdtvComputeSkipKey();
+    wdtvCustomCacheKey = '';   // 剧键变化：自定义时长缓存失效
+    wdtvCustomCacheVal = null;
+    wdtvLoadSkipData();
     wdtvRenderSkipBand();
-    wdtvRenderSkipPanel();
+    wdtvHideSkipCta();
 }
 
 // ---- 12s 撤销条 ----
 // 原生全屏（artplayer 把 requestFullscreen 打在 .art-video-player）会让 body 下的
-// position:fixed 元素被 fullscreen top layer 盖住（css z-index 再高也无效）。撤销条与标记
-// 侧栏统一挂到当前「可见宿主」：全屏时挂 fullscreenElement，否则挂 art.$player，都没有回退 body。
+// position:fixed 元素被 fullscreen top layer 盖住（css z-index 再高也无效）。撤销条与
+// 跳过按钮统一挂到当前「可见宿主」：全屏时挂 fullscreenElement，否则挂 art.$player，都没有回退 body。
 function wdtvSkipOverlayHost() {
     return document.fullscreenElement || document.webkitFullscreenElement ||
         (art && art.template && art.template.$player) || document.body;
 }
-// 进出全屏时把已存在的两个 DOM 直接移动（appendChild 会迁移节点，不重建、不丢事件绑定）
+// 进出全屏时把已存在的 DOM 直接移动（appendChild 会迁移节点，不重建、不丢事件绑定）
 function wdtvRelocateSkipOverlays() {
     try {
         const host = wdtvSkipOverlayHost();
         if (skipToastEl && skipToastEl.parentNode !== host) host.appendChild(skipToastEl);
-        if (skipPanelEl && skipPanelEl.parentNode !== host) host.appendChild(skipPanelEl);
+        if (wdtvSkipCtaEl && wdtvSkipCtaEl.parentNode !== host) host.appendChild(wdtvSkipCtaEl);
     } catch (e) { }
 }
 // keepEndingFlag：wdtvShowSkipToast 内部重建 toast 时保留 adAutoSkipCheck 预置的片尾标志
@@ -3108,10 +3291,8 @@ function wdtvRenderSkipBand() {
         const host = document.querySelector('.art-progress-highlight');
         if (!host) return;
         let band = host.querySelector('.wdtv-skip-band');
-        const mark = wdtvSkipStore.marks[skipMarksKey];
-        // 总开关 / 当前剧条目关闭时：不新建、不 append 空色带（默认关闭零 DOM 写入），
-        // 只清理可能残留的旧色带内容
-        if (!skipMarksEnabled || (mark && mark.enabled === false)) {
+        // 开关关闭时：不新建、不 append 空色带，只清理可能残留的旧内容
+        if (!introSkipEnabled) {
             if (band) band.innerHTML = '';
             return;
         }
@@ -3123,7 +3304,7 @@ function wdtvRenderSkipBand() {
         band.innerHTML = '';
         const v = art && art.video;
         if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return;
-        const segs = wdtvCurrentSegments(v.duration);
+        const segs = wdtvResolvedSegments(v.duration);
         segs.forEach(function (s) {
             const span = document.createElement('span');
             span.setAttribute('data-skip-type', s.type);
@@ -3136,116 +3317,579 @@ function wdtvRenderSkipBand() {
     } catch (e) { }
 }
 
-// ---- 非模态标记面板 ----
-function wdtvRenderSkipPanel() {
-    if (!skipPanelEl) return;
+// ---- 画面内跳过按钮（仅低置信度 / 部分数据时出现，点击才跳）----
+function wdtvFindPromptSegment() {
     const S = wdtvSkipModule();
-    const mark = wdtvSkipStore.marks[skipMarksKey];
-    const segs = (mark && Array.isArray(mark.segments)) ? mark.segments : [];
-    const labels = S ? S.SEGMENT_LABELS : { opening: '片头', middle: '中段', ending: '片尾' };
-    let html = '<div class="wdtv-skip-panel__row"><strong>跳过标记</strong><span style="flex:1"></span></div>';
-    html += '<div class="wdtv-skip-panel__row">当前剧：' + (currentVideoTitle || '未命名') + '</div>';
-    if (!segs.length) {
-        html += '<div class="wdtv-skip-panel__row">暂无标记</div>';
+    const v = art && art.video;
+    if (!S || !v || !Number.isFinite(v.duration) || v.duration <= 0) return null;
+    const segs = wdtvPromptSegments(v.duration);
+    if (!segs.length) return null;
+    const seg = S.findActiveSegment(segs, v.currentTime);
+    if (!seg) return null;
+    // 用户撤销过的片段本集不再提示
+    if (skipSuppressedThisEpisode.has(seg.type + ':' + seg.start)) return null;
+    return seg;
+}
+
+function wdtvSkipCtaLabel(seg) {
+    const S = wdtvSkipModule();
+    const labels = (S && S.SEGMENT_LABELS) || { opening: '片头', middle: '中段', ending: '片尾' };
+    return '跳过' + (labels[seg.type] || '片段');
+}
+
+function wdtvEnsureSkipCta() {
+    if (wdtvSkipCtaEl && wdtvSkipCtaEl.isConnected) return wdtvSkipCtaEl;
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'wdtv-skip-cta';
+    el.style.display = 'none';
+    el.addEventListener('click', wdtvHandleSkipCtaClick);
+    wdtvSkipCtaEl = el;
+    return el;
+}
+
+function wdtvHideSkipCta() {
+    if (wdtvSkipCtaEl) wdtvSkipCtaEl.style.display = 'none';
+}
+
+// 只在播放中、位于低置信度区间内、且未被撤销时显示按钮（暂停/区间已过即隐藏）
+function wdtvUpdateSkipCta() {
+    const v = art && art.video;
+    if (!introSkipEnabled || !v || v.paused || v.ended) { wdtvHideSkipCta(); return; }
+    const seg = wdtvFindPromptSegment();
+    if (!seg) { wdtvHideSkipCta(); return; }
+    const el = wdtvEnsureSkipCta();
+    const label = wdtvSkipCtaLabel(seg);
+    if (el.textContent !== label) el.textContent = label;
+    el.setAttribute('data-skip-type', seg.type);
+    const host = wdtvSkipOverlayHost();
+    if (el.parentNode !== host) host.appendChild(el);
+    el.style.display = 'inline-flex';
+}
+
+// 手动点击：与自动跳一致给 12s 撤销机会，跳完立即隐藏按钮
+function wdtvHandleSkipCtaClick(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const seg = wdtvFindPromptSegment();
+    const v = art && art.video;
+    if (!seg || !v) { wdtvHideSkipCta(); return; }
+    const from = v.currentTime;
+    adSkipLastAt = performance.now();
+    // 片尾跳到片长会立刻 ended：与自动跳过一致，让换集延迟对齐 12s 撤销窗
+    wdtvEndingSkipPending = (seg.type === 'ending' && seg.end >= v.duration - 0.5);
+    wdtvHideSkipCta();
+    if (applyProgrammaticSeek(v, seg.end)) {
+        wdtvShowSkipToast(from, {
+            target: seg.end,
+            reason: '已跳过' + wdtvSkipCtaLabel(seg).replace(/^跳过/, ''),
+            kind: 'mark',
+            skipKey: seg.type + ':' + seg.start
+        });
     } else {
-        segs.forEach(function (s, i) {
-            html += '<div class="wdtv-skip-panel__row"><span style="flex:1">' +
-                (labels[s.type] || s.type) + ' ' + Math.round(s.start) + 's → ' +
-                (s.end === -1 ? '结尾' : Math.round(s.end) + 's') + '</span>' +
-                '<button type="button" class="wdtv-skip-panel__btn" data-skip-del="' + i + '">删除</button></div>';
-        });
+        wdtvEndingSkipPending = false;
     }
-    html += '<div class="wdtv-skip-panel__row">Shift+I 标片头 · Shift+O 标片尾<br>Shift+S 中段起点 · Shift+E 中段终点 · Shift+P 面板</div>';
-    html += '<div class="wdtv-skip-panel__row"><button type="button" class="wdtv-skip-panel__btn" data-skip-close="1">关闭</button>' +
-        '<button type="button" class="wdtv-skip-panel__btn" data-skip-clear="1">清空本剧</button></div>';
-    skipPanelEl.innerHTML = html;
 }
 
-function wdtvToggleSkipPanel() {
-    try {
-        if (skipPanelEl) {
-            skipPanelEl.remove(); skipPanelEl = null; return;
-        }
-        const el = document.createElement('aside');
-        el.className = 'wdtv-skip-panel';
-        skipPanelEl = el;
-        el.addEventListener('click', function (e) {
-            const b = e.target.closest('[data-skip-del],[data-skip-close],[data-skip-clear]');
-            if (!b) return;
-            if (b.hasAttribute('data-skip-close')) { el.remove(); skipPanelEl = null; return; }
-            const mark = wdtvSkipStore.marks[skipMarksKey];
-            if (!mark || !Array.isArray(mark.segments)) return;
-            if (b.hasAttribute('data-skip-clear')) mark.segments = [];
-            else {
-                const idx = parseInt(b.getAttribute('data-skip-del'), 10);
-                if (Number.isFinite(idx) && idx >= 0 && idx < mark.segments.length) mark.segments.splice(idx, 1);
-            }
-            mark.updatedAt = Date.now();
-            wdtvWriteSkipStore(wdtvSkipStore);
-            wdtvRenderSkipBand();
-            wdtvRenderSkipPanel();
-        });
-        wdtvSkipOverlayHost().appendChild(el);
-        wdtvRenderSkipPanel();
-    } catch (e) { }
+// ---- 播放器内开关（右上角工具组，持久化、跨剧集生效）----
+// 纯图标按钮：沿用 .wdtv-dm-topbtn 的容器与交互反馈，图标在任何状态下都是白色，
+// 不用颜色表达开关状态；状态只在面板里表达，aria-label/title 负责可访问性文案。
+// 低置信可手动跳时只保留一个白色细微圆点作为「可点击」提示。
+const WDTV_SKIP_ICON = '<svg viewBox="0 0 24 24" style="width:16px;height:16px;display:block" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.6 11 12l-6.5 5.4V6.6Z"/><path d="M12.5 6.6 19 12l-6.5 5.4V6.6Z"/></svg>';
+
+// 秒数 → mm:ss（状态行里展示自定义时长）
+function wdtvFormatClock(seconds) {
+    const n = Math.max(0, Math.round(Number(seconds) || 0));
+    return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
 }
 
-// ---- 标记写入（写侧校验 + 保存 + 重绘）----
-function wdtvSaveSkipSegment(seg) {
-    const S = wdtvSkipModule();
-    const v = art && art.video;
-    if (!S || !v || !skipMarksKey) return false;
-    const mark = wdtvSkipStore.marks[skipMarksKey] || { segments: [], enabled: true, updatedAt: 0 };
-    // 同类型只保留一条：必须先剔除旧的同类型段再校验，否则重标片头/片尾/中段时
-    // 新段会与自己的旧段被判「重叠或间隔不足 5 秒」而 100% 失败。
-    const existing = mark.segments.filter(function (x) { return x.type !== seg.type; });
-    const err = S.validateSegment(seg, v.duration, existing);
-    if (err) { try { showToast(err, 'warning'); } catch (e) { } return false; }
-    mark.segments = existing;
-    mark.segments.push(seg);
-    mark.enabled = true;
-    mark.updatedAt = Date.now();
-    wdtvSkipStore.marks[skipMarksKey] = mark;
-    wdtvWriteSkipStore(wdtvSkipStore);
+// 唯一状态出口：面板摘要行与按钮的 aria/title 都读它，避免两处文案互相打架。
+// state: off 已关闭 / both 自动+自定义 / auto 仅自动 / custom 仅自定义 / none 已启用未选择
+// hasAutoData：自动识别当前有可用数据；manual：低置信、需要画面内按钮手动跳（与开关状态分开表达）。
+function wdtvSkipStatus() {
+    if (!introSkipEnabled) {
+        return { state: 'off', text: '已关闭', hasAutoData: false, manual: false };
+    }
+    const custom = wdtvCustomForCurrentKey();
+    const hasCustom = !!(custom && (custom.opening || custom.ending));
+    const duration = wdtvSkipMenuDuration();
+    const segs = duration > 0 ? wdtvResolvedSegments(duration) : [];
+    // 蓝色圆点只代表「自动识别有可用数据」：自定义段不算，且被自定义覆盖的类型不算
+    const customSegs = duration > 0 && wdtvCustomSkipEnabled ? wdtvCustomSegments(duration) : [];
+    const overridden = {};
+    customSegs.forEach(function (s) { if (s && s.type) overridden[s.type] = true; });
+    const autoData = wdtvSkipSegments.filter(function (s) {
+        return s && s.autoEligible === true && !overridden[s.type];
+    });
+    const hasAutoData = wdtvAutoSkipEnabled && autoData.length > 0;
+    const manual = wdtvAutoSkipEnabled && segs.some(function (s) { return s.autoEligible !== true; });
+    const customText = hasCustom
+        ? ((custom.opening ? wdtvFormatClock(custom.opening) : '—') + ' / ' +
+            (custom.ending ? wdtvFormatClock(custom.ending) : '—'))
+        : '';
+    if (wdtvAutoSkipEnabled && wdtvCustomSkipEnabled) {
+        return {
+            state: 'both',
+            text: hasCustom ? ('自动 + 自定义 ' + customText) : '自动 + 自定义（自定义未设置）',
+            hasAutoData: hasAutoData,
+            manual: manual
+        };
+    }
+    if (wdtvAutoSkipEnabled) {
+        return { state: 'auto', text: '仅自动', hasAutoData: hasAutoData, manual: manual };
+    }
+    if (wdtvCustomSkipEnabled) {
+        return {
+            state: 'custom',
+            text: hasCustom ? ('仅自定义 ' + customText) : '仅自定义 · 未设时长',
+            hasAutoData: false,
+            manual: false
+        };
+    }
+    return { state: 'none', text: '已启用 · 未选择跳过方式', hasAutoData: false, manual: false };
+}
+
+function wdtvUpdateSkipSwitch() {
+    if (!wdtvSkipSwitchEl) return;
+    const st = wdtvSkipStatus();
+    const el = wdtvSkipSwitchEl;
+    el.dataset.state = st.state;
+    el.dataset.hasData = st.hasAutoData ? '1' : '0';
+    el.dataset.manual = st.manual ? '1' : '0';
+    el.classList.toggle('is-on', introSkipEnabled);
+    if (!el.firstChild) el.innerHTML = WDTV_SKIP_ICON;
+    const desc = st.text + (st.manual ? '；未自动跳过，可手动点击画面内按钮' : '');
+    el.title = '跳片头尾：' + desc + '（点击设置）';
+    el.setAttribute('aria-label', '跳片头尾设置，当前：' + desc);
+    el.setAttribute('aria-pressed', introSkipEnabled ? 'true' : 'false');
+    el.setAttribute('aria-expanded',
+        (wdtvSkipMenuEl && wdtvSkipMenuEl.classList.contains('is-open')) ? 'true' : 'false');
+}
+
+// 开关切换：统一入口，面板勾选框与后续可能的其它入口共用
+function wdtvSetIntroSkipEnabled(on) {
+    introSkipEnabled = !!on;
+    wdtvWriteIntroSkipEnabled(introSkipEnabled);
+    wdtvUpdateSkipSwitch();
+    if (introSkipEnabled) {
+        wdtvLoadSkipData();
+    } else {
+        wdtvSkipSegments = [];
+        wdtvHideSkipToast();
+        wdtvHideSkipCta();
+        wdtvRenderSkipBand();
+    }
+}
+
+// 子开关：自动 / 自定义可同时开启，按类型合并取值；两者都关时仅保留总开关状态
+function wdtvSetAutoSkipEnabled(on) {
+    wdtvAutoSkipEnabled = !!on;
+    wdtvWriteBool(WDTV_SKIP_AUTO_STORAGE, wdtvAutoSkipEnabled);
     wdtvRenderSkipBand();
-    wdtvRenderSkipPanel();
-    try { showToast('已标记' + (S.SEGMENT_LABELS[seg.type] || '片段') + '，本剧各集自动跳过', 'success'); } catch (e) { }
-    return true;
+    wdtvUpdateSkipCta();
+    wdtvRefreshSkipMenu();
 }
 
-// ---- 标记类快捷键（一律要求 Shift，避免与 f/方向键/空格冲突）----
-function wdtvHandleSkipShortcut(e) {
-    if (!e.shiftKey || !skipMarksEnabled) return false;
-    const key = (e.key || '').toUpperCase();
-    if (['I', 'O', 'S', 'E', 'P'].indexOf(key) === -1) return false;
+function wdtvSetCustomSkipEnabled(on) {
+    wdtvCustomSkipEnabled = !!on;
+    wdtvWriteBool(WDTV_SKIP_CUSTOM_ENABLED_STORAGE, wdtvCustomSkipEnabled);
+    wdtvRenderSkipBand();
+    wdtvUpdateSkipCta();
+    wdtvRefreshSkipMenu();
+}
+
+// ---- 弹出面板 ----
+function wdtvSkipMenuDuration() {
     const v = art && art.video;
-    if (!v) return true;
-    const t = Math.floor(v.currentTime * 10) / 10;
-    if (key === 'I') wdtvSaveSkipSegment({ type: 'opening', start: 0, end: t });
-    else if (key === 'O') wdtvSaveSkipSegment({ type: 'ending', start: t, end: -1 });
-    else if (key === 'S') {
-        skipMiddlePending = t;
-        try { showToast('已记录中段起点 ' + t + 's，播放到终点按 Shift+E', 'info'); } catch (err) { }
-    } else if (key === 'E') {
-        if (skipMiddlePending == null) {
-            try { showToast('请先按 Shift+S 记录中段起点', 'warning'); } catch (err) { }
-        } else {
-            wdtvSaveSkipSegment({ type: 'middle', start: skipMiddlePending, end: t });
-            skipMiddlePending = null;
-        }
-    } else if (key === 'P') {
-        wdtvToggleSkipPanel();
+    return (v && Number.isFinite(v.duration) && v.duration > 0) ? v.duration : 0;
+}
+
+function wdtvSkipMenuMsg(el, text, kind) {
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'wdtv-skip-menu__msg' + (kind ? ' is-' + kind : '');
+    el.hidden = !text;
+    // 提示行与状态消息共用一行高度：有消息时让位，避免面板在矮屏上被撑高
+    const hint = wdtvSkipMenuEl && wdtvSkipMenuEl.querySelector('[data-role="hint"]');
+    if (hint) hint.hidden = !!text || !hint.textContent.trim();
+}
+
+// 折叠区展开/收起：class 驱动 grid 0fr→1fr 平滑过渡，同时用 inert 移出 Tab 顺序，
+// 避免「收起但可聚焦」的无障碍问题；不使用 hidden，避免布局瞬间跳变。
+function wdtvSetSectionOpen(el, open) {
+    if (!el) return;
+    el.classList.toggle('is-open', !!open);
+    if (open) el.removeAttribute('inert');
+    else el.setAttribute('inert', '');
+    el.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
+// 用当前状态刷新面板（打开面板、切换开关、保存后都会调用）
+// 状态只写到 status 一处；总开关关闭时主体整块平滑收起（不置灰、不可聚焦）。
+function wdtvRefreshSkipMenu() {
+    const menu = wdtvSkipMenuEl;
+    if (!menu) return;
+    const custom = wdtvCustomForCurrentKey();
+    const enabledEl = menu.querySelector('[data-role="enabled"]');
+    if (enabledEl) {
+        enabledEl.checked = introSkipEnabled;
+        const row = enabledEl.closest('.wdtv-skip-menu__row');
+        if (row) row.classList.toggle('is-on', introSkipEnabled);
     }
-    e.preventDefault();
-    return true;
+
+    // 总开关关闭：主体（子开关 / 时长 / 保存）整体平滑收起
+    wdtvSetSectionOpen(menu.querySelector('[data-role="body"]'), introSkipEnabled);
+
+    const autoEl = menu.querySelector('[data-role="auto"]');
+    if (autoEl) {
+        autoEl.checked = wdtvAutoSkipEnabled;
+        const row = autoEl.closest('.wdtv-skip-menu__row');
+        if (row) row.classList.toggle('is-on', wdtvAutoSkipEnabled);
+    }
+    const customEl = menu.querySelector('[data-role="custom"]');
+    if (customEl) {
+        customEl.checked = wdtvCustomSkipEnabled;
+        const row = customEl.closest('.wdtv-skip-menu__row');
+        if (row) row.classList.toggle('is-on', wdtvCustomSkipEnabled);
+    }
+
+    wdtvFillSkipTimeInputs(menu, 'opening', custom && custom.opening);
+    wdtvFillSkipTimeInputs(menu, 'ending', custom && custom.ending);
+
+    // 自定义跳过关闭：片头/片尾调节与保存整体平滑收起，不留空白
+    const showCustom = introSkipEnabled && wdtvCustomSkipEnabled;
+    wdtvSetSectionOpen(menu.querySelector('[data-role="custom-section"]'), showCustom);
+
+    // 当前生效状态：按钮与面板共用 wdtvSkipStatus()
+    const st = wdtvSkipStatus();
+    const statusEl = menu.querySelector('[data-role="status"]');
+    if (statusEl) {
+        statusEl.textContent = st.text;
+        statusEl.dataset.state = st.state;
+        statusEl.title = st.text;
+    }
+
+    const hintEl = menu.querySelector('[data-role="hint"]');
+    const msgEl = menu.querySelector('[data-role="msg"]');
+    if (hintEl) {
+        let hint = '';
+        if (!introSkipEnabled) hint = '开启总开关后可分别设置自动与自定义。';
+        else if (st.manual) hint = '自动识别未达高置信：未自动跳过，可手动点击画面内按钮。';
+        else if (!wdtvAutoSkipEnabled && !wdtvCustomSkipEnabled) hint = '打开「自动跳过」或「自定义跳过」后生效。';
+        else if (showCustom) hint = '留空表示该段不跳；同类型自定义优先，对本剧所有剧集生效。';
+        else if (!wdtvAutoSkipEnabled && wdtvCustomSkipEnabled) hint = '仅使用你设置的自定义时长。';
+        // 仅开启「自动跳过」时不显示自动识别说明，也不保留空行；有消息时让位
+        hintEl.textContent = hint;
+        hintEl.title = hint; // 窄屏单行省略时可长按/悬停查看完整文案
+        hintEl.hidden = !hint || !!(msgEl && !msgEl.hidden);
+    }
+    wdtvUpdateSkipSwitch();
+}
+
+function wdtvUnbindSkipMenuClose() {
+    if (wdtvSkipMenuOutsideHandler) {
+        document.removeEventListener('pointerdown', wdtvSkipMenuOutsideHandler, true);
+        wdtvSkipMenuOutsideHandler = null;
+    }
+    if (wdtvSkipMenuEscHandler) {
+        document.removeEventListener('keydown', wdtvSkipMenuEscHandler, true);
+        wdtvSkipMenuEscHandler = null;
+    }
+}
+
+function wdtvCloseSkipMenu() {
+    wdtvUnbindSkipMenuClose();
+    if (wdtvSkipMenuEl) wdtvSkipMenuEl.classList.remove('is-open');
+    if (wdtvSkipSwitchEl) wdtvSkipSwitchEl.setAttribute('aria-expanded', 'false');
+}
+
+function wdtvOpenSkipMenu() {
+    const menu = wdtvSkipMenuEl;
+    if (!menu) return;
+    wdtvRefreshSkipMenu();
+    wdtvSkipMenuMsg(menu.querySelector('[data-role="msg"]'), '', '');
+    menu.classList.add('is-open');
+    if (wdtvSkipSwitchEl) wdtvSkipSwitchEl.setAttribute('aria-expanded', 'true');
+    // 键盘操作：打开后把焦点交给面板，Tab 依次进入各控件，Esc 关闭
+    try { menu.focus({ preventScroll: true }); } catch (e) { try { menu.focus(); } catch (e2) { } }
+    // 点击外部 / 再次点按钮关闭；Esc 关闭
+    if (!wdtvSkipMenuOutsideHandler) {
+        wdtvSkipMenuOutsideHandler = function (ev) {
+            if (!wdtvSkipMenuEl || !wdtvSkipMenuEl.classList.contains('is-open')) return;
+            const t = ev.target;
+            if (wdtvSkipMenuEl.contains(t)) return;
+            if (wdtvSkipSwitchEl && wdtvSkipSwitchEl.contains(t)) return;
+            wdtvCloseSkipMenu();
+        };
+        document.addEventListener('pointerdown', wdtvSkipMenuOutsideHandler, true);
+    }
+    if (!wdtvSkipMenuEscHandler) {
+        wdtvSkipMenuEscHandler = function (ev) {
+            if (ev.key === 'Escape' || ev.key === 'Esc') wdtvCloseSkipMenu();
+        };
+        document.addEventListener('keydown', wdtvSkipMenuEscHandler, true);
+    }
+}
+
+function wdtvToggleSkipMenu() {
+    if (wdtvSkipMenuEl && wdtvSkipMenuEl.classList.contains('is-open')) wdtvCloseSkipMenu();
+    else wdtvOpenSkipMenu();
+}
+
+// ---- 分 + 秒输入组（存储仍为秒数，这里只做展示与换算）----
+function wdtvSkipTimeFieldHtml(type, label) {
+    return '<div class="wdtv-skip-menu__field" data-role="' + type + '">' +
+        '<span class="wdtv-skip-menu__label">' + label + '</span>' +
+        '<div class="wdtv-skip-menu__time">' +
+        '<div class="wdtv-skip-menu__num">' +
+        '<button type="button" data-step="-1" data-unit="min" data-target="' + type + '" aria-label="' + label + '减少 1 分">−</button>' +
+        '<input type="number" inputmode="numeric" min="0" step="1" placeholder="0" data-role="' + type + '-min" aria-label="' + label + '分钟">' +
+        '<span class="wdtv-skip-menu__unit">分</span>' +
+        '<button type="button" data-step="1" data-unit="min" data-target="' + type + '" aria-label="' + label + '增加 1 分">＋</button>' +
+        '</div>' +
+        '<div class="wdtv-skip-menu__num">' +
+        '<button type="button" data-step="-5" data-unit="sec" data-target="' + type + '" aria-label="' + label + '减少 5 秒">−</button>' +
+        '<input type="number" inputmode="numeric" min="0" max="59" step="5" placeholder="0" data-role="' + type + '-sec" aria-label="' + label + '秒数">' +
+        '<span class="wdtv-skip-menu__unit">秒</span>' +
+        '<button type="button" data-step="5" data-unit="sec" data-target="' + type + '" aria-label="' + label + '增加 5 秒">＋</button>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+}
+
+// 秒数 → 「N 分 M 秒」展示（整分不显示秒）
+function wdtvFormatSkipDuration(seconds) {
+    const n = Math.max(0, Math.round(Number(seconds) || 0));
+    const m = Math.floor(n / 60);
+    const s = n % 60;
+    if (!m) return s + ' 秒';
+    return s ? (m + ' 分 ' + s + ' 秒') : (m + ' 分');
+}
+
+// 回显：底层秒数 → 分/秒两个输入框（旧数据 90 秒显示为 1 分 30 秒）
+function wdtvFillSkipTimeInputs(menu, type, seconds) {
+    const minEl = menu.querySelector('[data-role="' + type + '-min"]');
+    const secEl = menu.querySelector('[data-role="' + type + '-sec"]');
+    const has = Number.isFinite(seconds) && seconds > 0;
+    if (minEl) minEl.value = has ? String(Math.floor(seconds / 60)) : '';
+    if (secEl) secEl.value = has ? String(Math.round(seconds) % 60) : '';
+}
+
+// 读取：分/秒输入框 → { ok, seconds, error }；seconds=null 表示未设置
+function wdtvReadSkipTimeInputs(menu, type) {
+    const label = type === 'opening' ? '片头' : '片尾';
+    const minEl = menu.querySelector('[data-role="' + type + '-min"]');
+    const secEl = menu.querySelector('[data-role="' + type + '-sec"]');
+    if ((minEl && minEl.validity && minEl.validity.badInput) ||
+        (secEl && secEl.validity && secEl.validity.badInput)) {
+        return { ok: false, seconds: null, error: label + '分/秒必须是数字' };
+    }
+    const rawMin = minEl ? minEl.value.trim() : '';
+    const rawSec = secEl ? secEl.value.trim() : '';
+    if (rawMin === '' && rawSec === '') return { ok: true, seconds: null, error: null };
+    const min = rawMin === '' ? 0 : Number(rawMin);
+    const sec = rawSec === '' ? 0 : Number(rawSec);
+    if (!Number.isFinite(min)) return { ok: false, seconds: null, error: label + '分钟必须是数字' };
+    if (!Number.isFinite(sec)) return { ok: false, seconds: null, error: label + '秒数必须是数字' };
+    if (!Number.isInteger(min) || min < 0) return { ok: false, seconds: null, error: label + '分钟需为 0 或正整数' };
+    if (!Number.isInteger(sec) || sec < 0 || sec > 59) return { ok: false, seconds: null, error: label + '秒数需在 0–59 之间' };
+    const total = min * 60 + sec;
+    if (total === 0) return { ok: true, seconds: null, error: null };
+    return { ok: true, seconds: total, error: null };
+}
+
+// 微调：按总秒数加减后再拆分，59→0 进位、0→59 借位都不会出现负秒或 >=60 的秒
+function wdtvStepSkipTime(menu, btn) {
+    const type = btn.getAttribute('data-target');
+    const unit = btn.getAttribute('data-unit');
+    const delta = Number(btn.getAttribute('data-step')) || 0;
+    const minEl = menu.querySelector('[data-role="' + type + '-min"]');
+    const secEl = menu.querySelector('[data-role="' + type + '-sec"]');
+    if (!minEl || !secEl) return;
+    const m = minEl.value.trim() === '' ? 0 : (Number(minEl.value) || 0);
+    const s = secEl.value.trim() === '' ? 0 : (Number(secEl.value) || 0);
+    let total = Math.round(m) * 60 + Math.round(s);
+    total += (unit === 'min') ? delta * 60 : delta;
+    if (!Number.isFinite(total) || total < 0) total = 0;
+    minEl.value = String(Math.floor(total / 60));
+    secEl.value = String(total % 60);
+}
+
+// 保存自定义时长：校验 → 写入（按剧键）→ 立即生效
+function wdtvSaveCustomDurations() {
+    const menu = wdtvSkipMenuEl;
+    if (!menu) return;
+    const S = wdtvSkipModule();
+    if (!S || typeof S.normalizeCustomDurations !== 'function') return;
+    const msgEl = menu.querySelector('[data-role="msg"]');
+    if (!wdtvCustomSkipEnabled) {
+        wdtvSkipMenuMsg(msgEl, '请先开启「自定义跳过」再保存', 'error');
+        return;
+    }
+    if (!skipMarksKey) {
+        wdtvSkipMenuMsg(msgEl, '当前视频信息未就绪，请稍后再试', 'error');
+        return;
+    }
+    // 分 + 秒 → 总秒数；错误提示直接指明是「分」还是「秒」的问题
+    const opening = wdtvReadSkipTimeInputs(menu, 'opening');
+    if (!opening.ok) {
+        wdtvSkipMenuMsg(msgEl, opening.error, 'error');
+        return;
+    }
+    const ending = wdtvReadSkipTimeInputs(menu, 'ending');
+    if (!ending.ok) {
+        wdtvSkipMenuMsg(msgEl, ending.error, 'error');
+        return;
+    }
+    const duration = wdtvSkipMenuDuration();
+    const norm = S.normalizeCustomDurations({
+        opening: opening.seconds,
+        ending: ending.seconds
+    }, duration);
+    if (!norm.ok) {
+        wdtvSkipMenuMsg(msgEl, norm.error, 'error');
+        return;
+    }
+    const store = wdtvReadCustomStore();
+    if (norm.opening || norm.ending) {
+        store[skipMarksKey] = {
+            opening: norm.opening,
+            ending: norm.ending,
+            updatedAt: Date.now()
+        };
+    } else {
+        delete store[skipMarksKey];
+    }
+    wdtvWriteCustomStore(store);
+    wdtvCustomCacheKey = '';
+    wdtvCustomCacheVal = null;
+    // 自定义段由 wdtvResolvedSegments 即时合并，无需重新请求；重绘色带与按钮即可
+    wdtvRenderSkipBand();
+    wdtvUpdateSkipCta();
+    wdtvRefreshSkipMenu();
+    const parts = [];
+    if (norm.opening) parts.push('片头 ' + wdtvFormatSkipDuration(norm.opening));
+    if (norm.ending) parts.push('片尾 ' + wdtvFormatSkipDuration(norm.ending));
+    wdtvSkipMenuMsg(msgEl, parts.length
+        ? ('已保存：' + parts.join(' / ') + (duration > 0 ? '，本剧所有剧集生效' : '，开始播放后生效'))
+        : '未填写时长：自定义跳过暂不生效', 'ok');
+}
+
+function wdtvEnsureSkipMenu(playerRoot) {
+    if (wdtvSkipMenuEl && wdtvSkipMenuEl.isConnected && playerRoot.contains(wdtvSkipMenuEl)) return wdtvSkipMenuEl;
+    if (wdtvSkipMenuEl) { wdtvUnbindSkipMenuClose(); wdtvSkipMenuEl = null; }
+    const menu = document.createElement('div');
+    menu.className = 'wdtv-skip-menu';
+    menu.setAttribute('role', 'dialog');
+    menu.setAttribute('aria-label', '跳片头尾设置');
+    menu.setAttribute('tabindex', '-1');
+    menu.innerHTML = '' +
+        '<div class="wdtv-skip-menu__head">' +
+        '<span class="wdtv-skip-menu__title">跳片头尾</span>' +
+        '</div>' +
+        '<div class="wdtv-skip-menu__status" data-role="status" data-state="off">已关闭</div>' +
+        '<label class="wdtv-skip-menu__row wdtv-skip-menu__master">' +
+        '<span class="wdtv-skip-menu__rowlabel">启用跳片头尾</span>' +
+        '<span class="wdtv-skip-menu__toggle">' +
+        '<input type="checkbox" data-role="enabled" aria-label="启用跳片头尾">' +
+        '<span class="wdtv-skip-menu__track"><span class="wdtv-skip-menu__thumb"></span></span>' +
+        '</span>' +
+        '</label>' +
+        '<div class="wdtv-skip-menu__body" data-role="body">' +
+        '<div class="wdtv-skip-menu__body-inner">' +
+        '<div class="wdtv-skip-menu__rows" role="group" aria-label="跳过方式">' +
+        '<label class="wdtv-skip-menu__row">' +
+        '<span class="wdtv-skip-menu__rowlabel">自动跳过</span>' +
+        '<span class="wdtv-skip-menu__toggle">' +
+        '<input type="checkbox" data-role="auto" aria-label="自动跳过">' +
+        '<span class="wdtv-skip-menu__track"><span class="wdtv-skip-menu__thumb"></span></span>' +
+        '</span>' +
+        '</label>' +
+        '<label class="wdtv-skip-menu__row">' +
+        '<span class="wdtv-skip-menu__rowlabel">自定义跳过</span>' +
+        '<span class="wdtv-skip-menu__toggle">' +
+        '<input type="checkbox" data-role="custom" aria-label="自定义跳过">' +
+        '<span class="wdtv-skip-menu__track"><span class="wdtv-skip-menu__thumb"></span></span>' +
+        '</span>' +
+        '</label>' +
+        '</div>' +
+        '<div class="wdtv-skip-menu__custom" data-role="custom-section">' +
+        '<div class="wdtv-skip-menu__custom-inner">' +
+        '<div class="wdtv-skip-menu__durations" data-role="durations">' +
+        wdtvSkipTimeFieldHtml('opening', '片头') +
+        wdtvSkipTimeFieldHtml('ending', '片尾') +
+        '</div>' +
+        '<div class="wdtv-skip-menu__actions" data-role="actions">' +
+        '<button type="button" class="wdtv-skip-menu__save" data-role="save">保存并应用</button>' +
+        '</div>' +
+        '</div>' +
+        '</div>' +
+        '<div class="wdtv-skip-menu__hint" data-role="hint"></div>' +
+        '<div class="wdtv-skip-menu__msg" data-role="msg" hidden></div>' +
+        '</div>' +
+        '</div>';
+    // 面板内交互不冒泡到播放器（避免触发暂停 / 手势 / 显示控制栏）
+    menu.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
+    menu.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        const target = ev.target;
+        if (!target || typeof target.closest !== 'function') return;
+        const stepBtn = target.closest('[data-step]');
+        if (stepBtn) {
+            if (!stepBtn.disabled) wdtvStepSkipTime(menu, stepBtn);
+            return;
+        }
+        const roleEl = target.closest('[data-role]');
+        const role = roleEl && roleEl.getAttribute('data-role');
+        if (role === 'save') wdtvSaveCustomDurations();
+    });
+    menu.addEventListener('change', function (ev) {
+        const t = ev.target;
+        const role = t && t.getAttribute && t.getAttribute('data-role');
+        if (role === 'enabled') {
+            wdtvSetIntroSkipEnabled(t.checked);
+            wdtvRefreshSkipMenu();
+        } else if (role === 'auto') {
+            wdtvSetAutoSkipEnabled(t.checked);
+        } else if (role === 'custom') {
+            wdtvSetCustomSkipEnabled(t.checked);
+        }
+    });
+    playerRoot.appendChild(menu);
+    wdtvSkipMenuEl = menu;
+    return menu;
+}
+
+function wdtvEnsureSkipSwitch() {
+    if (!art) return;
+    const playerRoot = art.template.$player || document.querySelector('#player .art-video-player');
+    if (!playerRoot) return;
+    if (wdtvSkipSwitchEl && wdtvSkipSwitchEl.isConnected && playerRoot.contains(wdtvSkipSwitchEl)) {
+        wdtvUpdateSkipSwitch();
+        return;
+    }
+    const wrap = ensureTopToolContainer(playerRoot);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'wdtv-dm-topbtn wdtv-skip-switch';
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = WDTV_SKIP_ICON;
+    btn.addEventListener('click', function (ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        wdtvToggleSkipMenu();
+    });
+    wrap.insertBefore(btn, wrap.firstChild);
+    wdtvSkipSwitchEl = btn;
+    wdtvEnsureSkipMenu(playerRoot);
+    wdtvUpdateSkipSwitch();
 }
 
 // 唯一的自动跳过入口：广告区（既有）与跳过标记（新增）共用一次避让 + 一次 seek
 function adAutoSkipCheck() {
     const v = art && art.video;
     if (!v) return;
-    // 两个开关都关时完全不介入：不读存储、不 resolveSegments、不写 currentTime、零请求
-    if (!adAutoSkipEnabled && !skipMarksEnabled) return;
+    // 两个开关都关时完全不介入：不读取数层、不 resolveSegments、不写 currentTime、零请求
+    if (!adAutoSkipEnabled && !introSkipEnabled) return;
     const S = wdtvSkipModule();
 
     // 统一前置避让（只跑一次）：paused / 无效 duration / 拖拽 / 首尾 0.5s / 共看 guest / 1s 冷却
@@ -3279,7 +3923,8 @@ function adAutoSkipCheck() {
             isUserSeeking: isUserSeeking,
             guestActive: guestActive,
             adRegions: adAutoSkipEnabled ? adSkipRegions : null,
-            segments: wdtvCurrentSegments(v.duration),
+            // 只有高置信段参与自动跳；低置信 / 部分数据留给画面按钮
+            segments: introSkipEnabled ? wdtvAutoSegments(v.duration) : [],
             suppressedKeys: Array.from(skipSuppressedThisEpisode)
         });
     } else if (adAutoSkipEnabled && adSkipRegions && adSkipRegions.length) {
@@ -5254,7 +5899,7 @@ function setupLongPressSpeedControl() {
 
     // 命中过滤：控件区/设置面板/倍速面板等交互元素上的按压不触发长按
     const inInteractiveArea = (target) => !!(target && target.closest &&
-        target.closest('.art-bottom, .art-setting-panel, .art-contextmenu, .art-loading, .art-layer, .art-speed-panel, .art-info, .wdtv-dm-topbtns'));
+        target.closest('.art-bottom, .art-setting-panel, .art-contextmenu, .art-loading, .art-layer, .art-speed-panel, .art-info, .wdtv-dm-topbtns, .wdtv-skip-menu'));
 
     // 判断横坐标是否落在配置的触发热区内
     const inTriggerZone = (clientX) => {
@@ -5496,7 +6141,7 @@ function setupPlayerGestures() {
 
     // 控件区/面板上的触摸不参与手势（进度条拖动、按钮、设置面板等照常工作）
     const inInteractiveArea = (target) => !!(target && target.closest &&
-        target.closest('.art-bottom, .art-setting-panel, .art-contextmenu, .art-loading, .art-layer, .art-speed-panel, .art-info, .wdtv-unlock-btn, .wdtv-lock-shield, .wdtv-dm-topbtns'));
+        target.closest('.art-bottom, .art-setting-panel, .art-contextmenu, .art-loading, .art-layer, .art-speed-panel, .art-info, .wdtv-unlock-btn, .wdtv-lock-shield, .wdtv-dm-topbtns, .wdtv-skip-menu'));
 
     const endGesture = () => {
         if (gestureType === 'seek') {

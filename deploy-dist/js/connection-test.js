@@ -183,7 +183,10 @@
         const api = API_SITES[key];
         const name = api ? api.name : key;
         const detailMode = (api && api.detailMode) || 'api';
-        const searchUrl = buildVodApiUrl(api.api, API_CONFIG.search.path) + encodeURIComponent(TEST_QUERY);
+        const searchPath = (typeof applySearchParam === 'function' && api)
+            ? applySearchParam(API_CONFIG.search.path, api)
+            : API_CONFIG.search.path;
+        const searchUrl = buildVodApiUrl(api.api, searchPath) + encodeURIComponent(TEST_QUERY);
 
         const lines = [];
         const push = (cls, text) => lines.push(`<div class="${cls}">${esc(text)}</div>`);

@@ -45,6 +45,9 @@ id = "2c83fb3ae9214837b21f9d84d4cdd821"
 #   npx wrangler d1 create wdtv-users
 #   npx wrangler d1 execute wdtv-users --file=./schema.sql --remote
 # 将返回的 database_id 填到下面
+# 片头片尾公共库（skip_marks_public）也由同一份 schema.sql 创建；
+# 旧部署升级时重跑上面的 execute 即可（CREATE TABLE IF NOT EXISTS，幂等）。
+# 该表只读：前端仅通过 GET /api/skip-marks 查询，没有任何写入/上传接口。
 [[d1_databases]]
 binding = "WDTV_DB"
 database_name = "wdtv-users"

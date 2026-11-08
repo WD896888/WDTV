@@ -370,15 +370,274 @@
     border: 1px solid rgba(255, 255, 255, 0.85);
 }
 
-/* 标签管理模态框 - 玻璃风格 */
-#tagManageModal,
+/* ===== 标签管理模态框：复用首页豆瓣卡片的设计 token =====
+   同源样式：
+   - css/index.css  .douban-card（背景/描边/圆角/hover）、.douban-rate-badge、.douban-card-title-area
+   - index.html      .wdtv-douban-tag（药丸）、.wdtv-douban-refresh（按钮）、.wdtv-sub-input（输入框）
+   token：背景 rgba(155,180,218,0.06)、强调底 rgba(80,128,176,0.2)、
+         描边 var(--glass-border)、强调 var(--accent)、文字 var(--pale)/var(--text-secondary)/var(--text-muted)。
+   弹窗挂载在 body 上，首页位于 #splash（fixed; z-index:9999），必须显式高于该层。 */
+#tagManageModal {
+    --tm-surface: rgba(155, 180, 218, 0.06);
+    --tm-surface-strong: rgba(155, 180, 218, 0.12);
+    --tm-active: rgba(80, 128, 176, 0.2);
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 16px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    background-color: rgba(9, 15, 28, 0.42);
+    -webkit-backdrop-filter: blur(10px) saturate(1.1);
+    backdrop-filter: blur(10px) saturate(1.1);
+    -webkit-tap-highlight-color: transparent;
+}
+
+#tagManageModal > .tag-modal-card {
+    position: relative;
+    width: min(100%, 28rem);
+    max-height: calc(100vh - 32px - env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 32px - env(safe-area-inset-bottom));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid var(--glass-border);
+    background: var(--tm-surface);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+    color: var(--pale);
+}
+
+#tagManageModal .tag-modal-title {
+    margin: 0 0 16px;
+    padding-right: 32px;
+    font-size: 1.125rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--pale);
+}
+
+#tagManageModal .tag-modal-subtitle,
+#tagManageModal .tag-modal-form-title {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--pale);
+}
+
+#tagManageModal .tag-modal-form-title {
+    margin-bottom: 8px;
+}
+
+#tagManageModal .tag-modal-tip {
+    margin: 8px 0 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+#tagManageModal .tag-modal-empty {
+    padding: 16px 0;
+    text-align: center;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+}
+
+#tagManageModal .tag-modal-divider {
+    margin-top: 16px;
+    border-top: 1px solid var(--glass-border);
+    padding-top: 16px;
+}
+
+/* 关闭按钮：必要的叉号，无描边无底色装饰 */
+#tagManageModal .tag-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+#tagManageModal .tag-modal-close:hover {
+    background: var(--tm-surface-strong);
+    color: var(--white);
+}
+
+/* 标签药丸：与 .wdtv-douban-tag 同款（玻璃底 + var(--glass-border) + 16px 圆角） */
+#tagsGrid > .tag-modal-pill {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    background: var(--tm-surface);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    transition: all 0.3s;
+}
+
+#tagsGrid > .tag-modal-pill:hover {
+    background: var(--tm-active);
+    border-color: var(--accent);
+    color: var(--white);
+}
+
+#tagsGrid > .tag-modal-pill .delete-tag-btn {
+    padding: 0 2px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s, color 0.2s;
+}
+
+#tagsGrid > .tag-modal-pill:hover .delete-tag-btn,
+#tagsGrid > .tag-modal-pill:focus-within .delete-tag-btn {
+    opacity: 1;
+}
+
+#tagsGrid > .tag-modal-pill .delete-tag-btn:hover {
+    color: var(--white);
+}
+
+#tagsGrid > .tag-modal-pill .tag-modal-required {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+#tagsGrid > .tag-modal-pill:hover .tag-modal-required {
+    opacity: 1;
+}
+
+/* 输入框：与 .wdtv-sub-input 同款（rgba(255,255,255,0.08) + 玻璃描边） */
+#tagManageModal input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--pale);
+    font-size: 0.8125rem;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+#tagManageModal input[type="text"]::placeholder {
+    color: var(--text-muted);
+}
+
+#tagManageModal input[type="text"]:focus {
+    border-color: var(--accent-light);
+    background: rgba(255, 255, 255, 0.12);
+    outline: none;
+    box-shadow: none;
+}
+
+/* 次按钮：与 .wdtv-douban-refresh 同款；主按钮：与 .wdtv-douban-tag.active 同款 */
+#tagManageModal .tag-modal-secondary {
+    padding: 4px 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    background: var(--tm-surface);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 400;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    transition: all 0.2s;
+}
+
+#tagManageModal .tag-modal-secondary:hover {
+    background: var(--tm-active);
+    border-color: var(--accent);
+    color: var(--white);
+}
+
+#tagManageModal .tag-modal-primary {
+    height: 36px;
+    padding: 0 16px;
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    background: var(--tm-active);
+    color: var(--white);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    box-shadow: none;
+}
+
+#tagManageModal .tag-modal-primary:hover {
+    background: var(--accent);
+    color: var(--white);
+    box-shadow: none;
+    transform: none;
+}
+
+#tagManageModal .tag-modal-primary:active {
+    background: var(--accent);
+    transform: none;
+}
+
+/* 无 backdrop-filter 时降级：保持豆瓣卡片的蓝灰玻璃观感，只提高一点底色浓度，不变白卡 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #tagManageModal {
+        background-color: rgba(9, 15, 28, 0.55);
+    }
+
+    #tagManageModal > .tag-modal-card {
+        background: var(--tm-surface-strong);
+        border-color: var(--glass-border);
+    }
+}
+
+/* 手机：左右/底部留安全区，卡片内部滚动，触屏下删除按钮常显 */
+@media (max-width: 480px) {
+    #tagManageModal {
+        padding-top: calc(12px + env(safe-area-inset-top));
+        padding-right: calc(12px + env(safe-area-inset-right));
+        padding-bottom: calc(12px + env(safe-area-inset-bottom));
+        padding-left: calc(12px + env(safe-area-inset-left));
+    }
+
+    #tagManageModal > .tag-modal-card {
+        padding: 16px;
+        max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    }
+}
+
+@media (hover: none) {
+    #tagsGrid > .tag-modal-pill .delete-tag-btn {
+        opacity: 1;
+    }
+}
+
 #messageBoxModal {
     background-color: rgba(255, 255, 255, 0.5);
     backdrop-filter: blur(20px) saturate(150%);
     -webkit-backdrop-filter: blur(20px) saturate(150%);
 }
 
-#tagManageModal > div,
 #messageBoxModal > div {
     background: rgba(255, 255, 255, 0.85) !important;
     backdrop-filter: blur(40px) saturate(180%);
@@ -391,8 +650,7 @@
     color: #1d1d1f;
 }
 
-/* 模态框内输入框 - 玻璃风格 */
-#tagManageModal input[type="text"],
+/* 消息框内输入框 - 玻璃风格 */
 #messageBoxModal input[type="text"] {
     background: rgba(255, 255, 255, 0.6) !important;
     border: 1px solid rgba(255, 255, 255, 0.8) !important;
@@ -403,29 +661,10 @@
     transition: all 0.3s ease;
 }
 
-#tagManageModal input[type="text"]:focus {
-    border-color: rgba(0, 122, 255, 0.6) !important;
-    box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
-    outline: none !important;
-}
-
-/* 模态框内按钮 - 玻璃风格 */
-#tagManageModal button,
+/* 消息框内按钮 - 统一圆角与过渡 */
 #messageBoxModal button {
     border-radius: 9999px !important;
     font-weight: 500;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-}
-
-/* 标签项 - 玻璃药丸 */
-#tagsGrid > div {
-    background: rgba(255, 255, 255, 0.6) !important;
-    backdrop-filter: blur(20px) saturate(150%);
-    -webkit-backdrop-filter: blur(20px) saturate(150%);
-    border: 1px solid rgba(255, 255, 255, 0.8) !important;
-    border-radius: 9999px !important;
-    box-shadow:
-        0 2px 8px rgba(0, 0, 0, 0.05),
-        inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 

@@ -4,27 +4,22 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>关于我们 - WDTV</title>
-	<!-- 主题预绘制：与 js/theme.js 同一套 dark class 语义，CSS link 之前执行避免闪白；默认深色 -->
+	<!-- 主题预绘制：本站固定深色，CSS link 之前执行避免闪白；同时清理旧版 wdtvTheme 残留 -->
 	<script>
 	(function(){
-	  var dark = true;
 	  try{
-	    var m = localStorage.getItem('wdtvTheme'); if (['light','dark','system'].indexOf(m) === -1) m = 'dark';
-	    dark = (m === 'dark');
-    if (m === 'system') { dark = true; try { if (window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches) dark = false; } catch (e) {} }
+	    var d = document.documentElement;
+	    d.classList.add('dark');
+	    d.setAttribute('data-theme', 'dark');
+	    d.style.colorScheme = 'dark';
 	  }catch(e){}
-	  try{
-	    document.documentElement.classList.toggle('dark', dark);
-	    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-	    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-	  }catch(e){}
+	  try{ localStorage.removeItem('wdtvTheme'); }catch(e){}
 	})();
 	</script>
 	<script src="libs/tailwindcss.min.js"></script>
 	<link rel="stylesheet" href="css/styles.css">
 	<link rel="stylesheet" href="css/states.css?v=1">
 	<link rel="manifest" href="manifest.json">
-	<script defer src="js/theme.js?v=3"></script>
 	<style>
 		/* 覆盖 Tailwind 默认颜色以适配浅色液态玻璃主题 */
 		.text-gray-500 { color: #6e6e73 !important; }

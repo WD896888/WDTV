@@ -49,7 +49,11 @@ async function fetchSearchPages(apiId, query, fromPage, toPage, signal) {
         pagePromises.push((async () => {
             try {
                 // buildVodApiUrl：自定义源 api 字段已含接口路径时只补查询串，避免 …/provide/vod/api.php/provide/vod/ 双重路径
-                const pageUrl = buildVodApiUrl(apiBaseUrl, API_CONFIG.search.pagePath)
+                // applySearchParam：个别源不认 wd=（天涯资源只认 keywords=）
+                const pagePath = (typeof applySearchParam === 'function')
+                    ? applySearchParam(API_CONFIG.search.pagePath, API_SITES[apiId])
+                    : API_CONFIG.search.pagePath;
+                const pageUrl = buildVodApiUrl(apiBaseUrl, pagePath)
                     .replace('{query}', encodeURIComponent(query))
                     .replace('{page}', page);
                 const pageResponse = await fetchSearchData(pageUrl, apiId, signal);
@@ -103,7 +107,11 @@ async function searchByAPIAndKeyWord(apiId, query, onAdditional, signal) {
 
         const apiBaseUrl = API_SITES[apiId].api;
         // buildVodApiUrl：自定义源 api 字段已含接口路径时只补查询串，避免 …/provide/vod/api.php/provide/vod/ 双重路径
-        const apiUrl = buildVodApiUrl(apiBaseUrl, API_CONFIG.search.path) + encodeURIComponent(query);
+        // applySearchParam：个别源不认 wd=（天涯资源只认 keywords=）
+        const searchPath = (typeof applySearchParam === 'function')
+            ? applySearchParam(API_CONFIG.search.path, API_SITES[apiId])
+            : API_CONFIG.search.path;
+        const apiUrl = buildVodApiUrl(apiBaseUrl, searchPath) + encodeURIComponent(query);
         const apiName = API_SITES[apiId].name;
 
         // 请求第一页结果（直连优先，失败回退代理；直连成败计入源健康度）

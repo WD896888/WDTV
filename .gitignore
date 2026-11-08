@@ -12,6 +12,7 @@ node_modules
 .wrangler/
 tmp-test-stream/
 tmp-verify-*.png
+shots/
 dist
 dist-ssr
 coverage

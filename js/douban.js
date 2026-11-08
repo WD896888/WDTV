@@ -753,66 +753,66 @@ function resetToHome() {
 document.addEventListener('DOMContentLoaded', initDouban);
 
 // 显示标签管理模态框
+let tagModalKeyHandler = null;
 function showTagManageModal() {
     // 确保模态框在页面上只有一个实例
     let modal = document.getElementById('tagManageModal');
     if (modal) {
         document.body.removeChild(modal);
     }
+    // 清理上一次实例遗留的 Esc 监听，避免重复创建时监听堆积
+    if (tagModalKeyHandler) {
+        document.removeEventListener('keydown', tagModalKeyHandler);
+        tagModalKeyHandler = null;
+    }
     
-    // 创建模态框元素
+    // 创建模态框元素（视觉样式统一在 modals.css 的 #tagManageModal 中定义）
     modal = document.createElement('div');
     modal.id = 'tagManageModal';
     modal.className = 'fixed inset-0 flex items-center justify-center z-40';
-    modal.style.background = 'rgba(255, 255, 255, 0.5)';
-    modal.style.backdropFilter = 'blur(20px) saturate(180%)';
-    modal.style.webkitBackdropFilter = 'blur(20px) saturate(180%)';
 
     // 当前使用的标签类型和默认标签
     const isMovie = doubanMovieTvCurrentSwitch === 'movie';
     const currentTags = isMovie ? movieTags : tvTags;
     const defaultTags = isMovie ? defaultMovieTags : defaultTvTags;
 
-    // 模态框内容 - 液态玻璃风格
+    // 模态框内容 - 透明玻璃风格（样式见 modals.css 的 #tagManageModal 规则）
     modal.innerHTML = `
-        <div class="max-w-md w-full max-h-[90vh] overflow-y-auto relative" style="background: rgba(255,255,255,0.85); backdrop-filter: blur(50px) saturate(200%); -webkit-backdrop-filter: blur(50px) saturate(200%); border: 1px solid rgba(255,255,255,0.8); border-radius: 24px; padding: 1.5rem; box-shadow: 0 24px 80px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.95);">
-            <button id="closeTagModal" style="position: absolute; top: 1rem; right: 1rem; width: 2rem; height: 2rem; border-radius: 9999px; background: rgba(255,255,255,0.6); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.8); color: #6e6e73; font-size: 1.25rem; transition: all 0.2s;">&times;</button>
+        <div class="tag-modal-card max-w-md w-full relative">
+            <button id="closeTagModal" class="tag-modal-close" aria-label="关闭">&times;</button>
 
-            <h3 style="font-size: 1.25rem; font-weight: 700; color: #1d1d1f; margin-bottom: 1rem;">标签管理 (${isMovie ? '电影' : '电视剧'})</h3>
+            <h3 class="tag-modal-title">标签管理 (${isMovie ? '电影' : '电视剧'})</h3>
 
             <div style="margin-bottom: 1rem;">
                 <div class="flex justify-between items-center mb-2">
-                    <h4 style="font-size: 1rem; font-weight: 500; color: #1d1d1f;">标签列表</h4>
-                    <button id="resetTagsBtn" class="settings-mini-button">恢复默认标签</button>
+                    <h4 class="tag-modal-subtitle">标签列表</h4>
+                    <button id="resetTagsBtn" class="settings-mini-button tag-modal-secondary">恢复默认标签</button>
                 </div>
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4" id="tagsGrid">
                     ${currentTags.length ? currentTags.map(tag => {
                         // "热门"标签不能删除
                         const canDelete = tag !== '热门';
                         return `
-                            <div style="background: rgba(255,255,255,0.6); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.8); color: #1d1d1f; padding: 0.4rem 0.75rem; border-radius: 9999px; font-size: 0.875rem; font-weight: 500; display: flex; justify-content: space-between; align-items: center;" class="group">
+                            <div class="tag-modal-pill">
                                 <span>${tag}</span>
                                 ${canDelete ?
-                                    `<button class="delete-tag-btn opacity-0 group-hover:opacity-100 transition-opacity"
-                                        style="color: #ff453a; background: transparent; border: none; cursor: pointer; padding: 0 0.25rem;"
-                                        data-tag="${tag}">✕</button>` :
-                                    `<span style="color: #6e6e73; font-size: 0.7rem; font-style: italic; opacity: 0;" class="group-hover:opacity-100 transition-opacity">必需</span>`
+                                    `<button class="delete-tag-btn" data-tag="${tag}" aria-label="删除标签">✕</button>` :
+                                    `<span class="tag-modal-required">必需</span>`
                                 }
                             </div>
                         `;
                     }).join('') :
-                    `<div class="col-span-full text-center py-4" style="color: #6e6e73;">无标签，请添加或恢复默认</div>`}
+                    `<div class="col-span-full tag-modal-empty">无标签，请添加或恢复默认</div>`}
                 </div>
             </div>
 
-            <div style="border-top: 1px solid rgba(0,0,0,0.08); padding-top: 1rem;">
-                <h4 style="font-size: 1rem; font-weight: 500; color: #1d1d1f; margin-bottom: 0.75rem;">添加新标签</h4>
+            <div class="tag-modal-divider">
+                <h4 class="tag-modal-form-title">添加新标签</h4>
                 <form id="addTagForm" class="flex items-center">
-                    <input type="text" id="newTagInput" placeholder="输入标签名称..."
-                           style="flex: 1; background: rgba(255,255,255,0.6); backdrop-filter: blur(20px); color: #1d1d1f; border: 1px solid rgba(255,255,255,0.8); border-radius: 9999px; padding: 0.5rem 1rem; outline: none;">
-                    <button type="submit" class="ios-primary-button ml-2">添加</button>
+                    <input type="text" id="newTagInput" placeholder="输入标签名称...">
+                    <button type="submit" class="ios-primary-button tag-modal-primary ml-2">添加</button>
                 </form>
-                <p style="font-size: 0.75rem; color: #6e6e73; margin-top: 0.5rem;">提示：标签名称不能为空，不能重复，不能包含特殊字符</p>
+                <p class="tag-modal-tip">标签名不可为空或重复</p>
             </div>
         </div>
     `;
@@ -825,17 +825,30 @@ function showTagManageModal() {
         document.getElementById('newTagInput').focus();
     }, 100);
     
+    // 关闭按钮 / 点击遮罩 / Esc 共用同一套关闭逻辑，避免重复 `removeChild` 报错
+    const closeTagModal = function () {
+        if (modal.parentNode) modal.parentNode.removeChild(modal);
+        if (tagModalKeyHandler) {
+            document.removeEventListener('keydown', tagModalKeyHandler);
+            tagModalKeyHandler = null;
+        }
+    };
+
     // 添加事件监听器 - 关闭按钮
-    document.getElementById('closeTagModal').addEventListener('click', function() {
-        document.body.removeChild(modal);
-    });
+    document.getElementById('closeTagModal').addEventListener('click', closeTagModal);
     
     // 添加事件监听器 - 点击模态框外部关闭
     modal.addEventListener('click', function(e) {
         if (e.target === modal) {
-            document.body.removeChild(modal);
+            closeTagModal();
         }
     });
+
+    // 添加事件监听器 - Esc 关闭（外接键盘的移动端同样可用）
+    tagModalKeyHandler = function(e) {
+        if (e.key === 'Escape') closeTagModal();
+    };
+    document.addEventListener('keydown', tagModalKeyHandler);
     
     // 添加事件监听器 - 恢复默认标签按钮
     document.getElementById('resetTagsBtn').addEventListener('click', function() {

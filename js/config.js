@@ -24,7 +24,11 @@ const API_SITES = {
         api: 'https://json.heimuer.xyz',
         name: '黑木耳',
         detail: 'https://heimuer.tv',
-        detailMode: 'api'   // 实测：详情页被反爬验证页拦截（无法提取 m3u8），标准接口可用
+        detailMode: 'api',  // 实测：详情页被反爬验证页拦截（无法提取 m3u8），标准接口可用
+        // 2026-11-08 体检：json.heimuer.xyz 已跳转域名停放页（urldance.com，返回 HTML），
+        // detail 域 heimuer.tv TLS 证书链无效；官方渠道未能确认新址，标注停用但保留配置便于回溯。
+        disabled: true,
+        disabledReason: '域名已跳转停放页，未获官方确认的新地址'
     },
     ffzy: {
         api: 'http://ffzy5.tv',
@@ -35,7 +39,9 @@ const API_SITES = {
     tyyszy: {
         api: 'https://tyyszy.com',
         name: '天涯资源',
-        detailMode: 'api'   // 实测：搜索接口已返回"暂不支持搜索"，源基本失效
+        detailMode: 'api',  // 2026-11-08 实测：详情接口正常（plays=7）
+        // 该源不认标准 wd= 参数（返回"暂不支持搜索"），只认 keywords=；实测可返回 20 条。
+        searchParam: 'keywords'
     },
     zy360: {
         api: 'https://360zy.com',
@@ -45,17 +51,26 @@ const API_SITES = {
     wolong: {
         api: 'https://wolongzyw.com',
         name: '卧龙资源',
-        detailMode: 'api'
+        detailMode: 'api',
+        // 2026-11-08 体检：站点返回 Angie WAF 的 JS 挑战页（HTML），代理与直连都无法拿到 JSON。
+        disabled: true,
+        disabledReason: '接口被 WAF JS 挑战拦截，未获官方确认的新地址'
     },
     cjhw: {
         api: 'https://cjhwba.com',
         name: '新华为',
-        detailMode: 'api'
+        detailMode: 'api',
+        // 2026-11-08 体检：DNS 解析失败（ENOENT），域名已不存在。
+        disabled: true,
+        disabledReason: 'DNS 解析失败（ENOENT），域名失效'
     },
     hwba: {
         api: 'https://cjwba.com',
         name: '华为吧资源',
-        detailMode: 'api'
+        detailMode: 'api',
+        // 2026-11-08 体检：DNS 解析失败（ENOTFOUND），域名已不存在。
+        disabled: true,
+        disabledReason: 'DNS 解析失败（ENOTFOUND），域名失效'
     },
     jisu: {
         api: 'https://jszyapi.com',
@@ -66,7 +81,10 @@ const API_SITES = {
     dbzy: {
         api: 'https://dbzy.com',
         name: '豆瓣资源',
-        detailMode: 'api'
+        detailMode: 'api',
+        // 2026-11-08 体检：http 返回「dbzy.com is For Sale」域名出售页，https 连接超时。
+        disabled: true,
+        disabledReason: '域名已挂牌出售，服务停止'
     },
     bfzy: {
         api: 'https://bfzyapi.com',
@@ -76,7 +94,10 @@ const API_SITES = {
     mozhua: {
         api: 'https://mozhuazy.com',
         name: '魔爪资源',
-        detailMode: 'api'
+        detailMode: 'api',
+        // 2026-11-08 体检：DNS 可解析，但 TCP 连接超时（20s），服务不可达。
+        disabled: true,
+        disabledReason: '连接超时，服务不可达'
     },
     mdzy: {
         api: 'https://www.mdzyapi.com',
@@ -84,9 +105,14 @@ const API_SITES = {
         detailMode: 'api'   // 实测：搜索与标准接口详情均正常（74集）
     },
     ruyi: {
-        api: 'https://cj.rycjapi.com',
+        api: 'https://www.ryzyw.com',
         name: '如意资源',
-        detailMode: 'api'   // 实测：搜索与标准接口详情均正常（74集）
+        detailMode: 'api',  // 实测：搜索与详情接口均正常（20 条，含播放地址）
+        // 2026-11-08 复检：原地址 cj.rycjapi.com 在本机直连与本地 /proxy/ 均被域名级重置
+        // （直连 ECONNRESET 约 130ms，代理回 500 UPSTREAM_FAILED），并非源站停服：
+        // 同源官方站 www.ryzyw.com（CNAME 同为 ry.ivipcdn.com、封面图床同为 pic.ry-pic.com）
+        // 直连与代理都能返回完整 JSON。故切换到该域名并恢复启用，原址保留便于回溯。
+        previousUrl: 'https://cj.rycjapi.com'
     },
     zuid: {
         api: 'https://api.zuidapi.com',
@@ -118,6 +144,14 @@ function buildVodApiUrl(apiBase, path) {
     return base + path;
 }
 
+// 个别内置源不支持标准 wd= 搜索参数（天涯资源只认 keywords=）。
+// 仅在源配置显式声明 searchParam 时替换 path 里的 wd=，默认源行为完全不变。
+function applySearchParam(path, site) {
+    const param = site && site.searchParam;
+    if (!param || param === 'wd' || typeof path !== 'string') return path;
+    return path.replace(/([?&])wd=/, '$1' + param + '=');
+}
+
 // 如意资源封面图床域名归一：
 // 其旧图床 ps.ryzypics.com DNS 解析异常（AAAA 记录指向 Facebook 网段，IPv4/IPv6 均无法连通），
 // 实测同样的 /upload/... 资源路径在 pic.ry-pic.com 全部可用（返回文件字节级一致）；
@@ -131,6 +165,7 @@ function normalizeRuyiPicUrl(url) {
 // 暴露到全局
 window.API_SITES = API_SITES;
 window.extendAPISites = extendAPISites;
+window.applySearchParam = applySearchParam;
 window.normalizeRuyiPicUrl = normalizeRuyiPicUrl;
 
 // 数据源订阅（批次3）：按 key 前缀整体移除某订阅导入的源。
@@ -204,8 +239,12 @@ const PLAYER_CONFIG = {
     adFilteringStorage: 'adFilteringEnabled', // 存储广告过滤设置的键名
     adAutoSkipEnabled: false, // 低置信度可疑广告区域播放时自动 seek 跳过（默认关闭）
     adAutoSkipStorage: 'adAutoSkipEnabled', // 存储广告自动跳过设置的键名
-    skipMarksEnabled: false, // 批次4：片头/中段/片尾跳过标记（默认关闭，与「广告自动跳过」是两回事）
-    skipMarksStorage: 'wdtvSkipMarks', // 存储 { enabled, marks } 的单一键，纳入云同步
+    introSkipEnabled: true, // 播放器内「自动跳过片头片尾」开关，默认开启
+    introSkipStorage: 'wdtvIntroSkipEnabled', // 新开关的本地存储键（仅本地，不参与云同步）
+    skipMarksStorage: 'wdtvSkipMarks', // 历史标记数据键，仅作为兼容取数，不再写入
+    skipCustomStorage: 'wdtvSkipCustom', // 用户自定义片头/片尾时长（按归一化片名，跨剧集生效）
+    skipAutoStorage: 'wdtvSkipAutoEnabled', // 子开关：自动跳过（与自定义可同时开启）
+    skipCustomEnabledStorage: 'wdtvSkipCustomEnabled', // 子开关：自定义跳过（与自动可同时开启）
     showCacheButtonStorage: 'showCacheButton', // 是否在播放器控制栏显示缓存按钮（默认关闭）
     autoCacheStorage: 'autoCacheEnabled' // 播放时是否自动后台缓存整集（默认开启）
 };

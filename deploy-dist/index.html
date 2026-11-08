@@ -26,29 +26,24 @@
 })();
 </script>
 
-<!-- 主题预绘制：与 js/theme.js 的 WDTVTheme 使用同一套 dark class 语义，
-     必须在 CSS link 之前执行，避免切换主题时首屏闪白。
-     未设置偏好时默认深色，保持现有视觉零变化。 -->
+<!-- 主题预绘制：本站固定深色，必须在 CSS link 之前执行以避免首屏闪白。
+     同时清理旧版本遗留的 wdtvTheme 偏好，防止历史浅色值导致界面变浅。 -->
 <script>
 (function(){
-  var dark = true;
   try{
-    var m = localStorage.getItem('wdtvTheme'); if (['light','dark','system'].indexOf(m) === -1) m = 'dark';
-    dark = (m === 'dark');
-    if (m === 'system') { dark = true; try { if (window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches) dark = false; } catch (e) {} }
+    var d = document.documentElement;
+    d.classList.add('dark');
+    d.setAttribute('data-theme', 'dark');
+    d.style.colorScheme = 'dark';
   }catch(e){}
-  try{
-    document.documentElement.classList.toggle('dark', dark);
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-  }catch(e){}
+  try{ localStorage.removeItem('wdtvTheme'); }catch(e){}
 })();
 </script>
 
 <!-- WDTV External CSS -->
 <link rel="stylesheet" href="css/styles.css?v=7">
 <link rel="stylesheet" href="css/index.css?v=39">
-<link rel="stylesheet" href="css/modals.css?v=6">
+<link rel="stylesheet" href="css/modals.css?v=11">
 <link rel="stylesheet" href="css/downloader.css?v=4">
 <link rel="stylesheet" href="css/states.css?v=1">
 
@@ -69,19 +64,6 @@
   --beyond-color:#4a5882;
   --beyond-glow:0 0 15px rgba(255,255,255,0.4),0 0 30px rgba(255,255,255,0.25),0 0 50px rgba(255,255,255,0.12),0 0 80px rgba(255,255,255,0.06);
   --internal-color:#fff;
-}
-
-/* 亮色主题：仅当 <html> 没有 dark class 时覆盖同名变量。
-   head 预绘制脚本默认打 dark class，因此现有深色视觉零变化；用户主动切浅色才生效。
-   已知限制：站内少数组件把浅色文字/白色半透明底写成硬编码 rgba，浅色下对比度可能不足，
-   属可接受的渐进增强范围，不改动既有大量样式以免引入视觉回归。 */
-html:not(.dark){
-  --bg-deep:#f2f5fa;--bg-mid:#e6ecf6;
-  --mist:#6b7280;--silver:#4b5563;--light:#374151;--pale:#1f2937;--white:#111827;
-  --accent:#2f6ba8;--accent-light:#4a86c6;
-  --glass-bg:rgba(255,255,255,0.62);--glass-border:rgba(31,41,55,0.12);--glass-shadow:rgba(0,0,0,0.08);
-  --text-primary:#1f2937;--text-secondary:#4b5563;--text-muted:#6b7280;
-  --internal-color:#1f2937;
 }
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -273,10 +255,6 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .douban-card[data-group-card]:focus-visible{outline:none;box-shadow:inset 0 0 0 1px rgba(155,185,232,0.28);transform:translateY(-1px)}
 /* 画质探测成功后的徽章：只加一层极淡内描边区分，不改既有黄色文字与角标定位 */
 .wdtv-quality-badge.wdtv-quality-probed{box-shadow:inset 0 0 0 1px rgba(155,185,232,0.22)}
-.wdtv-theme-select{padding:5px 10px;border-radius:9px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--pale);font-size:0.78rem;font-family:'Noto Sans SC',sans-serif;outline:none;cursor:pointer;transition:background 0.2s}
-.wdtv-theme-select:hover{background:rgba(155,180,218,0.14)}
-.wdtv-theme-select:focus-visible{outline:none;background:rgba(155,180,218,0.12)}
-.wdtv-theme-select option{background:#1e2740;color:#e0e6f2}
 /* 批次3：推荐源切换 / 数据源订阅。用 id + 子选择器，不依赖 JS 生成的具体类名 */
 .wdtv-recommend-select{padding:4px 9px;border-radius:9px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--pale);font-size:0.75rem;font-family:'Noto Sans SC',sans-serif;outline:none;cursor:pointer;transition:background 0.2s}
 .wdtv-recommend-select:hover{background:rgba(155,180,218,0.14)}
@@ -995,16 +973,12 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <label class="wdtv-toggle"><input type="checkbox" id="dynamicEffectsToggle" checked><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
     <div class="wdtv-settings-row">
-      <div class="wdtv-sr-text"><div class="wdtv-sr-label">分片广告过滤</div><div class="wdtv-sr-desc">关闭可减少旧版浏览器卡顿</div></div>
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">分片广告过滤</div><div class="wdtv-sr-desc">自动识别并剔除视频清单中的广告分片，观看和下载更清爽</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="adFilterToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
-    <div class="wdtv-settings-row" title="开启后，进入未能高置信识别的可疑广告时段时自动 seek 跳过（默认关闭）">
-      <div class="wdtv-sr-text"><div class="wdtv-sr-label">广告自动跳过</div><div class="wdtv-sr-desc">可疑广告时段播放时自动跳过（默认关闭）</div></div>
+    <div class="wdtv-settings-row" title="开启后，进入未能高置信识别的可疑广告时段时自动 seek 跳过">
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">广告自动跳过</div><div class="wdtv-sr-desc">可疑广告时段播放时自动跳过</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="adAutoSkipToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
-    </div>
-    <div class="wdtv-settings-row" title="手动标记片头/中段/片尾后，同剧各集自动跳过；与「广告自动跳过」互不影响（默认关闭）">
-      <div class="wdtv-sr-text"><div class="wdtv-sr-label">片头片尾跳过标记</div><div class="wdtv-sr-desc">标记一次，同剧各集自动跳；跳过时可撤销</div></div>
-      <label class="wdtv-toggle"><input type="checkbox" id="skipMarksToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
     <div class="wdtv-settings-row">
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">豆瓣热门推荐</div><div class="wdtv-sr-desc">首页显示豆瓣热门影视内容</div></div>
@@ -1022,21 +996,13 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">流量竞速兜底</div><div class="wdtv-sr-desc">直连过慢时自动代理并行竞速，多耗流量换流畅</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="raceHedgeToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
-    <div class="wdtv-settings-row">
-      <div class="wdtv-sr-text"><div class="wdtv-sr-label">界面主题</div><div class="wdtv-sr-desc">默认深色；切换即时生效并记住选择</div></div>
-      <select id="wdtvThemeSelect" class="wdtv-theme-select" aria-label="界面主题">
-        <option value="dark">深色</option>
-        <option value="light">浅色</option>
-        <option value="system">跟随系统</option>
-      </select>
-    </div>
     <div class="wdtv-settings-row" title="开启后对搜索卡片探测真实分辨率，会产生少量额外请求；默认关闭">
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">卡片画质探测</div><div class="wdtv-sr-desc">开启后探测真实分辨率，并用于展开面板排序</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="wdtvQualityProbeToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
   </div>
-  <!-- 弹幕设置 -->
-  <div class="wdtv-settings-block">
+  <!-- 弹幕设置：按需求整组隐藏（保留 DOM 与初始化逻辑，避免影响现有弹幕功能） -->
+  <div class="wdtv-settings-block" style="display:none" aria-hidden="true">
     <label class="block-label">弹幕设置</label>
     <div class="wdtv-settings-row">
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">弹幕功能</div><div class="wdtv-sr-desc">关闭后播放器不加载与渲染弹幕</div></div>
@@ -1118,12 +1084,11 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 
 <!-- External JS -->
 <script src="libs/tailwindcss.min.js"></script>
-<script src="js/config.js?v=19"></script>
+<script src="js/config.js?v=25"></script>
 <!-- 批次2：LibreTV 优势项移植模块（零构建、普通 script，加载顺序即依赖） -->
 <script src="js/states.js?v=1"></script>
 <script src="js/focus-trap.js?v=1"></script>
 <script src="js/image-fallback.js?v=2"></script>
-<script src="js/theme.js?v=3"></script>
 <script src="js/remarks.js?v=1"></script>
 <script src="js/aggregate.js?v=1"></script>
 <script src="js/quality.js?v=2"></script>
@@ -1131,7 +1096,7 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 <script src="js/ad-filter.js?v=3"></script>
 <script src="js/video-cache.js?v=96"></script>
 <script src="js/downloader.js?v=22"></script>
-<script src="js/connection-test.js?v=11"></script>
+<script src="js/connection-test.js?v=12"></script>
 <script src="js/customer_site.js?v=8"></script>
 <!-- 批次3：数据源订阅（需在 app.js 之前；解析全在浏览器端，直连优先 + /proxy/ 兜底） -->
 <script src="js/source-subscription.js?v=3"></script>
@@ -1140,14 +1105,14 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 <script src="js/api.js?v=16"></script>
 <!-- 批次3：首页推荐增源（需在 douban.js 之前；60s 榜单直连，Bangumi 可选默认关闭） -->
 <script src="js/recommend-sources.js?v=3"></script>
-<script src="js/douban.js?v=14"></script>
-<script src="js/search.js?v=13"></script>
-<script src="js/app.js?v=42"></script>
+<script src="js/douban.js?v=17"></script>
+<script src="js/search.js?v=14"></script>
+<script src="js/app.js?v=43"></script>
 <script src="js/cinema.js?v=17"></script>
 <script src="js/pwa-register.js?v=8"></script>
-<script src="js/index-page.js?v=12"></script>
+<script src="js/index-page.js?v=13"></script>
 <script src="js/dock.js?v=3"></script>
-<script src="js/cloud-sync.js?v=8"></script>
+<script src="js/cloud-sync.js?v=9"></script>
 <script src="js/cloud-sync-ui.js?v=6"></script>
 <script src="js/space.js?v=5"></script>
 

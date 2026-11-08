@@ -542,6 +542,13 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
     
     sensitiveHeaders.forEach(header => delete headers[header]);
 
+    // axios 默认自动解压 gzip/br，但会保留上游的 content-length（压缩后长度）。
+    // 本地 /proxy/ 若原样透传该头，浏览器/undici 会按压缩长度截断解压后的 JSON
+    // （实测如意详情 6129B 被截为 1983B，JSON 解析失败、拿不到播放地址）。
+    // 与 Cloudflare Functions 代理保持一致：透传前剔除长度与编码头，改由 Node 分块输出。
+    delete headers['content-length'];
+    delete headers['content-encoding'];
+
     // 本地代理缓存策略：点播分片/图片可长缓存；m3u8 播放列表用短缓存
     const upstreamType = (headers['content-type'] || '').toLowerCase();
     headers['cache-control'] = upstreamType.includes('mpegurl')

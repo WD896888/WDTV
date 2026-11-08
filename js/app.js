@@ -1,27 +1,8 @@
-// ===== 批次4 A2：片头/中段/片尾跳过标记总开关 =====
-// 单一键 wdtvSkipMarks 存 { enabled, marks }，与 player.js / cloud-sync 共用同一结构。
-// 读写都容错：脏数据、localStorage 异常一律按「默认关闭」处理，绝不抛错影响首屏。
-function wdtvReadSkipMarksStore() {
-    try {
-        const raw = localStorage.getItem('wdtvSkipMarks');
-        if (!raw) return { enabled: false, marks: {} };
-        const obj = JSON.parse(raw);
-        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { enabled: false, marks: {} };
-        return { enabled: obj.enabled === true, marks: (obj.marks && typeof obj.marks === 'object' && !Array.isArray(obj.marks)) ? obj.marks : {} };
-    } catch (e) { return { enabled: false, marks: {} }; }
-}
-function wdtvReadSkipMarksEnabled() { return wdtvReadSkipMarksStore().enabled; }
-function wdtvWriteSkipMarksEnabled(on) {
-    try {
-        const store = wdtvReadSkipMarksStore();
-        store.enabled = !!on;
-        store.updatedAt = Date.now();
-        localStorage.setItem('wdtvSkipMarks', JSON.stringify(store));
-    } catch (e) { /* 存储不可用时静默降级 */ }
-}
-
 // 全局变量
-let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || 'null') || Object.keys(API_SITES); // 默认选中所有资源
+// 默认启用集合：配置里标记 disabled 的源保留用于回溯，但不参与默认选中与搜索。
+const enabledAPIKeys = () => Object.keys(API_SITES).filter(k => API_SITES[k] && !API_SITES[k].disabled);
+let selectedAPIs = (JSON.parse(localStorage.getItem('selectedAPIs') || 'null') || enabledAPIKeys())
+    .filter(k => API_SITES[k] && !API_SITES[k].disabled);
 
 // 添加当前播放的集数索引
 let currentEpisodeIndex = 0;
@@ -60,8 +41,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 设置默认API选择（如果是第一次加载）
     if (!localStorage.getItem('hasInitializedDefaults_v2')) {
-        // 默认选中所有资源
-        selectedAPIs = Object.keys(API_SITES);
+        // 默认选中所有可用资源（已停用源不参与）
+        selectedAPIs = enabledAPIKeys();
         localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
 
         // 默认选中过滤开关
@@ -87,13 +68,6 @@ document.addEventListener('DOMContentLoaded', function () {
             localStorage.setItem(PLAYER_CONFIG.adAutoSkipStorage, 'false');
         }
         adAutoSkipToggle.checked = localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) === 'true';
-    }
-
-    // 批次4 A2：片头/中段/片尾跳过标记总开关（默认关闭）
-    // 单一键 wdtvSkipMarks 存 { enabled, marks }；读时保留 marks，缺省视为关闭。
-    const skipMarksToggle = document.getElementById('skipMarksToggle');
-    if (skipMarksToggle) {
-        skipMarksToggle.checked = wdtvReadSkipMarksEnabled();
     }
 
     // 设置动态效果开关初始状态（默认开启）
@@ -245,20 +219,32 @@ function initAPICheckboxes() {
 
     Object.keys(API_SITES).forEach(apiKey => {
         const api = API_SITES[apiKey];
-        const checked = selectedAPIs.includes(apiKey);
+        const disabled = api.disabled === true;
+        const checked = !disabled && selectedAPIs.includes(apiKey);
 
         const checkbox = document.createElement('div');
         checkbox.className = 'flex items-center';
         checkbox.innerHTML = `
             <input type="checkbox" id="api_${apiKey}"
                    class="form-checkbox text-blue-600"
-                   ${checked ? 'checked' : ''}
+                   ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}
                    data-api="${apiKey}">
-            <label for="api_${apiKey}" class="ml-1 text-xs text-gray-600 truncate">${api.name}</label>
+            <label for="api_${apiKey}" class="ml-1 text-xs text-gray-600 truncate">${api.name}${disabled ? '（已停用）' : ''}</label>
         `;
+        // 配置层停用：保留条目便于回溯，只给不可勾选的说明徽章
+        if (disabled) {
+            const offBadge = document.createElement('span');
+            offBadge.style.cssText = 'display:inline-flex;align-items:center;flex-shrink:0;'
+                + 'margin-left:6px;padding:1px 6px;border-radius:6px;'
+                + 'background:rgba(140,130,110,0.14);color:var(--text-muted,#9ca3af);'
+                + 'font-size:0.68rem;line-height:1.4;white-space:nowrap;';
+            offBadge.textContent = '已停用';
+            offBadge.title = api.disabledReason || '该源已停用';
+            checkbox.appendChild(offBadge);
+        }
         // 源健康度徽章：停用剩余时间 / 长期停用 / 连续失败次数，停用时提供手动恢复
         // 追加在既有 input + label 之后，不改变 checkbox 结构与 updateSelectedAPIs 逻辑
-        const healthStatus = (typeof window.getSourceHealthStatus === 'function')
+        const healthStatus = !disabled && (typeof window.getSourceHealthStatus === 'function')
             ? window.getSourceHealthStatus(apiKey) : null;
         if (healthStatus) {
             let badgeText = '';
@@ -311,8 +297,8 @@ function initAPICheckboxes() {
 
 // 更新选中的API列表
 function updateSelectedAPIs() {
-    // 获取所有API复选框
-    const builtInApiCheckboxes = document.querySelectorAll('#apiCheckboxes input:checked');
+    // 获取所有API复选框（配置层已停用的源不可勾选，天然排除）
+    const builtInApiCheckboxes = document.querySelectorAll('#apiCheckboxes input:checked:not(:disabled)');
 
     // 获取选中的API
     selectedAPIs = Array.from(builtInApiCheckboxes).map(input => input.dataset.api);
@@ -337,6 +323,11 @@ function selectAllAPIs(selectAll = true) {
     const checkboxes = document.querySelectorAll('#apiCheckboxes input[type="checkbox"]');
 
     checkboxes.forEach(checkbox => {
+        // 配置层停用/健康度禁用的源不参与全选
+        if (checkbox.disabled) {
+            checkbox.checked = false;
+            return;
+        }
         checkbox.checked = selectAll;
     });
 
@@ -404,14 +395,6 @@ function setupEventListeners() {
     if (adAutoSkipToggle) {
         adAutoSkipToggle.addEventListener('change', function (e) {
             localStorage.setItem(PLAYER_CONFIG.adAutoSkipStorage, e.target.checked);
-        });
-    }
-
-    // 批次4 A2：片头/中段/片尾跳过标记开关（与「广告自动跳过」互不影响，默认关）
-    const skipMarksToggle = document.getElementById('skipMarksToggle');
-    if (skipMarksToggle) {
-        skipMarksToggle.addEventListener('change', function (e) {
-            wdtvWriteSkipMarksEnabled(e.target.checked);
         });
     }
 

@@ -1,6 +1,7 @@
 /* ============================================================
-   WDTV 片头 / 中段 / 片尾跳过标记（仅 player.html 引用）
+   WDTV 片头片尾跳过（仅 player.html 引用）
    纯表现层：结构由 js/player.js 生成，类名冻结，勿随意改动。
+   包含：进度条色带、12s 撤销条、画面内「跳过片头/片尾」按钮、播放器内开关。
    配色：半透明低饱和玻璃 + 极淡边框；hover/focus 不加白色描边或白底；
    统一 outline:none 关闭焦点环；不使用重投影。
    ============================================================ */
@@ -17,20 +18,8 @@
   --wdtv-skip-opening: rgba(122, 158, 198, 0.32);
   --wdtv-skip-middle: rgba(178, 156, 112, 0.30);
   --wdtv-skip-ending: rgba(138, 166, 150, 0.32);
-}
-
-/* 亮色偏好下换成浅玻璃 + 深文字，两种主题下都自带底色、均可读 */
-@media (prefers-color-scheme: light) {
-  :root {
-    --wdtv-skip-glass: rgba(248, 250, 255, 0.78);
-    --wdtv-skip-glass-strong: rgba(248, 250, 255, 0.90);
-    --wdtv-skip-border: rgba(60, 80, 120, 0.16);
-    --wdtv-skip-border-hover: rgba(60, 80, 120, 0.30);
-    --wdtv-skip-text: rgba(28, 38, 62, 0.92);
-    --wdtv-skip-text-dim: rgba(48, 62, 92, 0.74);
-    --wdtv-skip-hover: rgba(90, 120, 170, 0.12);
-    --wdtv-skip-hover-strong: rgba(90, 120, 170, 0.20);
-  }
+  /* 面板内开关/聚焦的强调色：与播放器现有主题蓝一致；外部入口图标不使用它 */
+  --wdtv-skip-accent: #6fa8e8;
 }
 
 /* ============================================================
@@ -145,80 +134,556 @@
 }
 
 /* ============================================================
-   3) 非模态侧栏（不加遮罩、不锁页面）
+   3) 画面内「跳过片头 / 片尾」按钮
+   只在低置信度 / 部分数据时出现，由用户点击才跳；播放器内左下角、
+   位于控制栏上方，不遮挡进度条与原有控件；移动端加大触控面积。
    ============================================================ */
-.wdtv-skip-panel {
+/* 透明玻璃质感：近乎无色的白玻璃 + 背景模糊，亮/暗画面都靠纯白字与轻投影保证可读。
+   位置、尺寸、圆角、触控区保持原值；只替换底色与描边。 */
+.wdtv-skip-cta {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 320px;
-  max-width: 88vw;
-  height: 100%;
-  padding: 18px 16px;
-  overflow-y: auto;
-  background: var(--wdtv-skip-glass-strong);
-  border-left: 1px solid var(--wdtv-skip-border);
-  color: var(--wdtv-skip-text);
+  left: 16px;
+  bottom: 78px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 16px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
   font-family: 'Noto Sans SC', sans-serif;
   font-size: 13px;
-  line-height: 1.55;
-  backdrop-filter: blur(14px) saturate(1.1);
-  -webkit-backdrop-filter: blur(14px) saturate(1.1);
-  box-shadow: none;
-  outline: none;
-  pointer-events: none;
-  z-index: 9400;
-}
-
-.wdtv-skip-panel__row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 8px;
-  border-bottom: 1px solid var(--wdtv-skip-border);
-  color: var(--wdtv-skip-text-dim);
-}
-
-.wdtv-skip-panel__btn {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--wdtv-skip-border);
-  background: var(--wdtv-skip-hover);
-  color: var(--wdtv-skip-text);
-  font-family: inherit;
-  font-size: inherit;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
   cursor: pointer;
   outline: none;
   box-shadow: none;
-  pointer-events: auto;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 9500;
+  transition: background 0.2s ease, border-color 0.2s ease,
+    backdrop-filter 0.2s ease, -webkit-backdrop-filter 0.2s ease,
+    transform 0.12s ease;
 }
 
-.wdtv-skip-panel__btn:hover,
-.wdtv-skip-panel__btn:focus,
-.wdtv-skip-panel__btn:focus-visible {
-  background: var(--wdtv-skip-hover-strong);
-  border-color: var(--wdtv-skip-border-hover);
+/* hover/focus/active 只微调透明度与模糊强度，绝不变成彩色或加深成黑块 */
+.wdtv-skip-cta:hover,
+.wdtv-skip-cta:focus,
+.wdtv-skip-cta:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.30);
+  backdrop-filter: blur(18px) saturate(1.22);
+  -webkit-backdrop-filter: blur(18px) saturate(1.22);
   outline: none;
   box-shadow: none;
 }
 
+.wdtv-skip-cta:active {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.34);
+  transform: scale(0.96);
+}
+
+/* 不支持背景模糊时的降级：更浅的白色半透明底 + 稍强文字投影，仍不回到深黑 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .wdtv-skip-cta {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.30);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  }
+
+  .wdtv-skip-cta:hover,
+  .wdtv-skip-cta:focus,
+  .wdtv-skip-cta:focus-visible {
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.38);
+  }
+
+  .wdtv-skip-cta:active {
+    background: rgba(255, 255, 255, 0.26);
+  }
+}
+
 /* ============================================================
-   4) 四段式断点（≤640 / 641-768 / 769-1024 / ≥1025）
+   4) 播放器内入口按钮（右上角工具组内，与控制栏同步显隐）
+   纯图标：复用 .wdtv-dm-topbtn 的 32px 容器 / 圆角 / 悬停 / 按下反馈。
+   图标始终白色，不用颜色表达开关状态；悬停/聚焦只提高白色亮度。
+   低置信可手动跳时仅保留一个白色细微圆点，不用彩色标记。
+   ============================================================ */
+.wdtv-skip-switch {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+}
+
+/* 触控命中区：视觉仍与相邻按钮同尺寸，点击范围扩到 ≥44px */
+.wdtv-skip-switch::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 10px;
+}
+
+/* 所有状态统一白色：开启/关闭只由面板内的开关表达 */
+.wdtv-skip-switch,
+.wdtv-skip-switch:hover,
+.wdtv-skip-switch:focus,
+.wdtv-skip-switch:focus-visible,
+.wdtv-skip-switch.is-on,
+.wdtv-skip-switch.is-on:hover,
+.wdtv-skip-switch[data-state="off"] {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.wdtv-skip-switch:hover,
+.wdtv-skip-switch:focus-visible {
+  color: #fff;
+  outline: none;
+}
+
+.wdtv-skip-switch svg { opacity: 1; }
+
+/* 低置信可手动跳：仅白色小圆点（不表达开关状态，只提示可手动点击） */
+.wdtv-skip-switch[data-manual="1"]::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.72);
+  pointer-events: none;
+}
+
+.wdtv-skip-switch:focus-visible {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.42);
+}
+
+.wdtv-skip-switch:active { transform: scale(0.92); }
+
+/* ============================================================
+   4.1) 开关弹出面板
+   结构：标题 / 状态摘要 / 总开关 / 两个子开关 / 自定义时长 / 操作。
+   深色玻璃 + 细分隔线分层，不叠卡片、不使用渐变或发光。
+   垂直节奏 4 / 8 / 12；开关行用 44px 行高承担触控，不靠留白。
+   ============================================================ */
+.wdtv-skip-menu {
+  position: absolute;
+  top: 46px;
+  right: 12px;
+  z-index: 9600;
+  display: none;
+  flex-direction: column;
+  width: min(340px, calc(100% - 24px));
+  /* 顶部 46px + 底部留给控制条约 50px，面板底边不会压到进度条/播放按钮 */
+  max-height: calc(100% - 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-radius: 14px;
+  background: var(--wdtv-skip-glass-strong);
+  border: 1px solid var(--wdtv-skip-border);
+  color: var(--wdtv-skip-text);
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  backdrop-filter: blur(12px) saturate(1.15);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
+  box-shadow: none;
+  outline: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wdtv-skip-menu.is-open { display: flex; }
+
+.wdtv-skip-menu__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wdtv-skip-menu__title {
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--wdtv-skip-text);
+}
+
+/* 唯一状态行：纯文字 + 白色小圆点，无边框、无背景卡片 */
+.wdtv-skip-menu__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--wdtv-skip-text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.wdtv-skip-menu__status::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.wdtv-skip-menu__status[data-state="off"] { color: rgba(214, 227, 246, 0.48); }
+.wdtv-skip-menu__status[data-state="off"]::before { background: rgba(255, 255, 255, 0.26); }
+.wdtv-skip-menu__status[data-state="auto"],
+.wdtv-skip-menu__status[data-state="both"],
+.wdtv-skip-menu__status[data-state="custom"] { color: var(--wdtv-skip-text); }
+.wdtv-skip-menu__status[data-state="both"]::before,
+.wdtv-skip-menu__status[data-state="custom"]::before { background: rgba(255, 255, 255, 0.78); }
+.wdtv-skip-menu__status[data-state="none"] { color: rgba(214, 227, 246, 0.58); }
+
+/* 总开关行：始终可见，关闭时下面主体平滑收起 */
+.wdtv-skip-menu__master {
+  margin-top: 8px;
+}
+
+/* 开关行：标签左、滑块右；行高 44px 保证触控，行间用细分隔线 */
+.wdtv-skip-menu__rows {
+  margin-top: 8px;
+  border-top: 1px solid rgba(200, 220, 245, 0.10);
+}
+
+.wdtv-skip-menu__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wdtv-skip-menu__row + .wdtv-skip-menu__row {
+  border-top: 1px solid rgba(200, 220, 245, 0.10);
+}
+
+.wdtv-skip-menu__rowlabel {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--wdtv-skip-text);
+  transition: color 0.18s ease;
+}
+
+.wdtv-skip-menu__row:not(.is-on) .wdtv-skip-menu__rowlabel {
+  color: var(--wdtv-skip-text-dim);
+}
+
+/* iOS 风格滑块：40×24，统一左右对齐；开启态用主题强调色，关闭态为灰色 */
+.wdtv-skip-menu__toggle {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  width: 40px;
+  height: 24px;
+}
+
+.wdtv-skip-menu__toggle input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.wdtv-skip-menu__track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 0.2s ease;
+}
+
+.wdtv-skip-menu__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(238, 245, 255, 0.82);
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.2s ease;
+}
+
+.wdtv-skip-menu__toggle input:checked ~ .wdtv-skip-menu__track {
+  background: var(--wdtv-skip-accent);
+}
+
+.wdtv-skip-menu__toggle input:checked ~ .wdtv-skip-menu__track .wdtv-skip-menu__thumb {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+.wdtv-skip-menu__toggle input:focus-visible ~ .wdtv-skip-menu__track {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.30);
+}
+
+/* 折叠容器：grid 0fr → 1fr，展开/收起平滑且不产生空白 */
+.wdtv-skip-menu__body,
+.wdtv-skip-menu__custom {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 0.24s ease, opacity 0.18s ease;
+}
+
+.wdtv-skip-menu__body.is-open,
+.wdtv-skip-menu__custom.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.wdtv-skip-menu__body-inner,
+.wdtv-skip-menu__custom-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 自定义时长区：与上方开关行用一条分隔线隔开，不用外框 */
+.wdtv-skip-menu__durations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(200, 220, 245, 0.10);
+}
+
+.wdtv-skip-menu__field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wdtv-skip-menu__label {
+  flex: 0 0 auto;
+  color: var(--wdtv-skip-text-dim);
+  font-size: 12px;
+}
+
+.wdtv-skip-menu__time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wdtv-skip-menu__num {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* −/＋：克制的无底色图标按钮，仅悬停出现极淡白色底 */
+.wdtv-skip-menu__num button {
+  width: 26px;
+  height: 28px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(230, 238, 252, 0.72);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  touch-action: manipulation;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.wdtv-skip-menu__num button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--wdtv-skip-text);
+}
+
+.wdtv-skip-menu__num input {
+  width: 42px;
+  height: 28px;
+  margin: 0;
+  padding: 0 4px;
+  border-radius: 7px;
+  border: 1px solid var(--wdtv-skip-border);
+  background: rgba(10, 16, 28, 0.42);
+  color: var(--wdtv-skip-text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 28px;
+  text-align: center;
+  outline: none;
+  box-shadow: none;
+  transition: border-color 0.15s ease;
+}
+
+.wdtv-skip-menu__num input::placeholder {
+  color: rgba(214, 227, 246, 0.36);
+}
+
+/* 聚焦：主题色细边框，不做光晕 */
+.wdtv-skip-menu__num input:focus {
+  border-color: rgba(111, 168, 232, 0.78);
+  outline: none;
+  box-shadow: none;
+}
+
+/* 自定义 ± 按钮已提供微调，隐藏原生数字滚轮避免双入口 */
+.wdtv-skip-menu__num input::-webkit-outer-spin-button,
+.wdtv-skip-menu__num input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.wdtv-skip-menu__num input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.wdtv-skip-menu__unit {
+  flex: 0 0 auto;
+  color: rgba(214, 227, 246, 0.55);
+  font-size: 11px;
+}
+
+.wdtv-skip-menu__hint {
+  margin-top: 8px;
+  color: var(--wdtv-skip-text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.wdtv-skip-menu__msg {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--wdtv-skip-text-dim);
+}
+
+.wdtv-skip-menu__msg.is-ok { color: rgba(230, 238, 252, 0.82); }
+.wdtv-skip-menu__msg.is-error { color: rgba(248, 214, 214, 0.92); }
+
+.wdtv-skip-menu__actions {
+  display: flex;
+  align-items: center;
+  margin-top: 10px;
+}
+
+/* 底部操作：单色低强调主按钮 */
+.wdtv-skip-menu__actions button {
+  flex: 1 1 0;
+  min-height: 36px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--wdtv-skip-text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  white-space: nowrap;
+  touch-action: manipulation;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.wdtv-skip-menu__actions button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.20);
+}
+
+/* 键盘焦点：白色细环，清晰但不刺眼 */
+.wdtv-skip-menu__num button:focus-visible,
+.wdtv-skip-menu__num input:focus-visible,
+.wdtv-skip-menu__actions button:focus-visible {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.34);
+  border-color: rgba(255, 255, 255, 0.30);
+}
+
+/* [hidden] 必须真正 display:none：作者样式会覆盖 UA 默认值 */
+.wdtv-skip-menu__msg[hidden],
+.wdtv-skip-menu__hint[hidden] {
+  display: none !important;
+}
+
+/* ============================================================
+   5) 四段式断点（≤640 / 641-768 / 769-1024 / ≥1025）
    ============================================================ */
 @media (min-width: 1025px) {
   .wdtv-skip-toast { bottom: 96px; font-size: 13px; }
-  .wdtv-skip-panel { width: 320px; }
+  .wdtv-skip-cta { bottom: 78px; left: 16px; }
 }
 
 @media (min-width: 769px) and (max-width: 1024px) {
   .wdtv-skip-toast { bottom: 88px; font-size: 13px; }
-  .wdtv-skip-panel { width: 300px; }
+  .wdtv-skip-cta { bottom: 72px; left: 14px; }
 }
 
 @media (min-width: 641px) and (max-width: 768px) {
   .wdtv-skip-toast { bottom: 80px; font-size: 12.5px; }
-  .wdtv-skip-panel { width: 280px; }
+  .wdtv-skip-cta { bottom: 66px; left: 12px; font-size: 12.5px; }
+}
+
+/* 平板与中等窗口：按钮与面板适度放大，控件更好点 */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .wdtv-skip-switch { width: 36px; height: 36px; }
+  .wdtv-skip-switch::after { inset: -4px; }
+  .wdtv-skip-menu {
+    /* 42px：让开 8px 顶栏 + 32px 按钮；底部再预留 ≥44px 控制条 */
+    top: 42px;
+    width: min(348px, calc(100% - 20px));
+    /* 顶部 42px + 底部 50px 控制条安全区 */
+    max-height: calc(100% - 92px);
+  }
+  .wdtv-skip-menu__row { min-height: 46px; }
+  .wdtv-skip-menu__num button { width: 28px; height: 30px; }
+  .wdtv-skip-menu__num input { width: 44px; height: 30px; line-height: 30px; }
+  .wdtv-skip-menu__actions button { min-height: 38px; }
+}
+
+/* 矮窗口 / 横屏内嵌：面板贴顶给底部控制条留空间，内容超高时内部滚动 */
+@media (max-height: 420px) {
+  .wdtv-skip-menu {
+    top: 4px;
+    /* 顶部 4px + 底部留 56px 给控制条与安全区，面板不会压住进度条 / 播放按钮 */
+    max-height: calc(100% - 60px - env(safe-area-inset-bottom, 0px));
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-radius: 12px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -231,20 +696,71 @@
     border-radius: 10px;
   }
   .wdtv-skip-toast__undo { padding: 4px 10px; }
-  .wdtv-skip-panel {
-    width: 100%;
-    max-width: 100vw;
-    padding: 14px 12px;
-    border-left: 0;
+  .wdtv-skip-cta {
+    left: 10px;
+    bottom: 62px;
+    min-height: 38px;
+    padding: 9px 16px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+  .wdtv-skip-switch {
+    width: 38px;
+    height: 38px;
+  }
+  /* 视觉 38px + 四周 3px 命中区 = 44px */
+  .wdtv-skip-switch::after { inset: -3px; }
+  /* 移动端：左右各留 8px、贴顶；四层 grid 区域（标题 / 状态 / 总开关 / 主体），
+     主体内超高时由面板自身滚动，底部预留控制条 + 安全区。 */
+  .wdtv-skip-menu {
+    top: 4px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+    /* 顶部 4px + 底部 50px 控制条安全区 + 安全区环境变量 */
+    max-height: calc(100% - 54px - env(safe-area-inset-bottom, 0px));
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    font-size: 12.5px;
+    border-radius: 12px;
+  }
+  .wdtv-skip-menu.is-open {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'head'
+      'status'
+      'master'
+      'body';
+    align-content: start;
+  }
+  .wdtv-skip-menu__head { grid-area: head; }
+  .wdtv-skip-menu__title { font-size: 13px; }
+  .wdtv-skip-menu__status {
+    grid-area: status;
+    margin-top: 4px;
     font-size: 12px;
   }
-  .wdtv-skip-panel__row { padding: 9px 6px; }
+  .wdtv-skip-menu__master {
+    grid-area: master;
+    margin-top: 8px;
+    border-top: 1px solid rgba(200, 220, 245, 0.10);
+  }
+  .wdtv-skip-menu__body { grid-area: body; min-width: 0; }
+  .wdtv-skip-menu__body-inner,
+  .wdtv-skip-menu__custom-inner { min-width: 0; }
+  .wdtv-skip-menu__row { min-height: 44px; }
+  .wdtv-skip-menu__rowlabel { font-size: 13px; }
+  .wdtv-skip-menu__label { font-size: 12px; }
+  .wdtv-skip-menu__num button { width: 28px; height: 30px; font-size: 14px; }
+  .wdtv-skip-menu__num input { width: 40px; height: 30px; line-height: 30px; }
+  .wdtv-skip-menu__hint { font-size: 12px; }
+  .wdtv-skip-menu__actions button { min-height: 36px; }
 }
 
 /* 兜底：仅当宿主退化为 document.body（播放器容器尚未就绪）时，fixed 相对视口，
    避免 absolute 相对初始包含块导致滚动偏移；挂在 .art-video-player / 全屏元素内部时
    一律走上面的 absolute，相对宿主定位。 */
 body > .wdtv-skip-toast,
-body > .wdtv-skip-panel {
+body > .wdtv-skip-cta {
   position: fixed;
 }

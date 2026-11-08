@@ -327,6 +327,58 @@ console.log('\n[回归] 占位标题隔离 / v3 迁移脏数据');
     JSON.stringify(dirty.marks.k));
 }
 
+console.log('\n[自定义时长] 校验 / 展开 / 与自动结果合并');
+{
+  t('导出 normalizeCustomDurations', typeof S.normalizeCustomDurations === 'function');
+  t('导出 buildCustomSegments', typeof S.buildCustomSegments === 'function');
+
+  // 校验：正常值
+  const ok = S.normalizeCustomDurations({ opening: 90, ending: '60' }, 1410);
+  t('校验：数字与数字字符串都接受', ok.ok && ok.opening === 90 && ok.ending === 60);
+  const blank = S.normalizeCustomDurations({ opening: '', ending: '' }, 1410);
+  t('校验：留空表示未设置', blank.ok && blank.opening === null && blank.ending === null);
+  const zero = S.normalizeCustomDurations({ opening: '0', ending: 0 }, 1410);
+  t('校验：0 等同留空', zero.ok && zero.opening === null && zero.ending === null);
+
+  // 校验：非法值
+  t('校验：非数字拒绝', !S.normalizeCustomDurations({ opening: 'abc' }, 1410).ok);
+  t('校验：负数拒绝', !S.normalizeCustomDurations({ opening: -5 }, 1410).ok);
+  t('校验：小于 3 秒拒绝', !S.normalizeCustomDurations({ opening: 2 }, 1410).ok);
+  t('校验：片头超过片长拒绝', !S.normalizeCustomDurations({ opening: 1408 }, 1410).ok);
+  t('校验：片尾超过片长拒绝', !S.normalizeCustomDurations({ ending: 1408 }, 1410).ok);
+  t('校验：片头+片尾挤占正片拒绝', !S.normalizeCustomDurations({ opening: 800, ending: 620 }, 1410).ok);
+  t('校验：片长未知时只做绝对校验', S.normalizeCustomDurations({ opening: 90, ending: 60 }, 0).ok);
+  t('校验：片长未知仍拒绝非数字', !S.normalizeCustomDurations({ opening: 'x' }, 0).ok);
+
+  // 展开：片头 0→N；片尾 (片长−N)→片长；均高置信
+  const segs = S.buildCustomSegments({ opening: 90, ending: 60 }, 1410);
+  const op = segs.filter(function (s) { return s.type === 'opening'; })[0];
+  const ed = segs.filter(function (s) { return s.type === 'ending'; })[0];
+  t('展开：片头 0→90', !!op && op.start === 0 && op.end === 90 && op.autoEligible === true);
+  t('展开：片尾 1350→1410', !!ed && ed.start === 1350 && ed.end === 1410 && ed.autoEligible === true);
+  t('展开：片长未知返回空（待元数据就绪再生效）', S.buildCustomSegments({ opening: 90 }, 0).length === 0);
+  t('展开：非对象不抛错', S.buildCustomSegments(null, 1410).length === 0);
+
+  // 与自动结果走同一时间轴校验：自定义段能通过 resolveSegments
+  const resolved = S.resolveSegments({ enabled: true, segments: segs }, 1410);
+  t('展开：自定义段可通过 resolveSegments', resolved.length === 2 &&
+    resolved[0].type === 'opening' && resolved[1].type === 'ending');
+
+  // 高置信自定义段触发自动跳（片头：任意位置进入区间；片尾：连续播放跨过起点）
+  const autoIn = S.decideAutoSkip({
+    now: 5000, lastSkipAt: 0, cooldownMs: 1000, paused: false, duration: 1410,
+    position: 30, previousPosition: 29, isUserSeeking: false, guestActive: false,
+    segments: resolved, suppressedKeys: []
+  });
+  t('自动跳：自定义片头区间内跳到设定秒数', !!autoIn && autoIn.kind === 'mark' && autoIn.target === 90);
+  const autoEnd = S.decideAutoSkip({
+    now: 5000, lastSkipAt: 0, cooldownMs: 1000, paused: false, duration: 1410,
+    position: 1351, previousPosition: 1349, isUserSeeking: false, guestActive: false,
+    segments: resolved, suppressedKeys: []
+  });
+  t('自动跳：连续播放跨过自定义片尾起点跳到结尾', !!autoEnd && autoEnd.kind === 'mark' && autoEnd.target === 1410);
+}
+
 console.log('\n========================================');
 console.log(`结果：${pass} 通过，${fail} 失败`);
 if (fail) { console.log('失败用例：' + fails.join(' | ')); process.exit(1); }

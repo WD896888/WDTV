@@ -5,7 +5,7 @@ window.prefetchAPISiteDns = (function () {
     return function () {
         try {
             Object.values(API_SITES).forEach(site => {
-                if (!site || !site.api) return;
+                if (!site || !site.api || site.disabled) return;
                 try {
                     const origin = new URL(site.api).origin;
                     if (prefetched.has(origin)) return;

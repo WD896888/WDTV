@@ -46,14 +46,15 @@ t('A3: 退避 timer 留在 player.js 闭包', player.includes('}, d.delayMs);'))
 t('A2: timeupdate 内 adAutoSkipCheck 调用恰好 1 处', count(player, /try \{ adAutoSkipCheck\(\); \}/g) === 1);
 t('A2: 只有 1 个 adAutoSkipCheck 函数定义', count(player, /function adAutoSkipCheck\(\)/g) === 1);
 t('A2: decideAutoSkip 调用恰好 1 处', count(player, /S\.decideAutoSkip\(/g) === 1);
-t('A2: 总开关关闭时完全零介入', player.includes('if (!adAutoSkipEnabled && !skipMarksEnabled) return;'));
+t('A2: 总开关关闭时完全零介入', player.includes('if (!adAutoSkipEnabled && !introSkipEnabled) return;'));
 t('A2: 两个自动 seek 共用 adSkipLastAt 冷却', player.includes('lastSkipAt: adSkipLastAt'));
-t('A2: 跳过标记默认关闭且接线 PLAYER_CONFIG（config.js 不再是死配置）',
-    player.includes('PLAYER_CONFIG.skipMarksStorage') && player.includes('PLAYER_CONFIG.skipMarksEnabled === true'));
+t('A2: 片头片尾开关默认开启且接线 PLAYER_CONFIG',
+    player.includes('PLAYER_CONFIG.introSkipStorage') &&
+    config.includes('introSkipEnabled: true') && config.includes("introSkipStorage: 'wdtvIntroSkipEnabled'"));
 t('A2: 12s 撤销窗常量', player.includes('WDTV_SKIP_UNDO_MS = 12000'));
 t('A2: 撤销后本集不再跳', player.includes('skipSuppressedThisEpisode.add(state.skipKey)'));
 t('A2: 换集清空本集抑制', player.includes('wdtvResetSkipEpisode()') && player.includes('skipSuppressedThisEpisode.clear()'));
-t('A2: 标记类快捷键一律要求 Shift', player.includes("if (!e.shiftKey || !skipMarksEnabled) return false;"));
+t('A2: 手动标记快捷键已移除', !/wdtvHandleSkipShortcut|Shift\+I|skipMiddlePending/.test(player));
 t('A2: 程序自动 seek 走统一抑制入口', player.includes('if (applyProgrammaticSeek(v, decision.target))'));
 t('A2: 进度恢复走统一抑制入口', player.includes('applyProgrammaticSeek(art.video, savedPosition)'));
 t('A2: 换档恢复走统一抑制入口', player.includes('applyProgrammaticSeek(art.video, qualitySwapSeek)'));
@@ -99,26 +100,35 @@ t('全局: 共看抑制桥导出且复用 suppress()',
     /suppressLocalSeek:\s*function\s*\(\s*\)\s*\{\s*suppress\(\);?\s*\}/.test(watchParty));
 t('全局: SYNC_LIST_KEYS 含 wdtvSkipMarks', cloudSync.includes("'wdtvSkipMarks'"));
 const syncArr = (cloudSync.match(/const SYNC_LIST_KEYS\s*=\s*\[([\s\S]*?)\];/) || [, ''])[1];
-t('全局: SYNC_LIST_KEYS 数组实际恰好 15 键', (syncArr.match(/'[^']+'/g) || []).length === 15,
+t('全局: SYNC_LIST_KEYS 数组实际恰好 14 键', (syncArr.match(/'[^']+'/g) || []).length === 14,
     String((syncArr.match(/'[^']+'/g) || []).length));
-t('全局: PLAYER_CONFIG 含跳过标记两键',
-    config.includes('skipMarksEnabled: false') && config.includes("skipMarksStorage: 'wdtvSkipMarks'"));
-t('全局: index.html 开关已加', indexHtml.includes('id="skipMarksToggle"'));
-t('全局: app.js 有读写辅助函数',
-    app.includes('function wdtvReadSkipMarksStore()') && app.includes('function wdtvWriteSkipMarksEnabled('));
-t('全局: README 快捷键表含 Shift+I/O/S/E/P',
-    ['Shift + I', 'Shift + O', 'Shift + S', 'Shift + E', 'Shift + P'].every(k => read('README.md').includes(k)));
+t('全局: PLAYER_CONFIG 含片头片尾键，且不再暴露数据源地址',
+    config.includes('introSkipEnabled: true') && config.includes("skipMarksStorage: 'wdtvSkipMarks'") &&
+    !config.includes('skipSourceEndpoint') && !config.includes('skipSourceTimeoutMs'));
+t('全局: 首页设置面板已移除片头片尾开关', !indexHtml.includes('skipMarksToggle'));
+t('全局: app.js 旧标记读写已移除',
+    !app.includes('function wdtvReadSkipMarksStore()') && !app.includes('function wdtvWriteSkipMarksEnabled('));
+t('全局: README 不再提供 Shift 标记快捷键',
+    ['Shift + I', 'Shift + O', 'Shift + S', 'Shift + E', 'Shift + P'].every(k => !read('README.md').includes(k)));
+t('全局: 取数层内置双源且只读（无用户配置、无上传入口）',
+    read('js/skip-source.js').includes('/api/skip-marks') &&
+    read('js/skip-source.js').includes('/api/skip-marks/introdb') &&
+    !read('js/skip-source.js').includes('skipSourceEndpoint') &&
+    read('js/skip-source.js').includes("credentials: 'omit'") &&
+    read('js/skip-source.js').includes("method: 'GET'") &&
+    !/XMLHttpRequest|POST|sendBeacon/.test(read('js/skip-source.js')));
 
 // ---- 5) 双副本与版本登记 ----
 // 版本号不写死：以 version-map.json 为单一来源，升版后断言自动跟随
-const NEW_ASSETS = ['js/playback-recovery.js', 'js/skip-marks.js', 'css/skip-marks.css'];
-t('发版: player.html 已引 3 个新资源且 ?v= 与 version-map 一致',
+const NEW_ASSETS = ['js/playback-recovery.js', 'js/skip-marks.js', 'js/skip-source.js', 'css/skip-marks.css'];
+t('发版: player.html 已引 4 个新资源且 ?v= 与 version-map 一致',
     NEW_ASSETS.every(a => playerHtml.includes(a + '?v=' + versionMap.assets[a])),
     JSON.stringify(NEW_ASSETS.map(a => a + '?v=' + versionMap.assets[a])));
 t('发版: 新 script 在 player.js 之前',
     playerHtml.indexOf('js/playback-recovery.js') < playerHtml.indexOf('js/player.js?v=') &&
-    playerHtml.indexOf('js/skip-marks.js?v=') < playerHtml.indexOf('js/player.js?v='));
-t('发版: version-map 已登记 3 个新资源',
+    playerHtml.indexOf('js/skip-marks.js?v=') < playerHtml.indexOf('js/player.js?v=') &&
+    playerHtml.indexOf('js/skip-source.js?v=') < playerHtml.indexOf('js/player.js?v='));
+t('发版: version-map 已登记 4 个新资源',
     NEW_ASSETS.every(a => Number.isInteger(versionMap.assets[a]) && versionMap.assets[a] >= 1));
 // 镜像同步已由 bump-version.mjs 的 sync/changelog 自动完成，
 // 这里把双副本一致性变成 npm test 的强制关卡，防止漏拷后全绿上线。
@@ -153,14 +163,116 @@ t('跳过标记(行为): 连续小步跨过片尾起点才触发',
     !!SM && (() => { const r = SM.decideAutoSkip(Object.assign({}, crossBase, { previousPosition: 1199 }));
         return !!r && r.kind === 'mark' && r.target === 1300; })());
 t('跳过标记: v3 迁移 outroStart 严格 >0', /rawMark\.outroStart > 0/.test(skipMarks));
-// player.js 本轮修复的调用链：重标顺序 / 全屏宿主 / 片尾撤销 / 退避 timer / 历史收敛
-const saveSeg = (player.match(/function wdtvSaveSkipSegment[\s\S]*?\n\}/) || [''])[0];
-t('播放器: 同类型重标时先过滤旧段再校验',
-    saveSeg.indexOf("filter(") !== -1 && saveSeg.indexOf('validateSegment(') !== -1 &&
-    saveSeg.indexOf("filter(") < saveSeg.indexOf('validateSegment('));
-t('播放器: 撤销条/侧栏挂到全屏可见宿主',
-    /function wdtvSkipOverlayHost/.test(player) && /fullscreenElement/.test(player) &&
-    /wdtvRelocateSkipOverlays/.test(player));
+// player.js 本轮修复的调用链：全屏宿主 / 片尾撤销 / 退避 timer / 历史收敛
+const cssSkip = read('css/skip-marks.css');
+t('播放器: 手动标记面板与写入已移除',
+    !/wdtvRenderSkipPanel|wdtvToggleSkipPanel|wdtvSaveSkipSegment|wdtv-skip-panel/.test(player + cssSkip));
+t('播放器: 低置信度按钮与播放器内开关已接线',
+    player.includes("className = 'wdtv-skip-cta'") && player.includes("className = 'wdtv-dm-topbtn wdtv-skip-switch'") &&
+    cssSkip.includes('.wdtv-skip-cta') && cssSkip.includes('.wdtv-skip-switch'));
+t('播放器: 按钮暂停隐藏、区间已过自动消失',
+    /video:pause[\s\S]{0,120}?wdtvHideSkipCta/.test(player) &&
+    player.includes('if (!introSkipEnabled || !v || v.paused || v.ended) { wdtvHideSkipCta(); return; }'));
+t('播放器: 自动跳只取高置信段',
+    player.includes('segments: introSkipEnabled ? wdtvAutoSegments(v.duration) : []'));
+t('播放器: 开关改为弹出面板（总开关/两个子开关/时长/保存）',
+    player.includes("menu.className = 'wdtv-skip-menu'") &&
+    player.includes('data-role="enabled"') && player.includes('function wdtvSkipTimeFieldHtml') &&
+    player.includes('data-role="save"') && player.includes('data-role="durations"') &&
+    player.includes('data-role="body"') && player.includes('data-role="auto"') &&
+    player.includes('data-role="custom"') &&
+    !player.includes('data-role="reset"') && !player.includes('恢复自动检测'));
+t('播放器: 时长输入为分+秒两组，秒限制 0-59',
+    player.includes("data-role=\"' + type + '-min\"") &&
+    player.includes("data-role=\"' + type + '-sec\"") &&
+    player.includes('max="59"') && player.includes('秒数需在 0–59 之间'));
+t('播放器: 分按 1 分、秒按 5 秒微调并处理进位借位',
+    player.includes('data-unit="min"') && player.includes('data-unit="sec"') &&
+    player.includes('function wdtvStepSkipTime') &&
+    player.includes('Math.floor(total / 60)') && player.includes('total % 60'));
+t('播放器: 存储仍为秒数，回显按分秒拆分',
+    player.includes('wdtvFillSkipTimeInputs') && player.includes('Math.floor(seconds / 60)') &&
+    player.includes('store[skipMarksKey] = {'));
+t('播放器: 面板点击外部 / Esc 可关闭', player.includes('wdtvSkipMenuOutsideHandler') &&
+    player.includes("document.addEventListener('pointerdown', wdtvSkipMenuOutsideHandler, true)") &&
+    player.includes("ev.key === 'Escape'"));
+t('播放器: 自定义时长按剧键持久化（跨集 / 刷新生效）',
+    player.includes('WDTV_SKIP_CUSTOM_STORAGE') && player.includes('store[skipMarksKey]') &&
+    config.includes("skipCustomStorage: 'wdtvSkipCustom'"));
+t('播放器: 三层开关独立且可同时开启（按类型合并，自定义同类型优先）',
+    player.includes('if (!wdtvAutoSkipEnabled && !wdtvCustomSkipEnabled) return [];') &&
+    player.includes('const custom = wdtvCustomSkipEnabled ? wdtvCustomSegments(duration) : [];') &&
+    player.includes('overridden[s.type] = true') &&
+    player.includes('!overridden[s.type]') &&
+    player.includes('const merged = custom.concat(auto);') &&
+    player.includes('WDTV_SKIP_AUTO_STORAGE') && player.includes('WDTV_SKIP_CUSTOM_ENABLED_STORAGE') &&
+    config.includes("skipAutoStorage: 'wdtvSkipAutoEnabled'") &&
+    config.includes("skipCustomEnabledStorage: 'wdtvSkipCustomEnabled'") &&
+    !config.includes('skipModeStorage') && !player.includes('function wdtvSetSkipMode'));
+t('播放器: 旧版模式值一次性迁移到两个子开关，不丢自定义时长',
+    player.includes("const WDTV_LEGACY_SKIP_MODE_STORAGE = 'wdtvSkipMode';") &&
+    player.includes('function wdtvMigrateSkipSwitches') &&
+    player.includes("if (legacy === 'auto' || legacy === 'custom')") &&
+    player.includes("localStorage.removeItem(WDTV_LEGACY_SKIP_MODE_STORAGE)") &&
+    player.includes('const hasStore = Object.keys(wdtvReadCustomStore()).length > 0;'));
+t('播放器: 状态唯一出口（按钮与面板共用同一份文案）',
+    player.includes('function wdtvSkipStatus') && player.includes('data-role="status"') &&
+    player.includes('el.dataset.state = st.state') &&
+    player.includes('statusEl.dataset.state = st.state') &&
+    player.includes("'已启用 · 未选择跳过方式'") && player.includes("'仅自动'") &&
+    player.includes("'已关闭'") && player.includes('未自动跳过，可手动点击'));
+t('播放器: 总开关关闭时主体平滑折叠（class + inert，非置灰）',
+    player.includes('function wdtvSetSectionOpen') &&
+    player.includes("wdtvSetSectionOpen(menu.querySelector('[data-role=\"body\"]'), introSkipEnabled)") &&
+    player.includes("menu.querySelector('[data-role=\"custom-section\"]')") &&
+    player.includes("el.setAttribute('inert', '')") &&
+    !player.includes('is-disabled'));
+t('播放器: 入口为纯图标按钮（无可见文字/徽标）',
+    player.includes("btn.className = 'wdtv-dm-topbtn wdtv-skip-switch'") &&
+    player.includes('btn.innerHTML = WDTV_SKIP_ICON;') &&
+    !player.includes("WDTV_SKIP_ICONS") &&
+    !/wdtv-skip-switch[^\n]*<span>/.test(player) &&
+    player.includes("el.dataset.hasData") && player.includes("el.dataset.manual") &&
+    player.includes("el.setAttribute('aria-label', '跳片头尾设置，当前：' + desc)") &&
+    player.includes('el.title = \'跳片头尾：\' + desc'));
+t('播放器: 面板/工具组内键盘不触发播放器快捷键',
+    player.includes("target.closest('.wdtv-skip-menu, .wdtv-dm-topbtns')"));
+t('播放器: 自定义段为高置信、复用自动 seek 与撤销',
+    read('js/skip-marks.js').includes('autoEligible: true') &&
+    player.includes('wdtvAutoSegments(v.duration)'));
+t('CSS: 弹出面板含移动端断点且不被裁切',
+    cssSkip.includes('.wdtv-skip-menu') && cssSkip.includes('max-height: calc(100% - 96px)') &&
+    cssSkip.includes('max-height: calc(100% - 54px - env(safe-area-inset-bottom, 0px))') &&
+    cssSkip.includes('overflow-y: auto') &&
+    cssSkip.includes('.wdtv-skip-menu__status') && cssSkip.includes('.wdtv-skip-menu__row') &&
+    cssSkip.includes('.wdtv-skip-menu__toggle') &&
+    !cssSkip.includes('.wdtv-skip-menu__subs') && !cssSkip.includes('.wdtv-skip-menu__modes'));
+t('CSS: 开关为 iOS 滑块（单一轨道 + 滑块），折叠用 grid 0fr→1fr',
+    cssSkip.includes('.wdtv-skip-menu__track') && cssSkip.includes('.wdtv-skip-menu__thumb') &&
+    cssSkip.includes('input:checked ~ .wdtv-skip-menu__track') &&
+    cssSkip.includes('grid-template-rows: 0fr') && cssSkip.includes('grid-template-rows: 1fr') &&
+    cssSkip.includes('.wdtv-skip-menu__body.is-open'));
+t('CSS: 纯图标按钮沿用工具按钮容器并保留 44px 命中区，图标恒为白色',
+    cssSkip.includes('.wdtv-skip-switch') && cssSkip.includes('background: transparent') &&
+    cssSkip.includes('.wdtv-skip-switch.is-on') && cssSkip.includes('[data-manual="1"]::before') &&
+    cssSkip.includes('inset: -6px') && cssSkip.includes('color: rgba(255, 255, 255, 0.92)') &&
+    !/\.wdtv-skip-switch[^{]*\{[^}]*var\(--wdtv-skip-accent\)/.test(cssSkip) &&
+    cssSkip.includes('width: 38px') && cssSkip.includes('overflow-y: auto'));
+t('CSS: 面板滑块开启态用主题强调色，关闭态为灰色',
+    cssSkip.includes('--wdtv-skip-accent: #6fa8e8') &&
+    cssSkip.includes('input:checked ~ .wdtv-skip-menu__track') &&
+    cssSkip.includes('background: var(--wdtv-skip-accent)') &&
+    cssSkip.includes('background: rgba(255, 255, 255, 0.14)') &&
+    cssSkip.includes('border-color: rgba(111, 168, 232, 0.78)'));
+t('CSS: 面板密度收紧（内边距 10/12、行 padding 0、行高仍 44）',
+    cssSkip.includes('padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px))') &&
+    cssSkip.includes('min-height: 44px') &&
+    /\.wdtv-skip-menu__row\s*\{[^}]*padding: 0;/.test(cssSkip));
+t('播放器: 自动跳过说明文案已移除，DOM 与读屏属性无残留',
+    !player.includes('按公共库 / IntroDB 自动识别片头片尾') &&
+    !player.includes('自动识别片头片尾') &&
+    !player.includes('aria-describedby') &&
+    player.includes('hintEl.hidden = !hint || !!(msgEl && !msgEl.hidden)'));
 t('播放器: 片尾自动跳过可撤销（换集定时器可取消）',
     /wdtvAutoPlayNextTimer/.test(player) && /wdtvEndingSkipPending/.test(player) &&
     /clearTimeout\(wdtvAutoPlayNextTimer\)/.test(player));
@@ -209,10 +321,5 @@ t('页面: 焦点陷阱覆盖三个真实弹层且不误锁 .wsp-panel',
     panelsBody.length > 50 &&
     ["id:'settingsPanel'", "id:'historyPanel'", "id:'modal'"].every(s => panelsBody.includes(s)) &&
     !/\.wsp-panel/.test(panelsBody));
-t('页面: 三页预置脚本写入 data-theme',
-    ['index.html', 'player.html', 'about.html'].every(p => read(p).includes("setAttribute('data-theme'")));
-t('主题: apply() 运行时同步写入 data-theme（切换后不滞后）',
-    read('js/theme.js').includes("setAttribute('data-theme'"));
-
 console.log(`结果：${pass} 通过，${fail} 失败`);
 if (fail) { console.log('失败用例：' + fails.join(' | ')); process.exit(1); }

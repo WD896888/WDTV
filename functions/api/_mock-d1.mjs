@@ -34,6 +34,10 @@ const SQL_USERS_DELETE = 'DELETE FROM users WHERE id = ?';
 const SQL_DATA_DELETE = 'DELETE FROM user_data WHERE user_id = ?';
 const SQL_AVATAR_DELETE = 'DELETE FROM avatars WHERE user_id = ?';
 const SQL_DATA_FULL = 'SELECT payload, revision, updated_at FROM user_data WHERE user_id = ?';
+// 片头片尾公共表（只读查询 + 本地测试播种用 INSERT；HTTP 层不暴露写入）
+const SQL_SKIP_SELECT = 'SELECT title_key, title, season, episode, segment_type, start_sec, end_sec, votes, sources, origin, confidence FROM skip_marks_public WHERE title_key = ?';
+const SQL_SKIP_INSERT = 'INSERT INTO skip_marks_public (title_key, title, season, episode, segment_type, start_sec, end_sec, votes, sources, origin, confidence, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+const SQL_SKIP_CREATE = 'CREATE TABLE IF NOT EXISTS skip_marks_public';
 
 export function createMiniD1(options = {}) {
   const file = options.file || null;
@@ -41,7 +45,7 @@ export function createMiniD1(options = {}) {
   const path = nodeBuiltin('path');
 
   // 内部数据结构：三张表，users 行含自增 id
-  let data = { users: [], user_data: [], avatars: [] };
+  let data = { users: [], user_data: [], avatars: [], skip_marks_public: [] };
 
   // 启动时加载持久化文件；文件缺失/损坏均从空库开始（云端无 node:fs 时静默用内存库）
   if (file && fs && fs.existsSync(file)) {
@@ -51,12 +55,13 @@ export function createMiniD1(options = {}) {
         data = {
           users: Array.isArray(parsed.users) ? parsed.users : [],
           user_data: Array.isArray(parsed.user_data) ? parsed.user_data : [],
-          avatars: Array.isArray(parsed.avatars) ? parsed.avatars : []
+          avatars: Array.isArray(parsed.avatars) ? parsed.avatars : [],
+          skip_marks_public: Array.isArray(parsed.skip_marks_public) ? parsed.skip_marks_public : []
         };
       }
     } catch {
       // JSON 解析失败（文件损坏）：从空库开始，下次写入时覆盖
-      data = { users: [], user_data: [], avatars: [] };
+      data = { users: [], user_data: [], avatars: [], skip_marks_public: [] };
     }
   }
 
@@ -244,6 +249,36 @@ export function createMiniD1(options = {}) {
       const picked = row ? { payload: row.payload, revision: row.revision, updated_at: row.updated_at } : null;
       if (kind === 'all') return Promise.resolve({ results: picked ? [picked] : [] });
       return Promise.resolve(picked);
+    }
+    // S18：片头片尾公共表只读查询（按剧键）
+    if (normSql.startsWith(SQL_SKIP_SELECT)) {
+      const key = String(binds[0]);
+      const rows = data.skip_marks_public.filter(r => String(r.title_key) === key);
+      if (kind === 'all') return Promise.resolve({ results: rows });
+      return Promise.resolve(rows[0] || null);
+    }
+    // S19：本地测试/运营播种写入（HTTP 层不暴露此语句）
+    if (normSql.startsWith(SQL_SKIP_INSERT)) {
+      data.skip_marks_public.push({
+        title_key: binds[0],
+        title: binds[1],
+        season: binds[2],
+        episode: binds[3],
+        segment_type: binds[4],
+        start_sec: binds[5],
+        end_sec: binds[6],
+        votes: binds[7],
+        sources: binds[8],
+        origin: binds[9],
+        confidence: binds[10],
+        updated_at: binds[11]
+      });
+      save();
+      return Promise.resolve({ meta: { changes: 1, last_row_id: data.skip_marks_public.length } });
+    }
+    // S20：建表语句在本地 mock 中为 no-op（数据已在内存中）
+    if (normSql.startsWith(SQL_SKIP_CREATE)) {
+      return Promise.resolve({ meta: { changes: 0, last_row_id: null } });
     }
     return unsupported(normSql);
   }

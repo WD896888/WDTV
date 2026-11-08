@@ -156,7 +156,13 @@
       if (duration - start < END_GUARD_SECONDS) continue;         // 起点贴片尾
       // 终点贴片尾：片尾段本身即代表片尾、终点就是片长，予以豁免
       if (s.type !== 'ending' && duration - end < END_GUARD_SECONDS) continue;
-      candidates.push({ type: s.type, start: start, end: end });
+      var resolved = { type: s.type, start: start, end: end };
+      // 取数层附加的置信度字段在时间轴解析时保留，供自动跳/按钮分流使用。
+      if (isFiniteNumber(s.confidence)) resolved.confidence = s.confidence;
+      if (isFiniteNumber(s.votes)) resolved.votes = s.votes;
+      if (s.autoEligible === true) resolved.autoEligible = true;
+      if (typeof s.source === 'string') resolved.source = s.source;
+      candidates.push(resolved);
     }
     if (!candidates.length) return [];
     candidates.sort(function (a, b) { return a.start - b.start; });
@@ -233,6 +239,86 @@
       }
     }
     return null;
+  }
+
+  // ---- 自定义片头/片尾时长（用户显式设定，最高优先级）----
+  // 存的是「秒数」而非具体片段时间：opening=片头时长，ending=片尾时长。
+  // 校验规则集中在此，player.js 只负责读写存储与展示错误文案。
+  var CUSTOM_MIN_SECONDS = 3;      // 与 MIN_SEGMENT_SECONDS 对齐，太短无意义且会被 resolveSegments 丢弃
+  var CUSTOM_MIN_GAP_SECONDS = 5;  // 与 MIN_SEGMENT_GAP_SECONDS 对齐，片头与片尾之间至少留正片
+
+  // 返回 { ok, opening, ending, error }：
+  //   opening/ending 为 null 表示该项未设置（留空 / 0）；
+  //   error 为中文提示，ok=false 时不得写入存储；
+  //   片长未知（duration 非正）时只做绝对校验，保存后等元数据就绪再生效。
+  function normalizeCustomDurations(input, duration) {
+    var o = isPlainObject(input) ? input : {};
+    var known = isFiniteNumber(duration) && duration > 0;
+    var out = { ok: true, opening: null, ending: null, error: null };
+    var names = ['opening', 'ending'];
+    var labels = { opening: '片头', ending: '片尾' };
+    for (var i = 0; i < names.length; i++) {
+      var name = names[i];
+      var raw = o[name];
+      if (raw == null || raw === '') continue;
+      var n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+      if (!isFiniteNumber(n)) {
+        out.ok = false;
+        out.error = labels[name] + '时长必须是数字';
+        return out;
+      }
+      if (n < 0) {
+        out.ok = false;
+        out.error = labels[name] + '时长不能为负数';
+        return out;
+      }
+      if (n === 0) continue; // 0 与留空同义：不设置该项
+      n = Math.round(n);
+      if (n < CUSTOM_MIN_SECONDS) {
+        out.ok = false;
+        out.error = labels[name] + '时长至少 ' + CUSTOM_MIN_SECONDS + ' 秒';
+        return out;
+      }
+      if (known && n > duration - CUSTOM_MIN_SECONDS) {
+        out.ok = false;
+        out.error = labels[name] + '时长不能超过片长（需预留 ' + CUSTOM_MIN_SECONDS + ' 秒）';
+        return out;
+      }
+      out[name] = n;
+    }
+    if (known && out.opening && out.ending &&
+        out.opening + out.ending > duration - CUSTOM_MIN_GAP_SECONDS) {
+      out.ok = false;
+      out.error = '片头 + 片尾需小于片长 ' + CUSTOM_MIN_GAP_SECONDS + ' 秒';
+      return out;
+    }
+    return out;
+  }
+
+  // 把自定义秒数展开为统一段结构：片头 0→N，片尾 (片长−N)→片长。
+  // 用户显式设定视为高置信（autoEligible=true），走自动跳过并保留撤销。
+  // 片长未知（元数据未就绪）时返回空数组，待 durationchange 后自然生效。
+  function buildCustomSegments(custom, duration) {
+    if (!isPlainObject(custom)) return [];
+    if (!isFiniteNumber(duration) || duration <= 0) return [];
+    var out = [];
+    var opening = custom.opening;
+    var ending = custom.ending;
+    if (isFiniteNumber(opening) && opening >= CUSTOM_MIN_SECONDS && opening <= duration - CUSTOM_MIN_SECONDS) {
+      out.push({
+        type: 'opening', start: 0, end: opening,
+        confidence: 1, votes: 0, sources: ['custom'], origin: 'custom', source: 'custom',
+        autoEligible: true
+      });
+    }
+    if (isFiniteNumber(ending) && ending >= CUSTOM_MIN_SECONDS && ending <= duration - CUSTOM_MIN_SECONDS) {
+      out.push({
+        type: 'ending', start: duration - ending, end: duration,
+        confidence: 1, votes: 0, sources: ['custom'], origin: 'custom', source: 'custom',
+        autoEligible: true
+      });
+    }
+    return out;
   }
 
   // ---- decideAutoSkip ----
@@ -328,6 +414,8 @@
     findActiveSegment: findActiveSegment,
     findCrossedEnding: findCrossedEnding,
     validateSegment: validateSegment,
+    normalizeCustomDurations: normalizeCustomDurations,
+    buildCustomSegments: buildCustomSegments,
     decideAutoSkip: decideAutoSkip
   };
 })(typeof window !== 'undefined' ? window : globalThis);

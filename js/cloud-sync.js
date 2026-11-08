@@ -11,11 +11,10 @@
 
     // ========================= 常量 =========================
 
-    // 需要同步的列表 / 设置键（共 15 个；videoProgress_<id> 通过前缀单独扫描）
+    // 需要同步的列表 / 设置键（共 14 个；videoProgress_<id> 通过前缀单独扫描）
     // wdtvSourceSubscriptions 为批次3 数据源订阅条目（含 url/周期/熔断状态，不含解析后的源集合）
     // wdtvSkipMarks 为批次4 片头/中段/片尾跳过标记（默认关闭，_merge 按 updatedAt 整体覆盖）
     const SYNC_LIST_KEYS = [
-        'wdtvTheme',
         'wdtvSourceSubscriptions',
         'wdtvSkipMarks',
         'viewingHistory',
@@ -769,20 +768,6 @@
                 console.warn('CloudSync 应用数据失败(' + key + '):', e);
             }
         });
-
-        // 云同步拉取落地后主题键可能已变化，但 theme.js 只在模块加载时 apply() 一次，
-        // 不会因 localStorage 被外部改写而重刷 <html> 的 dark class。若本次落地含 wdtvTheme
-        // 且 WDTVTheme 已加载，补一次 apply() 让 B 设备本次会话立即生效。
-        // 已确认 theme.js 的 apply() 为无参函数（内部自行读 localStorage 的 wdtvTheme），
-        // 模块缺失或抛错一律静默，不影响同步流程。
-        if (Object.prototype.hasOwnProperty.call(items, 'wdtvTheme')) {
-            try {
-                if (typeof window !== 'undefined' && window.WDTVTheme &&
-                    typeof window.WDTVTheme.apply === 'function') {
-                    window.WDTVTheme.apply();
-                }
-            } catch (e) { /* 主题模块缺失 / 异常：静默 */ }
-        }
     }
 
     // ========================= 载荷裁剪 =========================
