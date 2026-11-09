@@ -4,6 +4,20 @@ const enabledAPIKeys = () => Object.keys(API_SITES).filter(k => API_SITES[k] && 
 let selectedAPIs = (JSON.parse(localStorage.getItem('selectedAPIs') || 'null') || enabledAPIKeys())
     .filter(k => API_SITES[k] && !API_SITES[k].disabled);
 
+// 2026-11-09 补充线路：老用户 localStorage 的选中集合里没有新增的 6 条独立线路，
+// 且可能残留早前误迁移写入的内置停用源 key。用一次性标记清理停用项并补齐新 key，
+// 不改动用户对其它源的选择；之后仍完全由用户自行勾选/取消。
+const EXTRA_SOURCE_KEYS = ['maoyan', 'lzi', 'jyzy', 'subo', 'hhzy', 'ikun'];
+const EXTRA_SOURCES_KEY = 'wdtvExtraSources_20261109';
+if (!localStorage.getItem(EXTRA_SOURCES_KEY)) {
+    const cleaned = selectedAPIs.filter(k => API_SITES[k] && !API_SITES[k].disabled);
+    const missing = EXTRA_SOURCE_KEYS.filter(k =>
+        API_SITES[k] && !API_SITES[k].disabled && cleaned.indexOf(k) === -1);
+    selectedAPIs = cleaned.concat(missing);
+    localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+    localStorage.setItem(EXTRA_SOURCES_KEY, '1');
+}
+
 // 添加当前播放的集数索引
 let currentEpisodeIndex = 0;
 // 添加当前视频的所有集数

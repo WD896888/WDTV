@@ -19,6 +19,16 @@ const SITE_CONFIG = {
 //   'html' —— 仅详情页 HTML 解析（detail 字段域名 + 正则提取 m3u8）
 //   'auto' —— 标准接口优先，失败自动回退详情页解析
 // 配置依据为实测结果；源站行为变化时请以实测为准调整
+//
+// 2026-11-09 更正（重要）：下方 14 个内置源全部保持 2026-11-08 上游原配置，一个都不替换。
+//   此前用临时探测脚本判定「暴风资源不能播」并改接其它线路，属误判：暴风的播放地址路径
+//   含中文（…/HD国语/index.m3u8），脚本未做百分号编码导致裸请求 404；浏览器会自动编码，
+//   编码后直连即返回有效 m3u8 播放清单。「最大资源」等源的单次失败也只是链接/CDN 波动。
+//   结论：服务端探测的单次结果不能作为停用或替换用户原有源的依据。
+//   原 6 个停用源（黑木耳/卧龙/新华为/华为吧/豆瓣/魔爪）按上游配置保留 disabled 状态与
+//   失效原因，便于日后站点恢复时直接启用；它们的域名级复核结果见 .workbuddy/memory/2026-11-09.md。
+//   文件末尾 6 个新增源是「补充线路」，使用独立 key，不占用任何内置源槽位；如不需要，
+//   整体删除末尾 6 项即可，内置 14 个源完全不受影响。
 const API_SITES = {
     heimuer: {
         api: 'https://json.heimuer.xyz',
@@ -118,8 +128,41 @@ const API_SITES = {
         api: 'https://api.zuidapi.com',
         name: '最大资源',
         detailMode: 'api'
+    },
+
+    // ↓ 2026-11-09 新增补充线路：独立 key，不占用上方任何内置源的槽位。
+    //   来源为公开采集源清单（ZxxXinI/tvbox 线路表、LunaTV-config 每日健康报告等），
+    //   均经「搜索 list>0 + 详情含播放地址 + 播放清单可取」实测。删除以下 6 项即可完整还原内置配置。
+    maoyan: {
+        api: 'https://api.maoyanapi.top',
+        name: '猫眼资源',
+        detailMode: 'api'   // 线路表 myzy；搜索 30 条，播放清单双路径有效
+    },
+    lzi: {
+        api: 'https://cj.lziapi.com',
+        name: '量子资源',
+        detailMode: 'api'   // 线路表 lzi；搜索 20 条，播放清单有效
+    },
+    jyzy: {
+        api: 'https://jyzyapi.com',
+        name: '金鹰资源',
+        detailMode: 'api'   // 公开播放器源列表；搜索 20 条，播放清单双路径有效
+    },
+    subo: {
+        api: 'https://subocaiji.com',
+        name: '速博资源',
+        detailMode: 'api'   // 线路表 subocaiji；搜索 20 条，播放清单双路径有效
+    },
+    hhzy: {
+        api: 'https://hhzyapi.com',
+        name: '豪华资源',
+        detailMode: 'api'   // 线路表 hhzyapi；搜索 20 条，播放清单双路径有效
+    },
+    ikun: {
+        api: 'https://www.ikunzy.com',
+        name: 'iKun资源',
+        detailMode: 'api'   // 线路表 ikun；库约 6.7 万条，播放清单双路径有效
     }
-    // 您可以按需添加更多源
 };
 
 // 定义合并方法
