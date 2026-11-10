@@ -272,7 +272,8 @@
 // v100（2026-11-10）：设置面板移除「一般功能」里的「清除Cookie」功能项及其 clearLocalStorage() 实现（含确认弹窗 / 清空 localStorage 与全部 Cookie / 倒计时刷新），不再提供清空 Cookie 的入口；ui.js 升 ?v=18；升级缓存版本确保新资源即时到达
 // v101（2026-11-10）：首页主视觉标题改为「你看过的电影，不只是电影」，副句按语义分三行排版、窄屏回流为一段，浏览器标签标题同步呼应；改动仅在 index.html 文案与内联样式，外部 css/js 的 ?v= 不变；升级缓存版本清空旧页面缓存，避免老用户离线回退到旧首页 HTML
 // v102（2026-11-10）：应用户要求回退 v101——首页标题恢复为「WDTV / 自由观影，畅享精彩」原文案与原样式（index.html 与 v100 状态一致）；仍升级缓存版本清空页面缓存，确保所有用户立即拿到回退后的首页
-const CACHE_VERSION = 'wdtv-sw-v102';
+// v103（2026-11-10）：隐私政策页字体/文字层级改回复用首页体系——about.html 引入与首页完全相同的外部 CSS 栈（styles/index/modals/downloader/states）与 Google Fonts，正文用 'Noto Sans SC' 300 + var(--text-primary)/rgba(224,234,248,0.9) 浅色细字 + 首页弹窗标题同款深色阴影（加一层紧实描边适配明亮水雾），主标题/副标题/分区标题/卡片标题分别照抄 .wdtv-title / .wdtv-slogan / .wdtv-douban-header h2 / .wdtv-panel-header h3；组件保持 .douban-card 的 0.06 极淡透明；首页设置面板「隐私政策」按钮去掉 wdtv-secondary，与「视频缓存管理」按钮样式统一；css/about.css 升 ?v=7；升级缓存版本确保新资源即时到达
+const CACHE_VERSION = 'wdtv-sw-v103';
 const ASSET_CACHE = `wdtv-assets-${CACHE_VERSION}`;
 const PAGE_CACHE = `wdtv-pages-${CACHE_VERSION}`;
 

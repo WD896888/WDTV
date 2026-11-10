@@ -33,13 +33,19 @@
 })();
 </script>
 
-<!-- 与首页同款背景层 + 本页组件样式（不再引入 Tailwind 与浅色 styles.css） -->
+<!-- 与首页完全相同的外部 CSS 栈：字体基类、豆瓣卡片、组件 token 全部复用首页 -->
+<link rel="stylesheet" href="css/styles.css?v=7">
+<link rel="stylesheet" href="css/index.css?v=39">
+<link rel="stylesheet" href="css/modals.css?v=12">
+<link rel="stylesheet" href="css/downloader.css?v=4">
+<link rel="stylesheet" href="css/states.css?v=1">
+<!-- 首页内联基础层镜像：:root 深色变量 / reset / 背景层（须在外部 CSS 之后覆盖浅色 :root） -->
 <link rel="stylesheet" href="css/site-bg.css?v=1">
-<link rel="stylesheet" href="css/about.css?v=5">
+<link rel="stylesheet" href="css/about.css?v=7">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;500;600&family=Raleway:wght@200;300&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Great+Vibes&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Pinyon+Script&family=Raleway:wght@200;300&family=Spectral:ital,wght@1,300&display=swap" media="print" onload="this.media='all'">
 </head>
 <body>
 

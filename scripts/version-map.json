@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "_comment": "WDTV 静态资源版本号单一来源。改 css/js 后用 `node scripts/bump-version.mjs bump <资源路径...>` 升版本，再 `node scripts/bump-version.mjs sync` 写回 HTML。4 处跨页漂移已按两页最大值统一。",
-  "cacheVersion": 102,
-  "changelogNext": 103,
+  "cacheVersion": 103,
+  "changelogNext": 104,
   "assets": {
     "manifest.json": 2,
     "css/styles.css": 7,
@@ -14,7 +14,7 @@
     "css/states.css": 1,
     "css/skip-marks.css": 14,
     "css/site-bg.css": 1,
-    "css/about.css": 5,
+    "css/about.css": 7,
     "js/config.js": 30,
     "js/ad-filter.js": 3,
     "js/video-cache.js": 96,
