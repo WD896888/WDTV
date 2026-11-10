@@ -265,7 +265,14 @@
 // v93（2026-11-09）：播放链路复核修正：百度资源 api.apibdzy.com 搜索可用但 5 条播放地址均取不到清单，mozhua 槽位改接 iKun 资源 www.ikunzy.com（播放清单直连与生产代理均有效）；config.js 升 ?v=27；升级缓存版本确保新资源即时到达
 // v94（2026-11-09）：播放链路复核收口：暴风资源播放 CDN 抽样 6 部仅 1 部可取清单，bfzy 槽位改接电影天堂 caiji.dyttzyapi.com（搜索三路径可用、播放清单直连有效）；config.js 升 ?v=28；升级缓存版本确保新资源即时到达
 // v95（2026-11-09）：恢复原有数据源配置（用户指正）：播放地址路径含中文时临时探测脚本未做百分号编码导致 404 误判，暴风资源从未失效；内置 14 个源全部还原为 2026-11-08 上游原配置，新增线路改用独立 key 作补充、不占用任何原有槽位；老用户选中集合一次性清理停用项并补齐新增 key；config.js 升 ?v=29、app.js 升 ?v=45；升级缓存版本确保新资源即时到达
-const CACHE_VERSION = 'wdtv-sw-v95';
+// v96（2026-11-10）：下载器移植 LibreTV 设计：新增 js/download-utils.js 纯函数模块（4xx 确定性缺片快速失败+建议换源、混合内容/CORS/配额不足可读诊断）；合成改逐片流式写出，单集下载在用户手势内取 FS Access 句柄边转封装边写盘（不聚合 Blob、不占 IDB），批量/不支持时回退；格式统一只留 MP4（移除批量弹窗无效的 TS 选项）；新增 test/download-utils.test.mjs 39 项行为单测。js/downloader.js 升 ?v=23；升级缓存版本确保新资源即时到达
+// v97（2026-11-10）：数据源订阅与自定义接入入口全线下线，源集合完全内置：设置面板删除订阅输入/列表/状态/导出 JSON 与订阅样式，index.html 不再加载 source-subscription.js 与 customer_site.js；app.js 移除订阅渲染、自动刷新与事件委托并清理老用户订阅残留；七七资源并入 config.js 内置表（源集合不变），移除 extendAPISites/removeAPISitesByPrefix 运行时注入源钩子；cloud-sync 移除订阅同步键；README 与静态契约同步更新；config.js/app.js/ui.js/cloud-sync.js/cloud-sync-ui.js/index-page.js/modals.css 升 ?v=；升级缓存版本确保新资源即时到达
+// v98（2026-11-10）：隐私政策页 about.html 改版为首页同款风格——移除 Tailwind/浅色 styles.css，接入首页同款背景层（光晕、bg-canvas 背景图、雨幕、玻璃水波涟漪、雾气、preloader）与「动态效果」开关；新增 css/site-bg.css?v=1、css/about.css?v=1、js/site-fx.js?v=1（镜像首页内联 FX，首页本身不改动）；升级缓存版本确保新页面与新资源即时到达
+// v99（2026-11-10）：隐私政策页组件按用户要求改为首页豆瓣卡片同款「几乎全透明」样式（深蓝玻璃 / 白色磨砂玻璃两版均被否）——信息块、邮箱按钮、分隔线统一 rgba(155,180,218,0.06) + 1px var(--glass-border) + 10px 圆角，去掉 backdrop-filter / 白边 / 内高光 / 投影；顶栏改透明无底，hover 沿用 .douban-card 的 rgba(80,128,176,0.2) + var(--accent) 反馈；删除 #splash::after 暗化层，文字保持 #2a3a5c 深色层级与首页蓝色渐变标题；css/about.css 升 ?v=5；升级缓存版本确保新资源即时到达
+// v100（2026-11-10）：设置面板移除「一般功能」里的「清除Cookie」功能项及其 clearLocalStorage() 实现（含确认弹窗 / 清空 localStorage 与全部 Cookie / 倒计时刷新），不再提供清空 Cookie 的入口；ui.js 升 ?v=18；升级缓存版本确保新资源即时到达
+// v101（2026-11-10）：首页主视觉标题改为「你看过的电影，不只是电影」，副句按语义分三行排版、窄屏回流为一段，浏览器标签标题同步呼应；改动仅在 index.html 文案与内联样式，外部 css/js 的 ?v= 不变；升级缓存版本清空旧页面缓存，避免老用户离线回退到旧首页 HTML
+// v102（2026-11-10）：应用户要求回退 v101——首页标题恢复为「WDTV / 自由观影，畅享精彩」原文案与原样式（index.html 与 v100 状态一致）；仍升级缓存版本清空页面缓存，确保所有用户立即拿到回退后的首页
+const CACHE_VERSION = 'wdtv-sw-v102';
 const ASSET_CACHE = `wdtv-assets-${CACHE_VERSION}`;
 const PAGE_CACHE = `wdtv-pages-${CACHE_VERSION}`;
 

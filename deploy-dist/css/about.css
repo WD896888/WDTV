@@ -1,0 +1,301 @@
+/* =====================================================================
+   WDTV 隐私政策 / 关于页（about.html）
+   ---------------------------------------------------------------------
+   组件严格照抄首页豆瓣卡片（css/index.css .douban-card / .douban-card-title-area
+   与 index.html .wdtv-douban-tag）的「几乎全透明」样式：
+     background: rgba(155, 180, 218, 0.06)
+     border: 1px solid var(--glass-border)   /* rgba(165,188,230,0.2) */
+     border-radius: 10px
+   没有 backdrop-filter、没有白色描边、没有内高光、没有投影、没有白底。
+   hover 沿用 .douban-card:hover / .wdtv-douban-tag:hover 的
+   rgba(80,128,176,0.2) + var(--accent) 反馈。
+   变量 --glass-border / --accent / --pale 由 css/site-bg.css 的 :root 提供
+   （与首页内联 :root 同值）。
+   背景层（雨幕 / 光晕 / 水波）由 css/site-bg.css + js/site-fx.js 提供。
+   ===================================================================== */
+
+.abt-left{
+  position:relative;
+  z-index:2;
+  width:100%;
+  max-width:none;
+  margin:0;
+  padding:116px 32px 96px;
+}
+.abt-shell{
+  width:100%;
+  max-width:880px;
+  margin:0 auto;
+  pointer-events:auto;
+  font-family:'Noto Sans SC',sans-serif;
+  color:#2a3a5c;
+  text-shadow:0 1px 4px rgba(255,255,255,0.5);
+  -webkit-user-select:text;
+  user-select:text;
+}
+
+/* ---- 顶栏：与首页 #history-btn 同款「无感融入」，透明无底 ---- */
+.abt-topbar{
+  position:fixed;
+  top:24px;
+  left:24px;
+  right:24px;
+  z-index:10002;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  pointer-events:none;
+  text-shadow:0 1px 6px rgba(255,255,255,0.6);
+}
+.abt-brand,
+.abt-back{pointer-events:auto}
+.abt-brand{
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  height:44px;
+  padding:0 12px;
+  border:none;
+  background:transparent;
+  color:rgba(30,45,75,0.92);
+  text-decoration:none;
+  border-radius:10px;
+  outline:none;
+  transition:background .3s,color .3s;
+}
+.abt-brand:hover{background:rgba(200,220,245,0.12);color:#1d2b47}
+.abt-brand svg{width:17px;height:17px;color:rgba(42,58,92,0.85)}
+.abt-brand-name{
+  font-family:'Cormorant Garamond',serif;
+  font-size:1.15rem;
+  font-weight:600;
+  letter-spacing:.14em;
+  color:rgba(30,45,75,0.92);
+}
+.abt-back{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  height:44px;
+  padding:0 14px;
+  border:none;
+  background:transparent;
+  color:rgba(30,45,75,0.92);
+  border-radius:10px;
+  font-family:'Noto Sans SC',sans-serif;
+  font-size:.82rem;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-decoration:none;
+  cursor:pointer;
+  outline:none;
+  transition:background .3s,color .3s,transform .2s;
+  -webkit-tap-highlight-color:transparent;
+}
+.abt-back svg{width:16px;height:16px;color:rgba(42,58,92,0.85)}
+.abt-back:hover{background:rgba(200,220,245,0.14);color:#1d2b47}
+.abt-back:active{transform:scale(.97)}
+
+/* ---- 页头标题：沿用首页 .wdtv-title 的渐变与字距 ---- */
+.abt-hero{
+  text-align:center;
+  margin-bottom:52px;
+  animation:abtFadeUp .85s cubic-bezier(.4,0,.2,1) both;
+}
+.abt-kicker{
+  margin:0 0 14px;
+  font-family:'Raleway','Noto Sans SC',sans-serif;
+  font-size:.7rem;
+  font-weight:400;
+  letter-spacing:.34em;
+  text-indent:.34em;
+  text-transform:uppercase;
+  color:rgba(42,58,92,0.8);
+}
+.abt-title{
+  margin:0;
+  font-family:'Cormorant Garamond','Noto Serif SC',serif;
+  font-size:clamp(2.6rem,7vw,3.7rem);
+  font-weight:300;
+  line-height:1.2;
+  letter-spacing:.2em;
+  text-indent:.2em;
+  background:linear-gradient(135deg,#1a3a6b 0%,#2c5aa0 40%,#4a7cc9 70%,#6a9ae0 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 2px 10px rgba(255,255,255,0.6));
+}
+.abt-lead{
+  max-width:620px;
+  margin:20px auto 0;
+  font-size:.94rem;
+  font-weight:400;
+  line-height:2;
+  letter-spacing:.03em;
+  color:rgba(30,45,75,0.92);
+}
+
+/* ---- 分区标题：与首页 .wdtv-douban-header 一样的细线分隔 ---- */
+.abt-section{
+  margin-bottom:46px;
+  animation:abtFadeUp .85s cubic-bezier(.4,0,.2,1) both;
+}
+.abt-section:nth-of-type(1){animation-delay:.08s}
+.abt-section:nth-of-type(2){animation-delay:.16s}
+.abt-section-head{
+  display:flex;
+  align-items:baseline;
+  gap:14px;
+  padding:0 2px 12px;
+  border-bottom:1px solid var(--glass-border);
+  margin-bottom:18px;
+}
+.abt-section-num{
+  font-family:'Cormorant Garamond',serif;
+  font-size:1.15rem;
+  font-style:italic;
+  font-weight:600;
+  letter-spacing:.08em;
+  color:#1f4d8f;
+}
+.abt-section-title{
+  margin:0;
+  font-size:1.2rem;
+  font-weight:700;
+  letter-spacing:.06em;
+  color:rgba(30,45,75,0.98);
+}
+.abt-section-note{
+  margin-left:auto;
+  font-family:'Raleway','Noto Sans SC',sans-serif;
+  font-size:.7rem;
+  letter-spacing:.14em;
+  color:rgba(30,45,75,0.85);
+}
+
+/* ---- 信息块：与 .douban-card 完全同款（0.06 底 + 淡边框 + 10px 圆角） ---- */
+.abt-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  gap:14px;
+}
+.abt-stack{display:flex;flex-direction:column;gap:14px}
+.abt-card{
+  position:relative;
+  padding:20px 22px 22px;
+  background:rgba(155,180,218,0.06);
+  border:1px solid var(--glass-border);
+  border-radius:10px;
+  color:#2a3a5c;
+}
+.abt-card-head{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:12px;
+  padding-bottom:10px;
+  border-bottom:1px solid var(--glass-border);
+}
+.abt-dot{
+  width:7px;
+  height:7px;
+  flex:none;
+  border-radius:50%;
+  background:rgba(80,128,176,0.9);
+}
+.abt-card-head svg{
+  width:16px;
+  height:16px;
+  flex:none;
+  color:rgba(42,90,160,0.9);
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.abt-card h3{
+  margin:0;
+  font-family:'Noto Serif SC',serif;
+  font-size:1rem;
+  font-weight:500;
+  letter-spacing:.08em;
+  color:rgba(30,45,75,0.95);
+}
+.abt-card p{
+  margin:0;
+  font-size:.9rem;
+  font-weight:400;
+  line-height:1.95;
+  letter-spacing:.02em;
+  color:rgba(30,45,75,0.9);
+}
+.abt-card p + p{margin-top:10px}
+.abt-card strong{color:#2c5aa0;font-weight:600}
+.abt-card .abt-mail{margin-top:16px}
+
+/* 联系邮箱：与 .wdtv-douban-tag 同款极淡透明胶囊 */
+.abt-mail{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  max-width:100%;
+  padding:9px 16px;
+  border-radius:10px;
+  border:1px solid var(--glass-border);
+  background:rgba(155,180,218,0.06);
+  color:#2a3a5c;
+  font-family:'Noto Sans SC',sans-serif;
+  font-size:.92rem;
+  font-weight:500;
+  letter-spacing:.04em;
+  text-decoration:none;
+  word-break:break-all;
+  outline:none;
+  -webkit-tap-highlight-color:transparent;
+  transition:background .3s,border-color .3s,color .3s,transform .3s;
+}
+.abt-mail svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.abt-mail:hover{background:rgba(80,128,176,0.2);border-color:var(--accent);color:#1d3557;transform:translateY(-2px)}
+.abt-mail:active{transform:translateY(0) scale(.985)}
+
+/* ---- 页脚 ---- */
+.abt-footer{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:10px 20px;
+  margin-top:56px;
+  padding:22px 2px 0;
+  border-top:1px solid var(--glass-border);
+  font-size:.76rem;
+  font-weight:400;
+  letter-spacing:.04em;
+  color:rgba(30,45,75,0.92);
+  animation:abtFadeUp .85s cubic-bezier(.4,0,.2,1) .26s both;
+}
+.abt-footer-links{display:flex;gap:18px}
+.abt-footer a{color:rgba(30,45,75,0.95);text-decoration:none;outline:none;transition:color .2s}
+.abt-footer a:hover{color:#2c5aa0}
+
+@keyframes abtFadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+/* ---- 响应式：与首页断点一致 ---- */
+@media (max-width:900px){
+  .abt-left{padding:100px 24px 88px}
+}
+@media (max-width:640px){
+  .abt-topbar{top:14px;left:14px;right:14px}
+  .abt-left{padding:84px 16px 76px}
+  .abt-hero{margin-bottom:40px}
+  .abt-lead{font-size:.88rem;line-height:1.9}
+  .abt-section-note{display:none}
+  .abt-section-title{font-size:1.08rem}
+  .abt-grid{grid-template-columns:1fr;gap:12px}
+  .abt-card{padding:18px 18px 20px}
+  .abt-card p{font-size:.86rem;line-height:1.9}
+  .abt-footer{justify-content:center;text-align:center;margin-top:42px}
+}

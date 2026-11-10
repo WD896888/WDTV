@@ -43,7 +43,7 @@
 <!-- WDTV External CSS -->
 <link rel="stylesheet" href="css/styles.css?v=7">
 <link rel="stylesheet" href="css/index.css?v=39">
-<link rel="stylesheet" href="css/modals.css?v=11">
+<link rel="stylesheet" href="css/modals.css?v=12">
 <link rel="stylesheet" href="css/downloader.css?v=4">
 <link rel="stylesheet" href="css/states.css?v=1">
 
@@ -255,23 +255,11 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .douban-card[data-group-card]:focus-visible{outline:none;box-shadow:inset 0 0 0 1px rgba(155,185,232,0.28);transform:translateY(-1px)}
 /* 画质探测成功后的徽章：只加一层极淡内描边区分，不改既有黄色文字与角标定位 */
 .wdtv-quality-badge.wdtv-quality-probed{box-shadow:inset 0 0 0 1px rgba(155,185,232,0.22)}
-/* 批次3：推荐源切换 / 数据源订阅。用 id + 子选择器，不依赖 JS 生成的具体类名 */
+/* 首页推荐源切换。用 id + 子选择器，不依赖 JS 生成的具体类名 */
 .wdtv-recommend-select{padding:4px 9px;border-radius:9px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--pale);font-size:0.75rem;font-family:'Noto Sans SC',sans-serif;outline:none;cursor:pointer;transition:background 0.2s}
 .wdtv-recommend-select:hover{background:rgba(155,180,218,0.14)}
 .wdtv-recommend-select:focus-visible{outline:none;background:rgba(155,180,218,0.12)}
 .wdtv-recommend-select option{background:#1e2740;color:#e0e6f2}
-.wdtv-sub-row{display:flex;gap:8px;margin-bottom:10px}
-.wdtv-sub-input{flex:1;min-width:0;padding:6px 9px;border-radius:8px;border:1px solid var(--glass-border);background:rgba(255,255,255,0.08);color:var(--pale);font-size:0.74rem;outline:none;font-family:'Noto Sans SC',sans-serif}
-.wdtv-sub-input::placeholder{color:var(--text-muted)}
-.wdtv-sub-input:focus-visible{outline:none;background:rgba(155,180,218,0.12)}
-.wdtv-sub-btn{flex-shrink:0;padding:6px 12px;border-radius:8px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--text-secondary);font-size:0.75rem;cursor:pointer;font-family:'Noto Sans SC',sans-serif;transition:background 0.2s}
-.wdtv-sub-btn:hover{background:rgba(155,180,218,0.14)}
-.wdtv-sub-btn:focus-visible{outline:none;background:rgba(155,180,218,0.12)}
-#wdtvSubscriptionList > div{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:6px 9px;margin-bottom:6px;border-radius:8px;background:rgba(155,180,218,0.06);font-size:0.73rem;color:var(--text-secondary)}
-#wdtvSubscriptionList button{padding:3px 8px;border-radius:6px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.08);color:var(--text-secondary);font-size:0.7rem;cursor:pointer;font-family:'Noto Sans SC',sans-serif}
-#wdtvSubscriptionList button:hover{background:rgba(155,180,218,0.14)}
-#wdtvSubscriptionList select{padding:3px 6px;border-radius:6px;border:1px solid var(--glass-border);background:rgba(30,39,64,0.9);color:var(--pale);font-size:0.7rem;outline:none}
-.wdtv-sub-status{font-size:0.7rem;color:var(--text-muted);margin-top:6px;line-height:1.5}
 /* 时长筛选浮层（结果工具栏） */
 .wdtv-duration-filter{position:relative;display:inline-flex}
 .wdtv-duration-pop{position:absolute;top:calc(100% + 6px);right:0;z-index:60;width:252px;max-width:calc(100vw - 24px);padding:12px;border-radius:12px;border:1px solid rgba(200,220,245,0.4);background:rgba(200,220,245,0.15);backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);box-shadow:0 12px 40px rgba(0,0,0,0.22)}
@@ -939,20 +927,6 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <span>已选API数量：<span id="selectedApiCount" class="wdtv-count">0</span></span>
       <span id="siteStatus"></span>
     </div>
-    <!-- 批次3 A9：数据源订阅。直连优先，失败回退同源 /proxy/；解析全在浏览器端，不新增 Functions -->
-    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--glass-border)">
-      <label class="block-label">数据源订阅</label>
-      <div class="wdtv-sub-row">
-        <input id="wdtvSubscriptionUrl" class="wdtv-sub-input" type="url" placeholder="订阅 JSON 地址（SourceList / TVBOX / 接口目录）" autocomplete="off" spellcheck="false">
-        <button id="wdtvSubscriptionRefresh" class="wdtv-sub-btn">订阅 / 刷新</button>
-      </div>
-      <div id="wdtvSubscriptionList"></div>
-      <div id="wdtvSubscriptionStatus" class="wdtv-sub-status">未添加订阅</div>
-      <div class="wdtv-sub-row" style="margin-top:8px;margin-bottom:0">
-        <button id="wdtvSubscriptionExport" class="wdtv-sub-btn">导出数据源 JSON</button>
-      </div>
-      <div class="wdtv-api-info"><span>支持 LibreTV-SourceList、TVBOX 配置与接口目录。直连失败自动走本站代理；默认不自动刷新，可在条目上单独设置周期。导出后可托管为订阅链接分享。</span></div>
-    </div>
   </div>
   <!-- 视频源连接测试 -->
   <div class="wdtv-settings-block">
@@ -1023,7 +997,6 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
     </div>
     <button onclick="VideoCache.openManager()" class="wdtv-settings-func-btn">视频缓存管理</button>
     <div class="wdtv-api-info"><span>查看 / 清理已缓存的视频内容</span></div>
-    <button onclick="clearLocalStorage()" class="wdtv-settings-func-btn wdtv-secondary">清除Cookie</button>
     <button onclick="window.open('about.html','_blank')" class="wdtv-settings-func-btn wdtv-secondary">隐私政策</button>
   </div>
 </div>
@@ -1084,7 +1057,7 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 
 <!-- External JS -->
 <script src="libs/tailwindcss.min.js"></script>
-<script src="js/config.js?v=29"></script>
+<script src="js/config.js?v=30"></script>
 <!-- 批次2：LibreTV 优势项移植模块（零构建、普通 script，加载顺序即依赖） -->
 <script src="js/states.js?v=1"></script>
 <script src="js/focus-trap.js?v=1"></script>
@@ -1095,25 +1068,23 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 <script src="js/probe-queue.js?v=2"></script>
 <script src="js/ad-filter.js?v=3"></script>
 <script src="js/video-cache.js?v=96"></script>
-<script src="js/downloader.js?v=22"></script>
+<script src="js/download-utils.js?v=1"></script>
+<script src="js/downloader.js?v=23"></script>
 <script src="js/connection-test.js?v=12"></script>
-<script src="js/customer_site.js?v=8"></script>
-<!-- 批次3：数据源订阅（需在 app.js 之前；解析全在浏览器端，直连优先 + /proxy/ 兜底） -->
-<script src="js/source-subscription.js?v=3"></script>
-<script src="js/ui.js?v=16"></script>
+<script src="js/ui.js?v=18"></script>
 <script src="js/source-health.js?v=3"></script>
 <script src="js/api.js?v=16"></script>
 <!-- 批次3：首页推荐增源（需在 douban.js 之前；60s 榜单直连，Bangumi 可选默认关闭） -->
 <script src="js/recommend-sources.js?v=3"></script>
 <script src="js/douban.js?v=17"></script>
 <script src="js/search.js?v=14"></script>
-<script src="js/app.js?v=45"></script>
+<script src="js/app.js?v=46"></script>
 <script src="js/cinema.js?v=17"></script>
 <script src="js/pwa-register.js?v=8"></script>
-<script src="js/index-page.js?v=13"></script>
+<script src="js/index-page.js?v=14"></script>
 <script src="js/dock.js?v=3"></script>
-<script src="js/cloud-sync.js?v=9"></script>
-<script src="js/cloud-sync-ui.js?v=6"></script>
+<script src="js/cloud-sync.js?v=10"></script>
+<script src="js/cloud-sync-ui.js?v=7"></script>
 <script src="js/space.js?v=5"></script>
 
 <!-- InternalBeyond Scripts -->
@@ -1447,33 +1418,6 @@ window.__fxGlass=gwStart;
   } else {
     setTimeout(sync, 0);
   }
-})();
-</script>
-
-<!-- 批次3：导出数据源 JSON（独立绑定，不改动 app.js / source-subscription.js） -->
-<script>
-(function(){
-  var btn = document.getElementById('wdtvSubscriptionExport');
-  if (!btn) return;
-  btn.addEventListener('click', function(){
-    var S = window.WDTVSourceSubscriptions;
-    var st = document.getElementById('wdtvSubscriptionStatus');
-    if (!S || typeof S.exportAll !== 'function') { if (st) st.textContent = '导出功能未就绪'; return; }
-    try {
-      var text = JSON.stringify(S.exportAll(), null, 2);
-      var url = URL.createObjectURL(new Blob([text], { type: 'application/json;charset=utf-8' }));
-      var a = document.createElement('a');
-      a.href = url; a.download = 'wdtv-sources.json';
-      document.body.appendChild(a); a.click();
-      setTimeout(function(){
-        try { URL.revokeObjectURL(url); } catch (e) {}
-        if (a.parentNode) a.parentNode.removeChild(a);
-      }, 0);
-      if (st) st.textContent = '已导出当前点播源，可托管为订阅链接分享';
-    } catch (e) {
-      if (st) st.textContent = '导出失败';
-    }
-  });
 })();
 </script>
 

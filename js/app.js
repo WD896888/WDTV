@@ -18,6 +18,21 @@ if (!localStorage.getItem(EXTRA_SOURCES_KEY)) {
     localStorage.setItem(EXTRA_SOURCES_KEY, '1');
 }
 
+// 2026-11-10 数据源订阅下线：清理老用户本地残留的订阅条目与订阅导入的源 key。
+// 源集合自此完全以 config.js 的 API_SITES 为准，页面不再加载订阅模块。
+const SUBSCRIPTION_OFF_KEY = 'wdtvSubscriptionsOff_20261110';
+if (!localStorage.getItem(SUBSCRIPTION_OFF_KEY)) {
+    try {
+        localStorage.removeItem('wdtvSourceSubscriptions');
+        const builtInOnly = selectedAPIs.filter(k => API_SITES[k]);
+        if (builtInOnly.length !== selectedAPIs.length) {
+            selectedAPIs = builtInOnly;
+            localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+        }
+        localStorage.setItem(SUBSCRIPTION_OFF_KEY, '1');
+    } catch (e) { /* localStorage 不可写时静默跳过，不影响看片 */ }
+}
+
 // 添加当前播放的集数索引
 let currentEpisodeIndex = 0;
 // 添加当前视频的所有集数
@@ -136,90 +151,8 @@ document.addEventListener('DOMContentLoaded', function () {
     // 设置事件监听器
     setupEventListeners();
 
-    // ===== 批次3 ①：数据源订阅首屏渲染 + 打开站点时检查一次（模块内幂等、静默、不阻塞首屏）=====
-    if (window.WDTVSourceSubscriptions) {
-        window.WDTVSourceSubscriptions.render();
-        window.WDTVSourceSubscriptions.autoRefresh();
-    }
-
-    // ===== 批次3 ②：数据源订阅控件事件绑定（document 事件委托，不新增 inline onclick）=====
-    (function () {
-        var S = window.WDTVSourceSubscriptions;
-        if (!S) return;
-
-        function inList(el) {
-            return !!(el && el.closest && el.closest('#wdtvSubscriptionList'));
-        }
-        // 「订阅 / 刷新」唯一按钮 + 输入框回车的统一入口：
-        //  输入框有值 → add（不在 list 才添加）+ 立即强制同步该订阅（已在 list 则直接强制同步）；
-        //  输入框为空 → 强制刷新全部启用订阅（autoRefresh 的强制版）。
-        //  操作结果文案一律不暴露订阅（上游）URL。
-        function submitSubscription(inp) {
-            var raw = inp ? String(inp.value || '').trim() : '';
-            if (raw) {
-                S.add(raw);                               // 已在 list 时内部去重返回 false，不重复添加
-                if (inp) inp.value = '';
-                S.setStatus('正在同步…');
-                S.syncOne(raw, { force: true }).then(function (n) {
-                    if (n < 0) S.setStatus('同步失败，请稍后重试');   // 地址无效/未入库：通用失败文案
-                });
-            } else {
-                S.setStatus('正在刷新全部订阅…');
-                S.autoRefresh({ force: true });
-            }
-        }
-
-        // 点击：唯一按钮 + 列表内操作按钮
-        document.addEventListener('click', function (e) {
-            var t = e.target;
-            var refreshBtn = (t && t.closest) ? t.closest('#wdtvSubscriptionRefresh') : null;
-            if (refreshBtn) {
-                submitSubscription(document.getElementById('wdtvSubscriptionUrl'));
-                return;
-            }
-            var actionEl = (t && t.closest) ? t.closest('[data-sub-action]') : null;
-            if (!actionEl || !inList(actionEl)) return;
-            var action = actionEl.getAttribute('data-sub-action');
-            if (!action || action === 'days') return;     // 周期下拉交给 change 处理
-            e.preventDefault();
-            var url = actionEl.getAttribute('data-sub-url');
-            if (!url) return;
-            if (action === 'remove') S.remove(url);
-            else if (action === 'toggle') {
-                var cur = S.list().filter(function (x) { return x.url === url; })[0];
-                if (cur) S.setEnabled(url, !cur.enabled);
-            }
-            else if (action === 'refresh') {
-                S.setStatus('正在同步…');
-                S.syncOne(url, { force: true }).then(function (n) {
-                    if (n < 0) S.setStatus('同步失败，请稍后重试');
-                });
-            }
-            else if (action === 'resume') {
-                S.resume(url);
-                S.setStatus('正在同步…');
-                S.syncOne(url, { force: true }).then(function (n) {
-                    if (n < 0) S.setStatus('同步失败，请稍后重试');
-                });
-            }
-        });
-
-        // 变更：条目上的刷新周期下拉
-        document.addEventListener('change', function (e) {
-            var el = e.target;
-            if (el && el.getAttribute && el.getAttribute('data-sub-action') === 'days' && inList(el)) {
-                S.setRefreshDays(el.getAttribute('data-sub-url'), parseInt(el.value, 10));
-            }
-        });
-
-        // 回车：输入框内直接提交
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter' && e.target && e.target.id === 'wdtvSubscriptionUrl') {
-                e.preventDefault();
-                submitSubscription(e.target);
-            }
-        });
-    })();
+    // 数据源订阅功能已下线（v97）：源集合完全由 config.js 内置维护，
+    // 页面不再加载订阅模块，也不再提供任何用户自定义接入数据源的入口。
 });
 
 // 初始化API复选框

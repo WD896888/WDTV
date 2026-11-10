@@ -27,8 +27,11 @@ const SITE_CONFIG = {
 //   结论：服务端探测的单次结果不能作为停用或替换用户原有源的依据。
 //   原 6 个停用源（黑木耳/卧龙/新华为/华为吧/豆瓣/魔爪）按上游配置保留 disabled 状态与
 //   失效原因，便于日后站点恢复时直接启用；它们的域名级复核结果见 .workbuddy/memory/2026-11-09.md。
-//   文件末尾 6 个新增源是「补充线路」，使用独立 key，不占用任何内置源槽位；如不需要，
-//   整体删除末尾 6 项即可，内置 14 个源完全不受影响。
+//   文件末尾 7 个源是「补充线路」，使用独立 key，不占用任何内置源槽位；如不需要，
+//   整体删除末尾 7 项即可，内置 14 个源完全不受影响。
+// 2026-11-10 更正：数据源订阅与自定义接入入口全线下线，此表即系统全部内置源。
+//   原由 js/customer_site.js 运行时合并的「七七资源」已并入表尾（key 不变、源集合不变）；
+//   页面不再加载任何外部源配置，也不再暴露运行时注入源的全局钩子。
 const API_SITES = {
     heimuer: {
         api: 'https://json.heimuer.xyz',
@@ -162,17 +165,17 @@ const API_SITES = {
         api: 'https://www.ikunzy.com',
         name: 'iKun资源',
         detailMode: 'api'   // 线路表 ikun；库约 6.7 万条，播放清单双路径有效
+    },
+    // 原 js/customer_site.js 的七七资源：v97 起并入内置（key 与源集合均不变）
+    qiqi: {
+        api: 'https://www.qiqidys.com/api.php/provide/vod',
+        name: '七七资源'
     }
 };
 
-// 定义合并方法
-function extendAPISites(newSites) {
-    Object.assign(API_SITES, newSites);
-}
-
 // 拼接资源站接口 URL：
-//   内置源 api 字段是纯域名（https://json.heimuer.xyz），直接拼接 API_CONFIG 的 path；
-//   自定义源（customer_site）常把完整接口地址填进 api 字段（…/api.php/provide/vod），
+//   多数源 api 字段是纯域名（https://json.heimuer.xyz），直接拼接 API_CONFIG 的 path；
+//   七七资源等源把完整接口地址填进 api 字段（…/api.php/provide/vod），
 //   此时再拼 path 会出现 …/provide/vod/api.php/provide/vod/?ac=… 双重路径（ERR_ABORTED）。
 //   检测到 base 已包含接口路径时只补查询串。
 function buildVodApiUrl(apiBase, path) {
@@ -205,27 +208,10 @@ function normalizeRuyiPicUrl(url) {
     return url.replace(/\/\/(?:ps\.ryzypics\.com|ry-pic\.com)\//i, '//pic.ry-pic.com/');
 }
 
-// 暴露到全局
+// 暴露到全局（只读使用：不提供运行时新增/删除源的方法，源集合以本文件为准）
 window.API_SITES = API_SITES;
-window.extendAPISites = extendAPISites;
 window.applySearchParam = applySearchParam;
 window.normalizeRuyiPicUrl = normalizeRuyiPicUrl;
-
-// 数据源订阅（批次3）：按 key 前缀整体移除某订阅导入的源。
-// 订阅导入的源 key 形如 sub_<订阅hash>_<源hash>，移除/重新同步订阅时用前缀一次性清理，
-// 不影响 extendAPISites 的合并语义，也不触碰内置源与手动添加的源（customer_site）。
-window.removeAPISitesByPrefix = function (prefix) {
-    if (!prefix) return 0;
-    var removed = 0;
-    Object.keys(API_SITES).forEach(function (key) {
-        if (key.indexOf(prefix) === 0) {
-            delete API_SITES[key];
-            removed++;
-        }
-    });
-    return removed;
-};
-
 
 // 添加聚合搜索的配置选项
 const AGGREGATED_SEARCH_CONFIG = {

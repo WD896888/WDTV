@@ -1,4 +1,4 @@
-// 搜索源 DNS 预解析：抽成具名函数并挂到 window，供数据源订阅合并新源后重跑（批次3）。
+// 搜索源 DNS 预解析：抽成具名函数并挂到 window，供源配置变更时重跑。
 // 用持久 Set 记录已预热域名，重复调用只补新增源，避免重复插入 <link rel="dns-prefetch">。
 window.prefetchAPISiteDns = (function () {
     const prefetched = new Set();
@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // 搜索源 DNS 预解析：DOMContentLoaded 时只调用一次；订阅合并新源后由订阅模块再次调用重跑
+    // 搜索源 DNS 预解析：DOMContentLoaded 时调用一次（源集合全部内置，无运行时新增源）
     window.prefetchAPISiteDns();
 
     // URL搜索参数处理脚本
