@@ -2614,7 +2614,7 @@ async function showDetails(id, vod_name, sourceCode) {
 
                 const coverHtml = vi.cover ? `
                     <div class="wdtv-detail-cover">
-                        <img src="${vi.cover}" alt="" loading="lazy"
+                        <img src="${vi.cover}" alt="" loading="lazy" decoding="async"
                              data-original="${encodeURIComponent(vi.cover)}"
                              onerror="handleCoverLoadError(this)">
                     </div>` : '';

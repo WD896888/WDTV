@@ -273,7 +273,11 @@
 // v101（2026-11-10）：首页主视觉标题改为「你看过的电影，不只是电影」，副句按语义分三行排版、窄屏回流为一段，浏览器标签标题同步呼应；改动仅在 index.html 文案与内联样式，外部 css/js 的 ?v= 不变；升级缓存版本清空旧页面缓存，避免老用户离线回退到旧首页 HTML
 // v102（2026-11-10）：应用户要求回退 v101——首页标题恢复为「WDTV / 自由观影，畅享精彩」原文案与原样式（index.html 与 v100 状态一致）；仍升级缓存版本清空页面缓存，确保所有用户立即拿到回退后的首页
 // v103（2026-11-10）：隐私政策页字体/文字层级改回复用首页体系——about.html 引入与首页完全相同的外部 CSS 栈（styles/index/modals/downloader/states）与 Google Fonts，正文用 'Noto Sans SC' 300 + var(--text-primary)/rgba(224,234,248,0.9) 浅色细字 + 首页弹窗标题同款深色阴影（加一层紧实描边适配明亮水雾），主标题/副标题/分区标题/卡片标题分别照抄 .wdtv-title / .wdtv-slogan / .wdtv-douban-header h2 / .wdtv-panel-header h3；组件保持 .douban-card 的 0.06 极淡透明；首页设置面板「隐私政策」按钮去掉 wdtv-secondary，与「视频缓存管理」按钮样式统一；css/about.css 升 ?v=7；升级缓存版本确保新资源即时到达
-const CACHE_VERSION = 'wdtv-sw-v103';
+// v104（2026-11-11）：不降画质/特效的渲染性能优化——① 首页内联 FX 与 js/site-fx.js 同步改造：水波 renderWater 在小端设备用 Uint32Array 一次写入 RGBA（数值验证逐字节等价，同时删掉从未被使用的 gx 与每像素 3 次数组写）、stepWater 预计算相位查表、雨幕渐变色按雨滴预生成字符串、两条 rAF 在页面隐藏时真正 cancel 并在 visibilitychange / 动态效果开关切回时恢复；② 去掉 #splash 对纯色背景毫无视觉作用的 30px 全屏高斯模糊（保留 saturate/brightness 与 Backdrop Root，内部玻璃层采样边界不变），.splash-glow 加 will-change:filter,opacity 让 58s 呼吸动画走合成器；③ 首页 27 个自有 JS 统一 defer（defer 保证按文档顺序执行，依赖链不变；Tailwind Play CDN 保持同步以免首屏无样式闪烁）；④ 动态海报图补 decoding="async"。js/app.js 升 ?v=47、douban.js ?v=18、cinema.js ?v=18、watch-party-ui.js ?v=48、site-fx.js ?v=2、site-bg.css ?v=2；升级缓存版本确保新资源即时到达
+// v105（2026-11-11）：清理未接通的雾气擦除层（#gw-fogwipe）——该 canvas 继承 .gw-ly{pointer-events:none}，4 个 pointer 监听器永远不触发；retarget('bg') 从不初始化它，≤900px 手机端完全不可见；redrawFog 还会在每次 resize 做 5 次全屏绘制并常驻一张 dpr2 约 33MB 纹理。删除 index.html / about.html 的 DOM、首页内联样式与 css/site-bg.css 的规则、两处 FX 的 paintHaze/redrawFog/renderWipeStroke/wipeSegLive/blotch/fogPt 及监听器和 retarget 的 fog 分支，视觉无可察觉损失。另修 bfcache 状态机：pageshow(persisted) 里只 add('gw-exit') 且全项目无 remove，导致从播放器 history.back() 返回后 #gw-slot 永久 opacity:0（背景图/水波消失）且 idleNow() 永久跳过渲染；改为 remove 并重启 FX。css/site-bg.css 升 ?v=3、js/site-fx.js 升 ?v=3；升级缓存版本确保新资源即时到达
+// v106（2026-11-11）：补齐 player.html —— 此前所有性能优化只覆盖首页内联 FX 与 js/site-fx.js，播放器页面一直是独立的旧版实现。① 播放器内联 FX 同步：renderWater 小端 Uint32 快路径（数值逐字节等价）+ 删掉从未使用的 gx、stepWater 相位查表、雨幕渐变色按雨滴预生成、makeOut/buildPhases、gwRafId + visibilitychange 真正休眠（旧版 loop 无条件排队、切后台也不停）、idleNow 增加 #modal 检查让弹层打开时冻结背景，雨幕同样加 rafId 休眠；② 清掉 player.html 残留的雾气层（DOM / CSS / 整段 fog 代码，上轮清理只覆盖了首页与 about.html）；③ #splash 去掉对纯色背景无效的 blur(30px)（保留 saturate/brightness 与 Backdrop Root）、.splash-glow 加 will-change:filter,opacity；④ 新增弹层打开时暂停 splash-glow 动画与 backdrop-filter 的两条规则（与首页一致）；⑤ 三个页面加 bg-canvas.jpg 的 preload，让首屏背景图更早到位。本轮只改 HTML，外部 css/js 的 ?v= 不变；升级缓存版本清空旧页面缓存，确保播放器页面立即拿到新内联脚本
+// v107（2026-11-11）：① 静态资源缓存分级——带 ?v=N 的 css/js/libs 改 Cache-First（命中即返回，不再发起后台 fetch），不带版本号的 bg-canvas.jpg / image/* / manifest.json 保留 SWR。此前统一 SWR 让每次导航在全部命中缓存时仍发 33 个后台请求（27 JS + 5 CSS + 1 库），与字体/封面图/搜索 API 抢连接；项目 URL 带版本号即内容永不变，后台更新纯属浪费，忘升 ?v= 由 SW 版本升级清空 wdtv-* 缓存兜住。② 删除 3 个从未被 CSS 引用的 Google 字体族（Great Vibes / Pinyon Script / Spectral），减少 @font-face 规则与 CSSOM 体积，视觉零变化。③ .wdtv-loading:not(.show) *{animation-play-state:paused}，停掉隐藏遮罩里常驻的 spinner 无限动画（visibility:hidden 只跳绘制、动画时间线仍在 tick）。④ 三处 preloader 显示时机同步：不再等 window.load，改为 DOMContentLoaded + 背景图就绪取较晚 + 120ms 淡出，1.5s 兜底；淡出时背景已就位不露纯色底，首屏可交互明显提前。libs/ 下 5 处脚本引用补 ?v=1 使其一并走 Cache-First（mux-mp4.js 为按需动态注入、不在导航路径）；js/site-fx.js 升 ?v=4；升级缓存版本清空旧缓存，确保新策略与新脚本即时生效
+const CACHE_VERSION = 'wdtv-sw-v107';
 const ASSET_CACHE = `wdtv-assets-${CACHE_VERSION}`;
 const PAGE_CACHE = `wdtv-pages-${CACHE_VERSION}`;
 
@@ -339,12 +343,16 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // --- 版本化静态资源：Stale-While-Revalidate ---
+    // --- 静态资源：带 ?v=N 的走 Cache-First，未版本化的保留 SWR ---
+    // 原理：本项目所有 css/js/libs 都带内容式版本号，发版即换 URL，URL 不变则内容永远不变，
+    // 命中缓存后再发一次后台 fetch 是 100% 浪费（一次导航约 33 个请求），还会与字体/封面图/
+    // 搜索 API 抢连接。不带版本的 bg-canvas.jpg / image/* / manifest.json 仍可能原地更新，保留 SWR。
     if (ASSET_PATH_PATTERNS.some(re => re.test(url.pathname))) {
+        const versioned = /(?:\?|&)v=/.test(url.search);
         event.respondWith((async () => {
             const cache = await caches.open(ASSET_CACHE);
             const cached = await cache.match(request);
-            // 无论命中与否都发起后台更新（命中时用 waitUntil 挂后台，不阻塞响应）
+            if (cached && versioned) return cached;
             const networkUpdate = fetch(request).then(fresh => {
                 if (fresh && fresh.ok) {
                     cache.put(request, fresh.clone());
@@ -356,7 +364,7 @@ self.addEventListener('fetch', event => {
                 event.waitUntil(networkUpdate);
                 return cached;
             }
-            // 首次访问：等网络返回（后续访问才会命中缓存）
+            // 首次访问 / 升级缓存版本后：等网络返回（后续访问才会命中缓存）
             const fresh = await networkUpdate;
             return fresh || Response.error();
         })());

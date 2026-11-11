@@ -40,12 +40,14 @@
 <link rel="stylesheet" href="css/downloader.css?v=4">
 <link rel="stylesheet" href="css/states.css?v=1">
 <!-- 首页内联基础层镜像：:root 深色变量 / reset / 背景层（须在外部 CSS 之后覆盖浅色 :root） -->
-<link rel="stylesheet" href="css/site-bg.css?v=1">
+<link rel="stylesheet" href="css/site-bg.css?v=3">
 <link rel="stylesheet" href="css/about.css?v=7">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Great+Vibes&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Pinyon+Script&family=Raleway:wght@200;300&family=Spectral:ital,wght@1,300&display=swap" media="print" onload="this.media='all'">
+<link rel="preload" as="image" href="bg-canvas.jpg">
+<!-- 仅保留 CSS 实际引用的 4 个字体族；移除 3 个从未被使用的装饰字体，减少 @font-face 规则与 CSSOM 体积 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Raleway:wght@200;300&display=swap" media="print" onload="this.media='all'">
 </head>
 <body>
 
@@ -70,7 +72,6 @@
       <div class="gw-ly gw-grade-s"></div>
       <div class="gw-ly gw-frost"></div>
       <div class="gw-ly gw-depth"></div>
-      <canvas id="gw-fogwipe" class="gw-ly"></canvas>
     </div>
   </div>
 
@@ -168,6 +169,6 @@
 </div>
 
 <!-- 首页同款背景动效：雨幕 / 水波涟漪 / 雾气 / preloader 淡出 -->
-<script src="js/site-fx.js?v=1"></script>
+<script src="js/site-fx.js?v=4"></script>
 </body>
 </html>

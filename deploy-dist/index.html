@@ -50,7 +50,9 @@
 <!-- Google Fonts 异步加载：preconnect 预热连接 + media 技巧避免阻塞首屏渲染（字体带 display=swap，晚到仅切换不遮挡文字） -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Great+Vibes&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Pinyon+Script&family=Raleway:wght@200;300&family=Spectral:ital,wght@1,300&display=swap" media="print" onload="this.media='all'">
+<link rel="preload" as="image" href="bg-canvas.jpg">
+<!-- 仅保留 CSS 实际引用的 4 个字体族；移除 3 个从未被使用的装饰字体，减少 @font-face 规则与 CSSOM 体积 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Raleway:wght@200;300&display=swap" media="print" onload="this.media='all'">
 
 <style>
 
@@ -87,7 +89,9 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 
 /* SPLASH */
 #splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;
-  background:rgba(15,41,95,0.52);backdrop-filter:blur(30px) saturate(0.72) brightness(0.92);-webkit-backdrop-filter:blur(30px) saturate(0.72) brightness(0.92);
+  /* 背景是纯色 var(--bg-deep)，30px 高斯模糊对均匀纯色无任何视觉作用，却是最贵的全屏 pass。
+     去掉 blur、保留 saturate/brightness 以维持原有色调与 Backdrop Root（内部玻璃层的采样边界不变）。 */
+  background:rgba(15,41,95,0.52);backdrop-filter:saturate(0.72) brightness(0.92);-webkit-backdrop-filter:saturate(0.72) brightness(0.92);
   transition:backdrop-filter 3.5s ease-out,background 3.5s ease-out;
   -webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
 #splash.hidden{opacity:0;visibility:hidden;pointer-events:none}
@@ -103,6 +107,7 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
     radial-gradient(ellipse 90% 40% at 50% 88%, rgba(130,162,210,0.18) 0%, rgba(130,162,210,0.07) 42%, transparent 72%),
     linear-gradient(to bottom, transparent 38%, rgba(148,180,228,0.08) 66%, transparent 92%),
     linear-gradient(to bottom, rgba(150,184,234,0.22) 0%, rgba(126,162,216,0.18) 50%, rgba(106,142,200,0.16) 100%);
+  will-change:filter,opacity;
   animation:splashDawn 58s ease-in-out infinite alternate}
 @keyframes splashDawn{0%{opacity:0.88;filter:brightness(1.0) saturate(1.03)}100%{opacity:1;filter:brightness(1.08) saturate(1.06)}}
 
@@ -518,6 +523,8 @@ body:has(#modal:not(.hidden)) #splash{backdrop-filter:none;-webkit-backdrop-filt
 .wdtv-loading.show{opacity:1;visibility:visible;pointer-events:auto}
 .wdtv-loading-content{text-align:center}
 .wdtv-loading-spinner{width:40px;height:40px;border:3px solid rgba(200,215,235,0.4);border-top-color:var(--accent);border-radius:50%;animation:wdtvSpin 0.8s linear infinite;margin:0 auto 12px}
+/* 隐藏时停掉内部无限动画：visibility:hidden 只跳过绘制，动画时间线仍在 tick；显示时自动恢复 */
+.wdtv-loading:not(.show) *{animation-play-state:paused}
 @keyframes wdtvSpin{to{transform:rotate(360deg)}}
 .wdtv-loading-text{color:rgba(236,244,255,0.96);font-size:0.88rem}
 
@@ -575,7 +582,7 @@ body:has(#modal:not(.hidden)) #splash{backdrop-filter:none;-webkit-backdrop-filt
 #gw-slot.gw-has-img .gw-grade-s{opacity:1}
 .gw-depth{z-index:3;background:radial-gradient(130% 160% at 50% 46%,rgba(12,22,44,0) 46%,rgba(12,22,44,0.18) 76%,rgba(12,22,44,0.34) 100%)}
 .gw-frost{z-index:4;opacity:0.55;transition:opacity .4s ease;background:linear-gradient(rgba(16,28,54,0.06),rgba(16,28,54,0.06)),linear-gradient(150deg,rgba(184,204,236,0.07) 0%,rgba(112,136,178,0.04) 52%,rgba(86,108,150,0.07) 100%)}
-#gw-fogwipe{z-index:5}
+/* 雾气擦除层已移除：交互被 .gw-ly 的 pointer-events:none 阻断、手机 bg 模式从不绘制，属死代码 */
 @media (max-width:900px){
 /* 小屏性能优化：背景图显示后每帧都要叠加水波画布，裁掉昂贵的合成特效（全屏面板的边缘渐隐在移动端不可见，着色层改用普通半透明叠加） */
 #gw-pane{-webkit-mask-image:none;mask-image:none;border-radius:0}
@@ -619,10 +626,16 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
     pre.classList.add('fade-out');
     setTimeout(function(){if(pre.parentNode)pre.parentNode.removeChild(pre)},1500);
   }
-  if(document.readyState==='complete'){setTimeout(revealPreloader,300)}
-  else{window.addEventListener('load',function(){setTimeout(revealPreloader,400)})}
-  setTimeout(revealPreloader,3000);
-  setTimeout(revealPreloader,8000);
+  /* 显示时机：不再等 window.load（要等 27 个脚本、字体、图片全部完成，慢网下遮罩盖数秒）。
+     改为 DOM 就绪 + 首屏背景图就绪二者取晚，淡出时背景已就位、不露出纯色底；
+     1.5s 兜底避免极慢网一直遮着，scheduled 保证只调度一次。 */
+  var domReady=document.readyState!=='loading',bgReady=false,scheduled=false;
+  function maybe(){if(domReady&&bgReady&&!scheduled){scheduled=true;setTimeout(revealPreloader,120)}}
+  if(!domReady)document.addEventListener('DOMContentLoaded',function(){domReady=true;maybe()});
+  var probe=new Image();
+  probe.onload=probe.onerror=function(){bgReady=true;maybe()};
+  probe.src='bg-canvas.jpg';
+  setTimeout(function(){domReady=true;bgReady=true;maybe()},1500);
 })();
 </script>
 <div id="rain-container"></div>
@@ -638,7 +651,6 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <div class="gw-ly gw-grade-s"></div>
       <div class="gw-ly gw-frost"></div>
       <div class="gw-ly gw-depth"></div>
-      <canvas id="gw-fogwipe" class="gw-ly"></canvas>
     </div>
   </div>
   <div class="splash-content" id="splash-welcome">
@@ -1056,36 +1068,38 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 </script>
 
 <!-- External JS -->
-<script src="libs/tailwindcss.min.js"></script>
-<script src="js/config.js?v=30"></script>
-<!-- 批次2：LibreTV 优势项移植模块（零构建、普通 script，加载顺序即依赖） -->
-<script src="js/states.js?v=1"></script>
-<script src="js/focus-trap.js?v=1"></script>
-<script src="js/image-fallback.js?v=2"></script>
-<script src="js/remarks.js?v=1"></script>
-<script src="js/aggregate.js?v=1"></script>
-<script src="js/quality.js?v=2"></script>
-<script src="js/probe-queue.js?v=2"></script>
-<script src="js/ad-filter.js?v=3"></script>
-<script src="js/video-cache.js?v=96"></script>
-<script src="js/download-utils.js?v=1"></script>
-<script src="js/downloader.js?v=23"></script>
-<script src="js/connection-test.js?v=12"></script>
-<script src="js/ui.js?v=18"></script>
-<script src="js/source-health.js?v=3"></script>
-<script src="js/api.js?v=16"></script>
+<!-- Tailwind Play CDN 需同步执行以在首帧前注入样式，避免无样式闪烁；其余脚本统一 defer：
+     defer 保证按文档顺序执行（依赖链不变），但不再逐个阻塞 HTML 解析，浏览器可并行下载 1.49MB 自有 JS。 -->
+<script src="libs/tailwindcss.min.js?v=1"></script>
+<script defer src="js/config.js?v=30"></script>
+<!-- 批次2：LibreTV 优势项移植模块（零构建、defer 按文档顺序即依赖） -->
+<script defer src="js/states.js?v=1"></script>
+<script defer src="js/focus-trap.js?v=1"></script>
+<script defer src="js/image-fallback.js?v=2"></script>
+<script defer src="js/remarks.js?v=1"></script>
+<script defer src="js/aggregate.js?v=1"></script>
+<script defer src="js/quality.js?v=2"></script>
+<script defer src="js/probe-queue.js?v=2"></script>
+<script defer src="js/ad-filter.js?v=3"></script>
+<script defer src="js/video-cache.js?v=96"></script>
+<script defer src="js/download-utils.js?v=1"></script>
+<script defer src="js/downloader.js?v=23"></script>
+<script defer src="js/connection-test.js?v=12"></script>
+<script defer src="js/ui.js?v=18"></script>
+<script defer src="js/source-health.js?v=3"></script>
+<script defer src="js/api.js?v=16"></script>
 <!-- 批次3：首页推荐增源（需在 douban.js 之前；60s 榜单直连，Bangumi 可选默认关闭） -->
-<script src="js/recommend-sources.js?v=3"></script>
-<script src="js/douban.js?v=17"></script>
-<script src="js/search.js?v=14"></script>
-<script src="js/app.js?v=46"></script>
-<script src="js/cinema.js?v=17"></script>
-<script src="js/pwa-register.js?v=8"></script>
-<script src="js/index-page.js?v=14"></script>
-<script src="js/dock.js?v=3"></script>
-<script src="js/cloud-sync.js?v=10"></script>
-<script src="js/cloud-sync-ui.js?v=7"></script>
-<script src="js/space.js?v=5"></script>
+<script defer src="js/recommend-sources.js?v=3"></script>
+<script defer src="js/douban.js?v=18"></script>
+<script defer src="js/search.js?v=14"></script>
+<script defer src="js/app.js?v=47"></script>
+<script defer src="js/cinema.js?v=18"></script>
+<script defer src="js/pwa-register.js?v=8"></script>
+<script defer src="js/index-page.js?v=14"></script>
+<script defer src="js/dock.js?v=3"></script>
+<script defer src="js/cloud-sync.js?v=10"></script>
+<script defer src="js/cloud-sync-ui.js?v=7"></script>
+<script defer src="js/space.js?v=5"></script>
 
 <!-- InternalBeyond Scripts -->
 <script>
@@ -1095,10 +1109,12 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 window.addEventListener('pageshow', function(event) {
   // event.persisted is true when page is restored from bfcache
   if (event.persisted) {
-    // Reset glass canvas system to non-interactive state
+    // bfcache 恢复：清掉旧的退出态，让背景层重新显示。
+    // 旧实现只 add('gw-exit') 且全项目无 remove，导致从播放器返回后
+    // #gw-slot 永久 opacity:0（背景图/水波消失），idleNow() 也永久跳过渲染。
     var slot = document.getElementById('gw-slot');
     if (slot) {
-      slot.classList.add('gw-exit');
+      slot.classList.remove('gw-exit');
     }
     
     // Ensure splash content is interactive
@@ -1162,6 +1178,10 @@ window.addEventListener('pageshow', function(event) {
   function reset(d){
     d.z=R(0.35,1);d.x=Math.random()*W;d.v=(380+R(0,320))*d.z;
     d.y=-R(0.05,1.2)*d.v;d.w=1.8+d.z*0.8;d.wf=R(0.8,1.2);
+    var a=0.18+0.26*d.z;
+    d.g0='rgba(200,220,242,0)';d.g1='rgba(208,225,245,'+(a*0.55).toFixed(3)+')';
+    d.g2='rgba(218,232,250,'+Math.min(0.5,a*1.15).toFixed(3)+')';
+    d.fill='rgba(224,238,252,'+Math.min(0.45,a*0.9).toFixed(3)+')';
   }
   function size(){
     W=innerWidth;H=innerHeight;
@@ -1172,7 +1192,7 @@ window.addEventListener('pageshow', function(event) {
   var last=0,rafId=null,rainHeld=false;
   function fxOff(){return document.documentElement.classList.contains('fx-off')}
   function loop(ts){
-    if(fxOff()){rafId=null;return}
+    if(fxOff()||document.hidden){rafId=null;return}
     rafId=requestAnimationFrame(loop);
     var mo=document.getElementById('modal');
     if(mo&&!mo.classList.contains('hidden')){if(!rainHeld){ctx.clearRect(0,0,W,H);rainHeld=true}last=ts;return}
@@ -1185,20 +1205,19 @@ window.addEventListener('pageshow', function(event) {
       var len=Math.min(72,d.v*0.1);
       if(d.y-len>H){reset(d);continue}
       if(d.y<-40)continue;
-      var a=0.18+0.26*d.z;
       var tx=d.x-wz*(len/d.v),ty=d.y-len;
       var g=ctx.createLinearGradient(tx,ty,d.x,d.y);
-      g.addColorStop(0,'rgba(200,220,242,0)');
-      g.addColorStop(0.62,'rgba(208,225,245,'+(a*0.55).toFixed(3)+')');
-      g.addColorStop(1,'rgba(218,232,250,'+Math.min(0.5,a*1.15).toFixed(3)+')');
+      g.addColorStop(0,d.g0);g.addColorStop(0.62,d.g1);g.addColorStop(1,d.g2);
       ctx.strokeStyle=g;ctx.lineWidth=d.w;
       ctx.beginPath();ctx.moveTo(tx,ty);ctx.lineTo(d.x,d.y);ctx.stroke();
-      ctx.fillStyle='rgba(224,238,252,'+Math.min(0.45,a*0.9).toFixed(3)+')';
+      ctx.fillStyle=d.fill;
       ctx.beginPath();ctx.arc(d.x,d.y,d.w*0.55,0,6.2832);ctx.fill();
     }
   }
-  function startRain(){if(rafId==null&&!fxOff())rafId=requestAnimationFrame(loop)}
+  function startRain(){if(rafId==null&&!fxOff()&&!document.hidden)rafId=requestAnimationFrame(loop)}
+  function stopRain(){if(rafId!=null){cancelAnimationFrame(rafId);rafId=null}}
   window.__fxRain=startRain;
+  document.addEventListener('visibilitychange',function(){if(document.hidden)stopRain();else startRain()});
   addEventListener('resize',size);size();startRain();
 })();
 </script>
@@ -1220,7 +1239,8 @@ function R(a,b){return a+Math.random()*(b-a)}
 var REDUCED=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 var mqSmall=window.matchMedia?window.matchMedia('(max-width:900px)'):{matches:false};
 var W=0,H=0,img=null;var REFRACT_OK=true;
-var SW=0,SH=0,h1=null,h2=null,bgData=null,outImg=null;
+var SW=0,SH=0,h1=null,h2=null,bgData=null,outImg=null,dst32=null,phaseA=null,phaseB=null;
+var LE=(function(){var b=new Uint8Array(4);new Uint32Array(b.buffer)[0]=1;return b[0]===1})();
 var rippleScale=1;
 var sim=document.createElement('canvas'),simCtx=null;
 var RIPPLE_MAG=1.5;
@@ -1232,12 +1252,25 @@ var swT=0;
 var SIN_TABLE=new Float32Array(1024);
 for(var i=0;i<1024;i++)SIN_TABLE[i]=Math.sin(i/1024*Math.PI*2);
 function fastSin(x){x=x%(Math.PI*2);if(x<0)x+=Math.PI*2;return SIN_TABLE[(x/(Math.PI*2)*1024)|0]}
-function stepWater(){swT+=0.0333;for(var y=1;y<SH-1;y++){var i=y*SW+1;for(var x=1;x<SW-1;x++,i++){h2[i]=((h1[i-1]+h1[i+1]+h1[i-SW]+h1[i+SW])*0.5-h2[i])*DAMP+0.0024*fastSin(swT*0.7+x*0.05+y*0.021)+0.0019*fastSin(swT*0.43-x*0.023+y*0.041)}}var t=h1;h1=h2;h2=t}
+function buildPhases(){phaseA=new Float32Array(SW);phaseB=new Float32Array(SW);for(var x=0;x<SW;x++){phaseA[x]=x*0.05;phaseB[x]=-x*0.023}}
+function makeOut(){outImg=simCtx.createImageData(SW,SH);dst32=LE?new Uint32Array(outImg.data.buffer):null}
+function stepWater(){swT+=0.0333;var tA=swT*0.7,tB=swT*0.43;for(var y=1;y<SH-1;y++){var i=y*SW+1;var a0=tA+y*0.021,b0=tB+y*0.041;for(var x=1;x<SW-1;x++,i++){h2[i]=((h1[i-1]+h1[i+1]+h1[i-SW]+h1[i+SW])*0.5-h2[i])*DAMP+0.0024*fastSin(a0+phaseA[x])+0.0019*fastSin(b0+phaseB[x])}}var t=h1;h1=h2;h2=t}
 function renderWater(){
-  var gloss=true;var ctx=(mode==='bg')?bgctx:rctx;
+  var ctx=(mode==='bg')?bgctx:rctx;
   var GAIN=(mode==='bg')?150*RIPPLE_MAG:330*RIPPLE_MAG,CAP=(mode==='bg')?110*RIPPLE_MAG:165*RIPPLE_MAG;
-  var dst=outImg.data,h=h1;
-  for(var y=0;y<SH;y++){var yu=y>0?y-1:y,yd=y<SH-1?y+1:y;for(var x=0;x<SW;x++){var i=y*SW+x;var xl=x>0?i-1:i,xr=x<SW-1?i+1:i;var gx=h[xl]-h[xr];var gy=h[yu*SW+x]-h[yd*SW+x];var di=i*4;var a=gy*GAIN;if(a>=0){a=a*0.18;dst[di]=224;dst[di+1]=238;dst[di+2]=255;dst[di+3]=(a>CAP?CAP:a)|0}else{a=-a*0.1;dst[di]=10;dst[di+1]=22;dst[di+2]=44;dst[di+3]=(a>CAP?CAP:a)|0}}}
+  var h=h1;
+  if(dst32){
+    for(var y=0;y<SH;y++){var row=y*SW,yuOff=(y>0?y-1:y)*SW,ydOff=(y<SH-1?y+1:y)*SW;
+      for(var x=0;x<SW;x++){var a=(h[yuOff+x]-h[ydOff+x])*GAIN,q;
+        if(a>=0){q=a*0.18;dst32[row+x]=((((q>CAP?CAP:q)|0)<<24)|0xFFEEE0)>>>0}
+        else{q=-a*0.1;dst32[row+x]=((((q>CAP?CAP:q)|0)<<24)|0x2C160A)>>>0}}}
+  }else{
+    var dst=outImg.data;
+    for(var y2=0;y2<SH;y2++){var row2=y2*SW,yuOff2=(y2>0?y2-1:y2)*SW,ydOff2=(y2<SH-1?y2+1:y2)*SW;
+      for(var x2=0;x2<SW;x2++){var di=(row2+x2)*4,a2=(h[yuOff2+x2]-h[ydOff2+x2])*GAIN;
+        if(a2>=0){a2=a2*0.18;dst[di]=224;dst[di+1]=238;dst[di+2]=255;dst[di+3]=(a2>CAP?CAP:a2)|0}
+        else{a2=-a2*0.1;dst[di]=10;dst[di+1]=22;dst[di+2]=44;dst[di+3]=(a2>CAP?CAP:a2)|0}}}
+  }
   simCtx.putImageData(outImg,0,0);var rs=(mode==='bg')?bscale:dpr;ctx.setTransform(rs,0,0,rs,0,0);ctx.imageSmoothingEnabled=true;
   ctx.clearRect(0,0,W,H);ctx.drawImage(sim,0,0,W,H);
 }
@@ -1253,24 +1286,20 @@ function tap(e){if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;stirPts[
 function lift(e){delete stirPts[e.pointerId]}
 function bgBlank(e){var t=e.target;if(!t||t===sp||t===slot||t===pane)return true;if(t.closest&&(t.closest('#searchArea')||t.closest('#doubanArea')||t.closest('#resultsArea')||t.closest('#cinemaEmpty')||t.closest('.wsp-stage')||t.closest('.wdtv-dock')||t.closest('.wdtv-modal-overlay')||t.closest('.wdtv-disclaimer-modal')||t.closest('.wdtv-history-panel')||t.closest('.wdtv-settings-panel')||t.closest('#chat-mini')))return false;return true}
 if(sp&&!REDUCED){var gwTouch={};sp.addEventListener('pointerdown',function(e){if(mode!=='bg')return;var ok=bgBlank(e);gwTouch[e.pointerId]=ok;if(ok)tap(e)},{passive:true});sp.addEventListener('pointermove',function(e){if(mode==='bg'&&gwTouch[e.pointerId]!==false)stir(e)},{passive:true});sp.addEventListener('pointerup',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointercancel',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointerleave',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true})}
-var fogCv=document.getElementById('gw-fogwipe');var fog=fogCv?fogCv.getContext('2d'):null;var wipeStrokes=[];
-function blotch(x,y,r,a){if(!fog)return;var g=fog.createRadialGradient(W*x,H*y,0,W*x,H*y,Math.max(W,H)*r);g.addColorStop(0,'rgba(222,234,250,'+a+')');g.addColorStop(1,'rgba(222,234,250,0)');fog.fillStyle=g;fog.fillRect(0,0,W,H)}
-function paintHaze(){if(!fog)return;fog.globalCompositeOperation='source-over';fog.shadowBlur=0;fog.fillStyle='rgba(208,224,244,0.10)';fog.fillRect(0,0,W,H);var g=fog.createRadialGradient(W*0.5,H*0.46,Math.min(W,H)*0.22,W*0.5,H*0.5,Math.max(W,H)*0.72);g.addColorStop(0,'rgba(214,228,246,0)');g.addColorStop(1,'rgba(214,228,246,0.12)');fog.fillStyle=g;fog.fillRect(0,0,W,H);blotch(0.18,0.20,0.50,0.06);blotch(0.82,0.74,0.55,0.05);blotch(0.60,0.12,0.40,0.04)}
-function renderWipeStroke(p){if(!fog)return;var w=p.w||19;fog.globalCompositeOperation='destination-out';fog.lineCap='round';fog.lineJoin='round';fog.strokeStyle='rgba(0,0,0,0.92)';fog.lineWidth=w;if(p.length===1){fog.fillStyle='rgba(0,0,0,0.92)';fog.beginPath();fog.arc(p[0].x*W,p[0].y*H,w/2,0,Math.PI*2);fog.fill()}for(var i=1;i<p.length;i++){fog.beginPath();fog.moveTo(p[i-1].x*W,p[i-1].y*H);fog.lineTo(p[i].x*W,p[i].y*H);fog.stroke()}fog.globalCompositeOperation='source-over'}
-function redrawFog(){if(!fog)return;fog.globalCompositeOperation='source-over';fog.clearRect(0,0,W,H);paintHaze();for(var i=0;i<wipeStrokes.length;i++)renderWipeStroke(wipeStrokes[i]);fog.globalCompositeOperation='source-over'}
-function wipeSegLive(a,b,w){if(!fog)return;fog.globalCompositeOperation='destination-out';fog.lineCap='round';fog.lineJoin='round';fog.strokeStyle='rgba(0,0,0,0.92)';fog.lineWidth=w||19;fog.beginPath();fog.moveTo(a.x*W,a.y*H);fog.lineTo(b.x*W,b.y*H);fog.stroke();fog.globalCompositeOperation='source-over'}
-var fogCur=null;
-function fogPt(e){var r=fogCv.getBoundingClientRect();return{x:(e.clientX-r.left)/W,y:(e.clientY-r.top)/H}}
-if(fogCv&&!REDUCED){fogCv.addEventListener('pointerdown',function(e){if(mode!=='pane'||idleNow())return;try{fogCv.setPointerCapture(e.pointerId)}catch(_){}var p=fogPt(e);fogCur={pts:[p],w:19};wipeStrokes.push(fogCur.pts);renderWipeStroke([p]);e.preventDefault()});fogCv.addEventListener('pointermove',function(e){if(!fogCur)return;var p=fogPt(e),pts=fogCur.pts,last=pts[pts.length-1];if(Math.hypot((p.x-last.x)*W,(p.y-last.y)*H)<1.2)return;pts.push(p);wipeSegLive(pts[pts.length-2],pts[pts.length-1],fogCur.w)});fogCv.addEventListener('pointerup',function(){if(fogCur){redrawFog();fogCur=null}});fogCv.addEventListener('pointercancel',function(){if(fogCur){redrawFog();fogCur=null}})}
-function gridFit(){var targetW=Math.min(800,Math.max(200,Math.round(W/2)));SW=Math.max(200,targetW);SH=Math.max(100,Math.round(SW*H/W));var baseSW=SW;rippleScale=1;sim.width=SW;sim.height=SH;simCtx=sim.getContext('2d');h1=new Float32Array(SW*SH);h2=new Float32Array(SW*SH);stepAcc=0;stirPts={};if(drops)drops.length=0;if(plips)plips.length=0}
-function rebuildBg(){if(!img)return false;var iw=img.naturalWidth,ih=img.naturalHeight;if(!iw||!ih)return false;var scale=Math.max(W/iw,H/ih);var sw=W/scale,sh=H/scale;var sx=(iw-sw)/2,sy=(ih-sh)/2;var tmp=document.createElement('canvas');tmp.width=SW;tmp.height=SH;var tc=tmp.getContext('2d');tc.drawImage(img,sx,sy,sw,sh,0,0,SW,SH);try{bgData=tc.getImageData(0,0,SW,SH);REFRACT_OK=true;slot.classList.remove('gw-gloss')}catch(_){bgData=null;REFRACT_OK=false;slot.classList.add('gw-gloss')}outImg=simCtx.createImageData(SW,SH);return true}
-function retarget(m){if(m==='pane'){var r=pane.getBoundingClientRect();if(r.width<2||r.height<2)return false;W=r.width;H=r.height;rcv.width=Math.round(W*dpr);rcv.height=Math.round(H*dpr);if(fogCv){fogCv.width=Math.round(W*dpr);fogCv.height=Math.round(H*dpr);fog.setTransform(dpr,0,0,dpr,0,0);redrawFog()}gridFit();return rebuildBg()}W=window.innerWidth;H=window.innerHeight;if(W<2||H<2)return false;bscale=Math.min(dpr,1.5);bgcv.width=Math.round(W*bscale);bgcv.height=Math.round(H*bscale);gridFit();outImg=simCtx.createImageData(SW,SH);for(var k=0;k<3;k++)poke(R(2,SW-2),R(2,SH-2),R(0.5,1.1),2);return true}
+/* 雾气绘制与擦除逻辑、4 个指针监听器已移除：该 canvas 继承 .gw-ly 的
+   pointer-events:none，命中测试永远跳过它，擦雾交互不可达；手机 bg 模式也从不
+   初始化它（完全不可见），且每次 resize 还会做 5 次全屏绘制。 */
+function gridFit(){var targetW=Math.min(800,Math.max(200,Math.round(W/2)));SW=Math.max(200,targetW);SH=Math.max(100,Math.round(SW*H/W));rippleScale=1;sim.width=SW;sim.height=SH;simCtx=sim.getContext('2d');h1=new Float32Array(SW*SH);h2=new Float32Array(SW*SH);buildPhases();stepAcc=0;stirPts={};if(drops)drops.length=0;if(plips)plips.length=0}
+function rebuildBg(){if(!img)return false;var iw=img.naturalWidth,ih=img.naturalHeight;if(!iw||!ih)return false;var scale=Math.max(W/iw,H/ih);var sw=W/scale,sh=H/scale;var sx=(iw-sw)/2,sy=(ih-sh)/2;var tmp=document.createElement('canvas');tmp.width=SW;tmp.height=SH;var tc=tmp.getContext('2d');tc.drawImage(img,sx,sy,sw,sh,0,0,SW,SH);try{bgData=tc.getImageData(0,0,SW,SH);REFRACT_OK=true;slot.classList.remove('gw-gloss')}catch(_){bgData=null;REFRACT_OK=false;slot.classList.add('gw-gloss')}makeOut();return true}
+function retarget(m){if(m==='pane'){var r=pane.getBoundingClientRect();if(r.width<2||r.height<2)return false;W=r.width;H=r.height;rcv.width=Math.round(W*dpr);rcv.height=Math.round(H*dpr);gridFit();return rebuildBg()}W=window.innerWidth;H=window.innerHeight;if(W<2||H<2)return false;bscale=Math.min(dpr,1.5);bgcv.width=Math.round(W*bscale);bgcv.height=Math.round(H*bscale);gridFit();makeOut();for(var k=0;k<3;k++)poke(R(2,SW-2),R(2,SH-2),R(0.5,1.1),2);return true}
 var mode=null,tgtOk=false,shownP=false,shownB=false;
 function computeMode(){return mqSmall.matches?'bg':'pane'}
 function idleNow(){if(document.hidden)return true;if(slot.classList.contains('gw-exit'))return true;var m=document.getElementById('modal');if(m&&!m.classList.contains('hidden'))return true;return false}
-var last=0,stepAcc=0,gwRaf=false;
-function gwStart(){if(gwRaf)return;if(document.documentElement.classList.contains('fx-off'))return;gwRaf=true;requestAnimationFrame(loop)}
-function loop(ts){if((sp&&sp.classList.contains('hidden'))||document.documentElement.classList.contains('fx-off')){gwRaf=false;return}requestAnimationFrame(loop);var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}if(!tgtOk||idleNow()){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}
+var last=0,stepAcc=0,gwRafId=null;
+function gwStart(){if(gwRafId!=null)return;if(document.documentElement.classList.contains('fx-off')||document.hidden)return;gwRafId=requestAnimationFrame(loop)}
+function gwStop(){if(gwRafId!=null){cancelAnimationFrame(gwRafId);gwRafId=null}}
+document.addEventListener('visibilitychange',function(){if(document.hidden)gwStop();else gwStart()});
+function loop(ts){if((sp&&sp.classList.contains('hidden'))||document.documentElement.classList.contains('fx-off')||document.hidden){gwRafId=null;return}gwRafId=requestAnimationFrame(loop);var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}if(!tgtOk||idleNow()){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}
 if(window.ResizeObserver)new ResizeObserver(function(){if(mode==='pane')tgtOk=retarget('pane')}).observe(pane);
 window.addEventListener('resize',function(){if(!gwIsTyping()&&mode)tgtOk=retarget(mode)});
 (function probe(names){if(!names.length)return;var name=names.shift();var im=new Image();im.onload=function(){img=im;if(REDUCED){mode='pane';if(retarget('pane')){renderWater();slot.classList.add('gw-rippling')}return}if(mode==='pane')tgtOk=retarget('pane')};im.onerror=function(){probe(names)};im.src=name})(['bg-canvas.jpg','bg-canvas.png']);
@@ -1326,8 +1355,16 @@ window.__fxGlass=gwStart;
 })();
 </script>
 <script>
-/* RAIN VISIBILITY */
+/* RAIN VISIBILITY + FX 生命周期恢复 */
 (function(){
+  /* 动态效果开关切回「开启」时恢复两条 rAF，与 js/site-fx.js 静态页实现保持一致 */
+  if(window.MutationObserver){
+    new MutationObserver(function(){
+      if(document.hidden||document.documentElement.classList.contains('fx-off'))return;
+      if(typeof window.__fxRain==='function')window.__fxRain();
+      if(typeof window.__fxGlass==='function')window.__fxGlass();
+    }).observe(document.documentElement,{attributes:true,attributeFilter:['class']});
+  }
   var rc=document.getElementById('rain-container');
   if(!rc)return;
   function show(){rc.classList.add('rain-visible')}

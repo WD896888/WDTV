@@ -2,13 +2,12 @@
    WDTV 站点背景动效（首页同款）
    ---------------------------------------------------------------------
    镜像自 index.html 底部的内联脚本：preloader 淡出、RAIN 雨幕、
-   GLASS CANVAS 水波涟漪 / 雨滴落水 / 雾气擦除、rain 可见性同步。
+   GLASS CANVAS 水波涟漪 / 雨滴落水、rain 可见性同步。
    首页仍使用内联版本（保持不变），about.html 等静态页引用本脚本。
 
    依赖的 DOM（与 index.html 背景层结构一一对应）：
      #preloader、#rain-container、#splash、.splash-glow、#gw-ripple-bg、
-     #gw-slot > #gw-pane > .gw-img / #gw-ripple / .gw-grade-* / .gw-frost /
-     .gw-depth / #gw-fogwipe
+     #gw-slot > #gw-pane > .gw-img / #gw-ripple / .gw-grade-* / .gw-frost / .gw-depth
    依赖的背景图：bg-canvas.jpg（失败回退 bg-canvas.png）。
 
    维护约定：首页内联 FX 脚本若有调整，请同步本文件。
@@ -25,10 +24,16 @@
       pre.classList.add('fade-out');
       setTimeout(function () { if (pre.parentNode) pre.parentNode.removeChild(pre); }, 1500);
     }
-    if (document.readyState === 'complete') setTimeout(reveal, 300);
-    else window.addEventListener('load', function () { setTimeout(reveal, 400); });
-    setTimeout(reveal, 3000);
-    setTimeout(reveal, 8000);
+    /* 显示时机：不再等 window.load（要等全部脚本/字体/图片完成，慢网下遮罩盖数秒）。
+       改为 DOM 就绪 + 首屏背景图就绪二者取晚，淡出时背景已就位、不露出纯色底；
+       1.5s 兜底避免极慢网一直遮着，scheduled 保证只调度一次。 */
+    var domReady = document.readyState !== 'loading', bgReady = false, scheduled = false;
+    function maybe() { if (domReady && bgReady && !scheduled) { scheduled = true; setTimeout(reveal, 120); } }
+    if (!domReady) document.addEventListener('DOMContentLoaded', function () { domReady = true; maybe(); });
+    var probe = new Image();
+    probe.onload = probe.onerror = function () { bgReady = true; maybe(); };
+    probe.src = 'bg-canvas.jpg';
+    setTimeout(function () { domReady = true; bgReady = true; maybe(); }, 1500);
   })();
 
   /* ---------- Rain ---------- */
@@ -46,6 +51,13 @@
     function reset(d) {
       d.z = R(0.35, 1); d.x = Math.random() * W; d.v = (380 + R(0, 320)) * d.z;
       d.y = -R(0.05, 1.2) * d.v; d.w = 1.8 + d.z * 0.8; d.wf = R(0.8, 1.2);
+      /* 渐变色只取决于 d.z（生命周期内固定），预先算好字符串，
+         避免每帧为 45 滴各做 3 次 toFixed + 字符串拼接（约 2700 次/秒）。 */
+      var a = 0.18 + 0.26 * d.z;
+      d.g0 = 'rgba(200,220,242,0)';
+      d.g1 = 'rgba(208,225,245,' + (a * 0.55).toFixed(3) + ')';
+      d.g2 = 'rgba(218,232,250,' + Math.min(0.5, a * 1.15).toFixed(3) + ')';
+      d.fill = 'rgba(224,238,252,' + Math.min(0.45, a * 0.9).toFixed(3) + ')';
     }
     function size() {
       W = window.innerWidth; H = window.innerHeight;
@@ -56,7 +68,7 @@
     var last = 0, rafId = null, rainHeld = false;
     function fxOff() { return document.documentElement.classList.contains('fx-off'); }
     function loop(ts) {
-      if (fxOff()) { rafId = null; return; }
+      if (fxOff() || document.hidden) { rafId = null; return; }
       rafId = requestAnimationFrame(loop);
       var mo = document.getElementById('modal');
       if (mo && !mo.classList.contains('hidden')) {
@@ -72,20 +84,23 @@
         var len = Math.min(72, d.v * 0.1);
         if (d.y - len > H) { reset(d); continue; }
         if (d.y < -40) continue;
-        var a = 0.18 + 0.26 * d.z;
         var tx = d.x - wz * (len / d.v), ty = d.y - len;
         var g = ctx.createLinearGradient(tx, ty, d.x, d.y);
-        g.addColorStop(0, 'rgba(200,220,242,0)');
-        g.addColorStop(0.62, 'rgba(208,225,245,' + (a * 0.55).toFixed(3) + ')');
-        g.addColorStop(1, 'rgba(218,232,250,' + Math.min(0.5, a * 1.15).toFixed(3) + ')');
+        g.addColorStop(0, d.g0);
+        g.addColorStop(0.62, d.g1);
+        g.addColorStop(1, d.g2);
         ctx.strokeStyle = g; ctx.lineWidth = d.w;
         ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(d.x, d.y); ctx.stroke();
-        ctx.fillStyle = 'rgba(224,238,252,' + Math.min(0.45, a * 0.9).toFixed(3) + ')';
+        ctx.fillStyle = d.fill;
         ctx.beginPath(); ctx.arc(d.x, d.y, d.w * 0.55, 0, 6.2832); ctx.fill();
       }
     }
-    function startRain() { if (rafId == null && !fxOff()) rafId = requestAnimationFrame(loop); }
+    function startRain() { if (rafId == null && !fxOff() && !document.hidden) rafId = requestAnimationFrame(loop); }
+    function stopRain() { if (rafId != null) { cancelAnimationFrame(rafId); rafId = null; } }
     window.__fxRain = startRain;
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) stopRain(); else startRain();
+    });
     window.addEventListener('resize', size);
     size(); startRain();
   })();
@@ -105,7 +120,11 @@
     var REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     var mqSmall = window.matchMedia ? window.matchMedia('(max-width:900px)') : { matches: false };
     var W = 0, H = 0, img = null; var REFRACT_OK = true;
-    var SW = 0, SH = 0, h1 = null, h2 = null, bgData = null, outImg = null;
+    var SW = 0, SH = 0, h1 = null, h2 = null, bgData = null, outImg = null, dst32 = null;
+    var phaseA = null, phaseB = null;
+    /* 小端设备用 Uint32Array 一次写入 RGBA 四通道，省掉每像素 3 次数组写入；
+       大端设备回退逐字节路径，两条路径产出的字节序列完全一致。 */
+    var LE = (function () { var b = new Uint8Array(4); new Uint32Array(b.buffer)[0] = 1; return b[0] === 1; })();
     var rippleScale = 1;
     var sim = document.createElement('canvas'), simCtx = null;
     var RIPPLE_MAG = 1.5;
@@ -128,14 +147,24 @@
     var SIN_TABLE = new Float32Array(1024);
     for (var i = 0; i < 1024; i++) SIN_TABLE[i] = Math.sin(i / 1024 * Math.PI * 2);
     function fastSin(x) { x = x % (Math.PI * 2); if (x < 0) x += Math.PI * 2; return SIN_TABLE[(x / (Math.PI * 2) * 1024) | 0]; }
+    function buildPhases() {
+      phaseA = new Float32Array(SW); phaseB = new Float32Array(SW);
+      for (var x = 0; x < SW; x++) { phaseA[x] = x * 0.05; phaseB[x] = -x * 0.023; }
+    }
+    function makeOut() {
+      outImg = simCtx.createImageData(SW, SH);
+      dst32 = LE ? new Uint32Array(outImg.data.buffer) : null;
+    }
     function stepWater() {
       swT += 0.0333;
+      var tA = swT * 0.7, tB = swT * 0.43;
       for (var y = 1; y < SH - 1; y++) {
         var i = y * SW + 1;
+        var a0 = tA + y * 0.021, b0 = tB + y * 0.041;
         for (var x = 1; x < SW - 1; x++, i++) {
           h2[i] = ((h1[i - 1] + h1[i + 1] + h1[i - SW] + h1[i + SW]) * 0.5 - h2[i]) * DAMP
-            + 0.0024 * fastSin(swT * 0.7 + x * 0.05 + y * 0.021)
-            + 0.0019 * fastSin(swT * 0.43 - x * 0.023 + y * 0.041);
+            + 0.0024 * fastSin(a0 + phaseA[x])
+            + 0.0019 * fastSin(b0 + phaseB[x]);
         }
       }
       var t = h1; h1 = h2; h2 = t;
@@ -144,16 +173,31 @@
       var ctx = (mode === 'bg') ? bgctx : rctx;
       var GAIN = (mode === 'bg') ? 150 * RIPPLE_MAG : 330 * RIPPLE_MAG,
         CAP = (mode === 'bg') ? 110 * RIPPLE_MAG : 165 * RIPPLE_MAG;
-      var dst = outImg.data, h = h1;
-      for (var y = 0; y < SH; y++) {
-        var yu = y > 0 ? y - 1 : y, yd = y < SH - 1 ? y + 1 : y;
-        for (var x = 0; x < SW; x++) {
-          var i = y * SW + x;
-          var xl = x > 0 ? i - 1 : i, xr = x < SW - 1 ? i + 1 : i;
-          var gx = h[xl] - h[xr]; var gy = h[yu * SW + x] - h[yd * SW + x];
-          var di = i * 4; var a = gy * GAIN;
-          if (a >= 0) { a = a * 0.18; dst[di] = 224; dst[di + 1] = 238; dst[di + 2] = 255; dst[di + 3] = (a > CAP ? CAP : a) | 0; }
-          else { a = -a * 0.1; dst[di] = 10; dst[di + 1] = 22; dst[di + 2] = 44; dst[di + 3] = (a > CAP ? CAP : a) | 0; }
+      var h = h1;
+      if (dst32) {
+        /* 小端打包 RGBA：亮色 0xFFEEE0 / 暗色 0x2C160A，alpha 占高 8 位。
+           省掉原实现里每格 2 次乘法、2 次数组读（gx 未被使用）与 4 次字节写。 */
+        for (var y = 0; y < SH; y++) {
+          var row = y * SW;
+          var yuOff = (y > 0 ? y - 1 : y) * SW, ydOff = (y < SH - 1 ? y + 1 : y) * SW;
+          for (var x = 0; x < SW; x++) {
+            var a = (h[yuOff + x] - h[ydOff + x]) * GAIN;
+            var q;
+            if (a >= 0) { q = a * 0.18; dst32[row + x] = ((((q > CAP ? CAP : q) | 0) << 24) | 0xFFEEE0) >>> 0; }
+            else { q = -a * 0.1; dst32[row + x] = ((((q > CAP ? CAP : q) | 0) << 24) | 0x2C160A) >>> 0; }
+          }
+        }
+      } else {
+        var dst = outImg.data;
+        for (var y2 = 0; y2 < SH; y2++) {
+          var row2 = y2 * SW;
+          var yuOff2 = (y2 > 0 ? y2 - 1 : y2) * SW, ydOff2 = (y2 < SH - 1 ? y2 + 1 : y2) * SW;
+          for (var x2 = 0; x2 < SW; x2++) {
+            var di = (row2 + x2) * 4;
+            var a2 = (h[yuOff2 + x2] - h[ydOff2 + x2]) * GAIN;
+            if (a2 >= 0) { a2 = a2 * 0.18; dst[di] = 224; dst[di + 1] = 238; dst[di + 2] = 255; dst[di + 3] = (a2 > CAP ? CAP : a2) | 0; }
+            else { a2 = -a2 * 0.1; dst[di] = 10; dst[di + 1] = 22; dst[di + 2] = 44; dst[di + 3] = (a2 > CAP ? CAP : a2) | 0; }
+          }
         }
       }
       simCtx.putImageData(outImg, 0, 0);
@@ -258,75 +302,16 @@
       sp.addEventListener('pointercancel', function (e) { lift(e); delete gwTouch[e.pointerId]; }, { passive: true });
       sp.addEventListener('pointerleave', function (e) { lift(e); delete gwTouch[e.pointerId]; }, { passive: true });
     }
-    var fogCv = document.getElementById('gw-fogwipe');
-    var fog = fogCv ? fogCv.getContext('2d') : null;
-    var wipeStrokes = [];
-    function blotch(x, y, r, a) {
-      if (!fog) return;
-      var g = fog.createRadialGradient(W * x, H * y, 0, W * x, H * y, Math.max(W, H) * r);
-      g.addColorStop(0, 'rgba(222,234,250,' + a + ')'); g.addColorStop(1, 'rgba(222,234,250,0)');
-      fog.fillStyle = g; fog.fillRect(0, 0, W, H);
-    }
-    function paintHaze() {
-      if (!fog) return;
-      fog.globalCompositeOperation = 'source-over'; fog.shadowBlur = 0;
-      fog.fillStyle = 'rgba(208,224,244,0.10)'; fog.fillRect(0, 0, W, H);
-      var g = fog.createRadialGradient(W * 0.5, H * 0.46, Math.min(W, H) * 0.22, W * 0.5, H * 0.5, Math.max(W, H) * 0.72);
-      g.addColorStop(0, 'rgba(214,228,246,0)'); g.addColorStop(1, 'rgba(214,228,246,0.12)');
-      fog.fillStyle = g; fog.fillRect(0, 0, W, H);
-      blotch(0.18, 0.20, 0.50, 0.06); blotch(0.82, 0.74, 0.55, 0.05); blotch(0.60, 0.12, 0.40, 0.04);
-    }
-    function renderWipeStroke(p) {
-      if (!fog) return;
-      var w = p.w || 19;
-      fog.globalCompositeOperation = 'destination-out'; fog.lineCap = 'round'; fog.lineJoin = 'round';
-      fog.strokeStyle = 'rgba(0,0,0,0.92)'; fog.lineWidth = w;
-      if (p.length === 1) {
-        fog.fillStyle = 'rgba(0,0,0,0.92)';
-        fog.beginPath(); fog.arc(p[0].x * W, p[0].y * H, w / 2, 0, Math.PI * 2); fog.fill();
-      }
-      for (var i = 1; i < p.length; i++) {
-        fog.beginPath(); fog.moveTo(p[i - 1].x * W, p[i - 1].y * H); fog.lineTo(p[i].x * W, p[i].y * H); fog.stroke();
-      }
-      fog.globalCompositeOperation = 'source-over';
-    }
-    function redrawFog() {
-      if (!fog) return;
-      fog.globalCompositeOperation = 'source-over'; fog.clearRect(0, 0, W, H); paintHaze();
-      for (var i = 0; i < wipeStrokes.length; i++) renderWipeStroke(wipeStrokes[i]);
-      fog.globalCompositeOperation = 'source-over';
-    }
-    function wipeSegLive(a, b, w) {
-      if (!fog) return;
-      fog.globalCompositeOperation = 'destination-out'; fog.lineCap = 'round'; fog.lineJoin = 'round';
-      fog.strokeStyle = 'rgba(0,0,0,0.92)'; fog.lineWidth = w || 19;
-      fog.beginPath(); fog.moveTo(a.x * W, a.y * H); fog.lineTo(b.x * W, b.y * H); fog.stroke();
-      fog.globalCompositeOperation = 'source-over';
-    }
-    var fogCur = null;
-    function fogPt(e) { var r = fogCv.getBoundingClientRect(); return { x: (e.clientX - r.left) / W, y: (e.clientY - r.top) / H }; }
-    if (fogCv && !REDUCED) {
-      fogCv.addEventListener('pointerdown', function (e) {
-        if (mode !== 'pane' || idleNow()) return;
-        try { fogCv.setPointerCapture(e.pointerId); } catch (_) { }
-        var p = fogPt(e); fogCur = { pts: [p], w: 19 };
-        wipeStrokes.push(fogCur.pts); renderWipeStroke([p]); e.preventDefault();
-      });
-      fogCv.addEventListener('pointermove', function (e) {
-        if (!fogCur) return;
-        var p = fogPt(e), pts = fogCur.pts, lastPt = pts[pts.length - 1];
-        if (Math.hypot((p.x - lastPt.x) * W, (p.y - lastPt.y) * H) < 1.2) return;
-        pts.push(p); wipeSegLive(pts[pts.length - 2], pts[pts.length - 1], fogCur.w);
-      });
-      fogCv.addEventListener('pointerup', function () { if (fogCur) { redrawFog(); fogCur = null; } });
-      fogCv.addEventListener('pointercancel', function () { if (fogCur) { redrawFog(); fogCur = null; } });
-    }
+    /* 雾气绘制与擦除逻辑、4 个指针监听器已移除：该 canvas 继承 .gw-ly 的
+       pointer-events:none，命中测试永远跳过它，擦雾交互不可达；手机 bg 模式也从不
+       初始化它（完全不可见），且每次 resize 还会做 5 次全屏绘制。 */
     function gridFit() {
       var targetW = Math.min(800, Math.max(200, Math.round(W / 2)));
       SW = Math.max(200, targetW); SH = Math.max(100, Math.round(SW * H / W));
       rippleScale = 1;
       sim.width = SW; sim.height = SH; simCtx = sim.getContext('2d');
       h1 = new Float32Array(SW * SH); h2 = new Float32Array(SW * SH);
+      buildPhases();
       stepAcc = 0; stirPts = {};
       if (drops) drops.length = 0;
       if (plips) plips.length = 0;
@@ -344,7 +329,7 @@
       tc.drawImage(img, sx, sy, sw, sh, 0, 0, SW, SH);
       try { bgData = tc.getImageData(0, 0, SW, SH); REFRACT_OK = true; slot.classList.remove('gw-gloss'); }
       catch (_) { bgData = null; REFRACT_OK = false; slot.classList.add('gw-gloss'); }
-      outImg = simCtx.createImageData(SW, SH);
+      makeOut();
       return true;
     }
     function retarget(m) {
@@ -353,17 +338,13 @@
         if (r.width < 2 || r.height < 2) return false;
         W = r.width; H = r.height;
         rcv.width = Math.round(W * dpr); rcv.height = Math.round(H * dpr);
-        if (fogCv) {
-          fogCv.width = Math.round(W * dpr); fogCv.height = Math.round(H * dpr);
-          fog.setTransform(dpr, 0, 0, dpr, 0, 0); redrawFog();
-        }
         gridFit(); return rebuildBg();
       }
       W = window.innerWidth; H = window.innerHeight;
       if (W < 2 || H < 2) return false;
       bscale = Math.min(dpr, 1.5);
       bgcv.width = Math.round(W * bscale); bgcv.height = Math.round(H * bscale);
-      gridFit(); outImg = simCtx.createImageData(SW, SH);
+      gridFit(); makeOut();
       for (var k = 0; k < 3; k++) poke(R(2, SW - 2), R(2, SH - 2), R(0.5, 1.1), 2);
       return true;
     }
@@ -376,15 +357,19 @@
       if (m && !m.classList.contains('hidden')) return true;
       return false;
     }
-    var last = 0, stepAcc = 0, gwRaf = false;
+    var last = 0, stepAcc = 0, gwRafId = null;
     function gwStart() {
-      if (gwRaf) return;
-      if (document.documentElement.classList.contains('fx-off')) return;
-      gwRaf = true; requestAnimationFrame(loop);
+      if (gwRafId != null) return;
+      if (document.documentElement.classList.contains('fx-off') || document.hidden) return;
+      gwRafId = requestAnimationFrame(loop);
     }
+    function gwStop() { if (gwRafId != null) { cancelAnimationFrame(gwRafId); gwRafId = null; } }
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) gwStop(); else gwStart();
+    });
     function loop(ts) {
-      if ((sp && sp.classList.contains('hidden')) || document.documentElement.classList.contains('fx-off')) { gwRaf = false; return; }
-      requestAnimationFrame(loop);
+      if ((sp && sp.classList.contains('hidden')) || document.documentElement.classList.contains('fx-off') || document.hidden) { gwRafId = null; return; }
+      gwRafId = requestAnimationFrame(loop);
       var m = computeMode();
       if (m !== mode) {
         mode = m; tgtOk = retarget(m);
@@ -487,13 +472,30 @@
     obs.observe(pl, { attributes: true, attributeFilter: ['class'] });
   })();
 
+  /* 动态效果开关切回「开启」时恢复两条动画循环：首页由 app.js 调用
+     __fxRain/__fxGlass，静态页没有该脚本，用 class 观察器统一兜底。两者均有幂等守卫。 */
+  (function () {
+    if (!window.MutationObserver) return;
+    function resume() {
+      if (document.hidden || document.documentElement.classList.contains('fx-off')) return;
+      if (typeof window.__fxRain === 'function') window.__fxRain();
+      if (typeof window.__fxGlass === 'function') window.__fxGlass();
+    }
+    new MutationObserver(resume).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  })();
+
   /* ---------- bfcache：从前进/后退恢复时复位背景层 ---------- */
   window.addEventListener('pageshow', function (event) {
     if (!event.persisted) return;
     var splashContent = document.querySelector('.splash-content');
     if (splashContent) splashContent.style.pointerEvents = '';
     var slot = document.getElementById('gw-slot');
-    if (slot && typeof window.__fxGlass === 'function') window.__fxGlass();
+    if (slot) {
+      /* 旧实现只 add('gw-exit') 且无 remove，会让背景层永久 opacity:0；
+         这里显式清掉退出态，并重启水波循环（idleNow 依赖该 class 判断是否渲染）。 */
+      slot.classList.remove('gw-exit');
+      if (typeof window.__fxGlass === 'function') window.__fxGlass();
+    }
     if (typeof window.__fxRain === 'function') window.__fxRain();
   });
 })();

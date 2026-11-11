@@ -710,7 +710,7 @@ function renderDoubanCards(data, container) {
             card.innerHTML = `
                 <div class="douban-card-image cursor-pointer" onclick="fillAndSearchWithDouban('${jsTitle}')">
                     <img alt="${safeTitle}" data-cover="${safeCover}"
-                        loading="lazy">
+                        loading="lazy" decoding="async">
                     <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(0,0,0,0.6), transparent 50%); pointer-events: none;"></div>
                     <div class="absolute bottom-2 left-2 douban-rate-badge">
                         <span style="color: #ffd60a;">★</span> ${safeRate}

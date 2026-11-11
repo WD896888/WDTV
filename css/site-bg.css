@@ -41,8 +41,10 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 #rain-container canvas{position:fixed;inset:0;z-index:10001;pointer-events:none;width:100vw;height:100vh}
 
 /* SPLASH */
+/* 背景是纯色 var(--bg-deep)，30px 高斯模糊对均匀纯色无任何视觉作用，却是最贵的全屏 pass。
+   去掉 blur、保留 saturate/brightness 以维持原有色调与 Backdrop Root（内部玻璃层采样边界不变）。 */
 #splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;
-  background:rgba(15,41,95,0.52);backdrop-filter:blur(30px) saturate(0.72) brightness(0.92);-webkit-backdrop-filter:blur(30px) saturate(0.72) brightness(0.92);
+  background:rgba(15,41,95,0.52);backdrop-filter:saturate(0.72) brightness(0.92);-webkit-backdrop-filter:saturate(0.72) brightness(0.92);
   transition:backdrop-filter 3.5s ease-out,background 3.5s ease-out;
   -webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
 #splash.hidden{opacity:0;visibility:hidden;pointer-events:none}
@@ -55,6 +57,8 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
     radial-gradient(ellipse 90% 40% at 50% 88%, rgba(130,162,210,0.18) 0%, rgba(130,162,210,0.07) 42%, transparent 72%),
     linear-gradient(to bottom, transparent 38%, rgba(148,180,228,0.08) 66%, transparent 92%),
     linear-gradient(to bottom, rgba(150,184,234,0.22) 0%, rgba(126,162,216,0.18) 50%, rgba(106,142,200,0.16) 100%);
+  /* 提示合成器把 58s 的 filter/opacity 呼吸动画放到独立层，避免每帧重绘全屏渐变 */
+  will-change:filter,opacity;
   animation:splashDawn 58s ease-in-out infinite alternate}
 @keyframes splashDawn{0%{opacity:0.88;filter:brightness(1.0) saturate(1.03)}100%{opacity:1;filter:brightness(1.08) saturate(1.06)}}
 
@@ -85,7 +89,7 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 #gw-slot.gw-has-img .gw-grade-s{opacity:1}
 .gw-depth{z-index:3;background:radial-gradient(130% 160% at 50% 46%,rgba(12,22,44,0) 46%,rgba(12,22,44,0.18) 76%,rgba(12,22,44,0.34) 100%)}
 .gw-frost{z-index:4;opacity:0.55;transition:opacity .4s ease;background:linear-gradient(rgba(16,28,54,0.06),rgba(16,28,54,0.06)),linear-gradient(150deg,rgba(184,204,236,0.07) 0%,rgba(112,136,178,0.04) 52%,rgba(86,108,150,0.07) 100%)}
-#gw-fogwipe{z-index:5}
+/* 雾气擦除层已移除：交互被 .gw-ly 的 pointer-events:none 阻断、手机 bg 模式从不绘制，属死代码 */
 @media (max-width:900px){
 /* 小屏性能优化：背景图显示后每帧都要叠加水波画布，裁掉昂贵的合成特效 */
 #gw-pane{-webkit-mask-image:none;mask-image:none;border-radius:0}

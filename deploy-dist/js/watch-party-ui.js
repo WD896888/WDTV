@@ -985,7 +985,7 @@
       h += '<button type="button" class="wp-sr-item" data-s="' + esc(r.source) + '" data-i="' + esc(r.id) + '">' +
         '<span class="wp-sr-cover">' +
           (r.pic
-            ? '<img src="' + esc(r.pic) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentNode.classList.add(\'wp-sr-cover-ph\')">'
+            ? '<img src="' + esc(r.pic) + '" alt="" loading="lazy" decoding="async" onerror="this.style.display=\'none\';this.parentNode.classList.add(\'wp-sr-cover-ph\')">'
             : '') +
         '</span>' +
         '<span class="wp-sr-name">' + esc(r.name) + '</span>' +
