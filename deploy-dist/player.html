@@ -487,6 +487,28 @@
     })();
     </script>
 
+    <!-- 滚动活跃期冻结背景装饰层（仅播放页）：惯性 fling 阶段没有 pointer 事件，
+         但水波/雨幕 rAF 仍满速占主线程，与滚动合成争抢帧预算。只维护一个时间戳，
+         不读写布局；光晕动画仅改单个元素的内联样式，不引入任何后代选择器。 -->
+    <script>
+    (function(){
+      window.__fxScrollHold=0;
+      var glow=document.querySelector('.splash-glow'),on=false,moved=false;
+      window.__fxSetScrolling=function(v){
+        if(v===on)return;on=v;
+        if(glow)glow.style.animationPlayState=v?'paused':'';
+      };
+      function bump(ms){window.__fxScrollHold=performance.now()+(ms||420)}
+      /* scroll 不冒泡，必须用捕获阶段才能覆盖弹层 / 剧集列表等内部滚动容器 */
+      document.addEventListener('scroll',function(){bump()},{passive:true,capture:true});
+      document.addEventListener('wheel',function(){bump()},{passive:true,capture:true});
+      document.addEventListener('touchstart',function(){moved=false},{passive:true,capture:true});
+      document.addEventListener('touchmove',function(){moved=true;bump()},{passive:true,capture:true});
+      document.addEventListener('touchend',function(){if(moved)bump(700)},{passive:true,capture:true});
+      document.addEventListener('touchcancel',function(){if(moved)bump(700)},{passive:true,capture:true});
+    })();
+    </script>
+
     <!-- Rain -->
     <script>
     (function(){
@@ -522,6 +544,8 @@
         rafId=requestAnimationFrame(loop);
         var mo=document.getElementById('modal');
         if(mo&&!mo.classList.contains('hidden')){ctx.clearRect(0,0,W,H);last=ts;return}
+        /* 滚动 / 惯性期间保留上一帧画面，不做 clearRect 与 45 滴渐变绘制 */
+        if(ts<window.__fxScrollHold){last=ts;return}
         var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
         ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);ctx.lineCap='round';
         for(var i=0;i<drops.length;i++){
@@ -630,7 +654,7 @@
     function gwStop(){if(gwRafId!=null){cancelAnimationFrame(gwRafId);gwRafId=null}}
     window.__fxGlass=gwStart;
     document.addEventListener('visibilitychange',function(){if(document.hidden)gwStop();else gwStart()});
-    function loop(ts){if(document.documentElement.classList.contains('fx-off')||document.hidden){gwRafId=null;return}gwRafId=requestAnimationFrame(loop);var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}if(!tgtOk||idleNow()){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}
+    function loop(ts){if(document.documentElement.classList.contains('fx-off')||document.hidden){gwRafId=null;return}gwRafId=requestAnimationFrame(loop);var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}var sc=ts<window.__fxScrollHold;if(window.__fxSetScrolling)window.__fxSetScrolling(sc);if(!tgtOk||idleNow()||sc){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}
     if(window.ResizeObserver)new ResizeObserver(function(){if(mode==='pane')tgtOk=retarget('pane')}).observe(pane);
     window.addEventListener('resize',function(){if(mode)tgtOk=retarget(mode)});
     (function probe(names){if(!names.length)return;var name=names.shift();var im=new Image();im.onload=function(){img=im;if(REDUCED){mode='pane';if(retarget('pane')){renderWater();slot.classList.add('gw-rippling')}return}if(mode==='pane')tgtOk=retarget('pane')};im.onerror=function(){probe(names)};im.src=name})(['bg-canvas.jpg','bg-canvas.png']);
