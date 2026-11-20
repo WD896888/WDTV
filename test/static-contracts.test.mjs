@@ -100,12 +100,25 @@ t('全局: 共看抑制桥导出且复用 suppress()',
     /suppressLocalSeek:\s*function\s*\(\s*\)\s*\{\s*suppress\(\);?\s*\}/.test(watchParty));
 t('全局: SYNC_LIST_KEYS 含 wdtvSkipMarks', cloudSync.includes("'wdtvSkipMarks'"));
 const syncArr = (cloudSync.match(/const SYNC_LIST_KEYS\s*=\s*\[([\s\S]*?)\];/) || [, ''])[1];
-t('全局: SYNC_LIST_KEYS 数组实际恰好 14 键', (syncArr.match(/'[^']+'/g) || []).length === 14,
+t('全局: SYNC_LIST_KEYS 数组实际恰好 13 键', (syncArr.match(/'[^']+'/g) || []).length === 13,
     String((syncArr.match(/'[^']+'/g) || []).length));
+t('全局: 数据源订阅键已从云同步列表移除', !/'wdtvSourceSubscriptions'/.test(syncArr));
 t('全局: PLAYER_CONFIG 含片头片尾键，且不再暴露数据源地址',
     config.includes('introSkipEnabled: true') && config.includes("skipMarksStorage: 'wdtvSkipMarks'") &&
     !config.includes('skipSourceEndpoint') && !config.includes('skipSourceTimeoutMs'));
 t('全局: 首页设置面板已移除片头片尾开关', !indexHtml.includes('skipMarksToggle'));
+// v97：数据源订阅与自定义接入全线下线，锁住「页面无入口 + 无运行时注入钩子」两个不变量
+t('页面: 数据源订阅入口已整体下线',
+    !indexHtml.includes('wdtvSubscriptionUrl') &&
+    !indexHtml.includes('wdtvSubscriptionExport') &&
+    !indexHtml.includes('js/source-subscription.js') &&
+    !app.includes('WDTVSourceSubscriptions'));
+t('页面: 自定义源接入钩子已移除且源集合全部内置',
+    !indexHtml.includes('js/customer_site.js') &&
+    !playerHtml.includes('js/customer_site.js') &&
+    !config.includes('window.extendAPISites') &&
+    !config.includes('removeAPISitesByPrefix') &&
+    config.includes('qiqi: {') && config.includes("name: '七七资源'"));
 t('全局: app.js 旧标记读写已移除',
     !app.includes('function wdtvReadSkipMarksStore()') && !app.includes('function wdtvWriteSkipMarksEnabled('));
 t('全局: README 不再提供 Shift 标记快捷键',

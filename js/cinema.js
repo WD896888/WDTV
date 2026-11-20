@@ -261,7 +261,7 @@ function buildCinemaCard(fav) {
                 <img src="${coverUrl}" alt="${safeName}"${coverOriginalAttr}
                      draggable="false"
                      onerror="handleCoverLoadError(this)"
-                     loading="lazy" referrerpolicy="no-referrer">
+                     loading="lazy" decoding="async" referrerpolicy="no-referrer">
                 <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(0,0,0,0.6), transparent 50%); pointer-events: none;"></div>
                 ${qualityLabel ? `<div class="wdtv-quality-badge">${qualityLabel}</div>` : ''}
                 ${safeSourceName ? `

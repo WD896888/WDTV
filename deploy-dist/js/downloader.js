@@ -3,12 +3,16 @@
  *
  * 能力：
  *  - 解析 m3u8（媒体列表 / 主列表自动选档、AES-128 解密、EXT-X-MAP(fMP4)、BYTERANGE、EXT-X-DISCONTINUITY）
- *  - 分片并发下载（IndexedDB 持久化，刷新/关页后可续传），逐分片重试
- *  - 合成保存：TS 直拼；MP4 用 mux.js 转封装（libs/mux-mp4.js），
+ *  - 分片并发下载（IndexedDB 持久化，刷新/关页后可续传），逐分片重试；
+ *    4xx 确定性缺片快速失败并提示换源，5xx/408/429 才退避重试
+ *  - 合成保存：只输出 MP4。TS 用 mux.js 转封装（libs/mux-mp4.js），
  *    并探测 EXT-X-DISCONTINUITY（广告插入）造成的源 PTS 重置，逐分片重排时间线，
  *    保证成片进度条连续（否则本地播放器播到广告处进度会瞬间归零）
+ *  - 流式写出：逐片从 IDB 读出并立刻写出，不再把整集聚合进内存；
+ *    单集下载在用户手势内取得 FS Access 文件句柄后边转封装边写盘，
+ *    不生成 Blob、不占 IndexedDB；批量/不支持时回退「完成后的浏览器下载」
  *  - 下载管理器：实时进度 / 速度、暂停继续、重试、保存、删除，跨页签共享状态
- *  - 批量下载弹窗：画质 / 格式选择 + 集数多选
+ *  - 批量下载弹窗：画质选择 + 集数多选（格式固定 MP4，无其它选项）
  *
  * 对外 API（window.WDTDownloader）：
  *  enqueue(items) / openManager() / closeManager() / openBatchDownloadModal(opts)
@@ -34,6 +38,12 @@
   const MANAGER_TICK = 1000;      // 管理器打开时的定时刷新
   const CONTROL_SYNC = 3000;      // 运行中跨页签状态同步间隔
   const SPEED_SAMPLE_MS = 200;    // 网络速度采样节流
+  const SAVE_PICKER_TIMEOUT_MS = 60000; // 用户迟迟不选保存位置：放弃写盘，回退完成后浏览器下载
+
+  // 下载产物只有 MP4（历史 TS 选项已移除；播放器录制的 WebM 兜底走 addLocalFile 独立通道）
+  const OUTPUT_FORMAT = 'mp4';
+  // 纯函数工具：HTTP 状态分类 / 可读失败诊断（js/download-utils.js，需在本脚本前加载）
+  const DU = (typeof globalThis !== 'undefined' && globalThis.WDTVDownloadUtils) || null;
 
   // ===== 移动端适配 =====
   const UA = navigator.userAgent || '';
@@ -250,7 +260,15 @@
     try {
       const resp = await fetch(url, { signal: ctrl.signal, credentials: 'omit' });
       clearTimeout(timer); // 响应头已到，解除连接阶段超时；body 阶段改由空闲超时监控
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      if (!resp.ok) {
+        // 带上状态码与「是否确定性失败」，让分片 worker 决定重试还是立刻换源
+        const info = DU ? DU.classifyHttpStatus(resp.status, 0) : null;
+        const err = new Error('HTTP ' + resp.status);
+        err.name = 'WdtvHttpError';
+        err.status = resp.status;
+        err.fatal = !!(info && info.fatal);
+        throw err;
+      }
       if (asText || !resp.body) {
         // 文本（清单）与无流式环境：body 小而关键，用空闲超时兜底，
         // 防止"响应头已到但 body 卡死"的连接永不返回
@@ -326,6 +344,8 @@
       attempts.push(inner); // 非网页环境（如本地 file:// 打开）：仅直连
     }
     let firstErr = null;
+    let fatalStatus = 0;
+    let allFatal = attempts.length > 0;
     for (const u of attempts) {
       try {
         return await fetchWithTimeout(u, asText, signal, onData);
@@ -333,7 +353,17 @@
         if (signal && signal.aborted) throw e;
         if (u === inner) markDirectFail(inner); // 直连尝试失败记账（下一次该主机跳过直连）
         if (!firstErr) firstErr = e;
+        if (e && e.fatal) fatalStatus = e.status || fatalStatus;
+        else allFatal = false; // 有一条是网络抖动/超时：保留重试机会，不误判成源站缺片
       }
+    }
+    // 直连与代理两条通道都判定为「源站确定性缺失」→ 包装成 fatal，worker 不再空转重试
+    if (allFatal && fatalStatus) {
+      const e = new Error('HTTP ' + fatalStatus);
+      e.name = 'WdtvHttpError';
+      e.fatal = true;
+      e.status = fatalStatus;
+      firstErr = e;
     }
     throw firstErr || new Error('下载请求失败');
   }
@@ -458,7 +488,14 @@
 
   // 解析下载地址：主列表自动选档（最多两层），返回媒体列表结构
   async function resolvePlaylist(url, hint, signal) {
-    let text = await robustFetch(url, true, signal);
+    let text;
+    try {
+      text = await robustFetch(url, true, signal);
+    } catch (e) {
+      if (signal && signal.aborted) throw e;
+      // 清单直连被 CORS / 混合内容 / DNS 拦下时，说明下一步该换源而不是干等
+      throw new Error(DU ? DU.describePlaylistFailure(url, e && e.message) : ((e && e.message) || '清单拉取失败'));
+    }
     if (!text || !text.trimStart().startsWith('#EXTM3U')) throw new Error('链接不是有效的 m3u8 清单');
     let variants = parseMaster(text, url);
     let listUrl = url; // 最终媒体清单的实际来源 URL（分片/密钥相对路径以此为基准）
@@ -555,6 +592,66 @@
     return video !== null ? video : audio;
   }
 
+  // ===== 保存目标（FS Access 流式写盘，移植自 LibreTV 的 download-saver 设计） =====
+  // showSaveFilePicker 必须在用户手势内调用，因此只在 enqueue（点击「下载本集」）的
+  // 同步栈里发起，把句柄 Promise 挂到任务上，等合成阶段再 await。批量多集不弹 N 个
+  // 文件框，统一回退「完成后浏览器下载」。句柄活不过页面刷新，刷新后自然走回退路径。
+  function supportsFsAccess() {
+    return DU ? DU.isFsAccessSupported()
+      : (typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function');
+  }
+
+  function armDiskWriter(task) {
+    if (!supportsFsAccess()) return;
+    try {
+      task._writerPromise = window.showSaveFilePicker({ suggestedName: task.fileName + '.mp4' })
+        .then(handle => handle.createWritable())
+        .then(writer => { task._writer = writer; return writer; })
+        .catch(e => {
+          if (e && e.name === 'AbortError') return null; // 用户取消：静默回退内存导出
+          throw e;
+        });
+    } catch (e) { /* 环境不支持或被策略拦截：静默回退 */ }
+  }
+
+  // 合成前取句柄。用户一直不选时不能让任务永远卡在「正在合成」：超时即回退，
+  // 并把迟到的句柄 abort 掉，避免磁盘上留下半成品文件。
+  async function resolveDiskWriter(task) {
+    const pending = task._writerPromise;
+    if (!pending) return null;
+    let timer = null;
+    let timedOut = false;
+    const timeout = new Promise(resolve => {
+      timer = setTimeout(() => { timedOut = true; resolve(null); }, SAVE_PICKER_TIMEOUT_MS);
+    });
+    let writer = null;
+    try {
+      writer = await Promise.race([pending, timeout]);
+    } catch (e) {
+      writer = null; // 选择器失败：回退 Blob 导出
+    } finally {
+      clearTimeout(timer);
+      task._writerPromise = null;
+    }
+    if (timedOut && !writer) {
+      pending.then(w => { if (w) { try { w.abort(); } catch (e) { } } }).catch(() => { });
+    }
+    return writer || null;
+  }
+
+  // 删除 / 失败 / 合成异常时丢弃未提交的文件流（FS Access 的 abort 不会落盘）
+  async function abortWriter(task) {
+    if (!task) return;
+    const w = task._writer;
+    task._writer = null;
+    if (w) { try { await w.abort(); } catch (e) { } }
+    const pending = task._writerPromise;
+    task._writerPromise = null;
+    if (pending) {
+      pending.then(x => { if (x) { try { x.abort(); } catch (e) { } } }).catch(() => { });
+    }
+  }
+
   // ===== 任务模型 =====
 
   function cleanTask(t) {
@@ -565,6 +662,7 @@
       format: t.format, state: t.state,
       totalFrags: t.totalFrags || 0, doneFrags: t.doneFrags || 0, bytes: t.bytes || 0,
       durationSec: t.durationSec || 0, fileSize: t.fileSize || 0, fileSaved: !!t.fileSaved,
+      savedToDisk: !!t.savedToDisk,
       error: t.error || '', createdAt: t.createdAt, updatedAt: t.updatedAt
     };
   }
@@ -619,10 +717,13 @@
 
   // 入队
   function enqueue(items) {
+    const list = Array.isArray(items) ? items : [items];
+    // 只有单集下载才在用户手势内申请磁盘句柄；批量多集不弹一串文件选择框
+    const single = list.length === 1;
     let added = 0, dup = 0;
-    (Array.isArray(items) ? items : [items]).forEach(it => {
+    list.forEach(it => {
       if (!it || !it.url) return;
-      const format = 'mp4'; // 用户定案：只做 MP4 下载
+      const format = OUTPUT_FORMAT; // 只保留 MP4：忽略调用方传来的任何格式偏好
       const id = djb2(it.url + '|' + format);
       const exist = tasks.find(t => t.id === id);
       if (exist && exist.state !== 'error') { dup++; return; } // 已存在（错误任务重下走 retry 或覆盖）
@@ -644,7 +745,7 @@
         format,
         state: 'pending',
         totalFrags: 0, doneFrags: 0, bytes: 0,
-        durationSec: 0, fileSize: 0, fileSaved: false,
+        durationSec: 0, fileSize: 0, fileSaved: false, savedToDisk: false,
         error: '',
         createdAt: Date.now(), updatedAt: Date.now(),
         // 运行时字段
@@ -652,6 +753,7 @@
       };
       tasks.push(task);
       persistTask(task, true);
+      if (single) armDiskWriter(task); // 必须留在点击处理器的同步栈内
       added++;
     });
     emit(true);
@@ -790,12 +892,25 @@
                 const key = keyCache.get(enc.uri);
                 buf = await decryptAes(buf, key, enc.iv, media.mediaSeq + i);
               }
-              await idbPut(STORE_SEGS, { key: segKey(task.id, i), id: task.id, idx: i, data: buf, size: buf.byteLength });
+              try {
+                await idbPut(STORE_SEGS, { key: segKey(task.id, i), id: task.id, idx: i, data: buf, size: buf.byteLength });
+              } catch (e) {
+                const wrapped = new Error(DU ? DU.describeStorageError(e) : ('分片缓存写入失败：' + (e && e.message)));
+                wrapped.fatal = true; // 配额耗尽重试也不会成功
+                throw wrapped;
+              }
               onProgress(buf.byteLength);
               lastErr = null;
               break;
             } catch (e) {
               if (ctrl.signal.aborted) return;
+              if (e && e.fatal) {
+                // 4xx 确定性缺片 / 存储配额不足：不再退避重试，给出可行动的原因
+                const detail = (e.status && DU) ? DU.classifyHttpStatus(e.status, i + 1) : null;
+                lastErr = new Error(detail && detail.fatal ? detail.message : (e.message || '下载失败'));
+                lastErr.fatal = true;
+                break;
+              }
               lastErr = e;
               await new Promise(r => setTimeout(r, 800 * attempt));
             }
@@ -824,7 +939,13 @@
         task.state = 'paused';
       } else {
         task.state = 'error';
-        task.error = (e && e.message) ? e.message : '下载失败';
+        const raw = (e && e.message) ? e.message : '下载失败';
+        // 直连被 CORS / 混合内容 / DNS 拦下时 fetch 只给 "Failed to fetch"，
+        // 翻译成用户能行动的原因（提示换源），而不是让人对着网络术语猜
+        task.error = (/failed to fetch|networkerror|load failed/i.test(raw) && DU)
+          ? DU.describeFetchFailure(task.url, raw)
+          : raw;
+        abortWriter(task); // 未提交的写盘流丢弃，不留半成品文件
       }
       persistTask(task, true); emit(true);
     } finally {
@@ -862,108 +983,114 @@
     task.speed = 0;
     persistTask(task, true); emit(true);
 
-    // 顺序读出全部分片
-    const parts = [];
-    if (media.map) {
-      // fMP4：先放 init 段，再直拼所有分片
-      const initBuf = await robustFetch(media.map, false, null);
-      parts.push(initBuf);
-      for (let i = 0; i < media.segs.length; i++) {
-        const rec = await idbGet(STORE_SEGS, segKey(task.id, i));
-        if (!rec || !rec.data) throw new Error('分片数据缺失，请重试');
-        parts.push(rec.data);
-      }
-    } else {
-      for (let i = 0; i < media.segs.length; i++) {
-        const rec = await idbGet(STORE_SEGS, segKey(task.id, i));
-        if (!rec || !rec.data) throw new Error('分片数据缺失，请重试');
-        parts.push(rec.data);
-      }
-    }
+    // 流式写出：逐片从 IDB 读出 → 转封装 → 立刻写出，不再把整集聚合进内存。
+    // 有 FS Access 句柄时边转边写盘，峰值≈单个分片；无句柄时仍需聚合成 Blob 供
+    // a[download] 导出，但少了 parts 全量数组，峰值从约 3 倍成片降到约 2 倍。
+    const writer = await resolveDiskWriter(task);
+    const sink = writer ? { write: d => writer.write(d), close: () => writer.close() } : null;
+    const out = [];
+    let written = 0;
+    let chunksWritten = 0;
+    const emitChunk = async (u8) => {
+      if (!u8 || !u8.byteLength) return;
+      written += u8.byteLength;
+      if (sink) await sink.write(u8);
+      else out.push(u8);
+      // 合成期心跳：写盘/转封装可能持续数十秒，刷新 updatedAt 防止其它页签
+      // 把「merging」误判成僵尸任务后抢锁重复跑同一个任务
+      if (++chunksWritten % 16 === 0) persistTask(task);
+    };
+    const readSeg = async (i) => {
+      const rec = await idbGet(STORE_SEGS, segKey(task.id, i));
+      if (!rec || !rec.data) throw new Error('分片 ' + (i + 1) + ' 数据缺失，请重试');
+      return new Uint8Array(rec.data);
+    };
 
-    let blob;
-    if (task.format === 'ts') {
-      blob = new Blob(parts, { type: 'video/MP2T' });
-    } else if (media.map) {
-      blob = new Blob(parts, { type: 'video/mp4' }); // fMP4 直拼
-    } else {
-      // TS → MP4 转封装（mux.js）。
-      // 关键修复：广告插入处（#EXT-X-DISCONTINUITY）源 PTS 会重置（广告从 0 重新计时），
-      // 旧实现 keepOriginalTimestamps 原样透传，成片里广告片段的 baseMediaDecodeTime(tfdt)
-      // 突然跳回 0 → 本地播放器按时间线显示进度，一播到广告进度条瞬间归零、广告结束后又跳回。
-      // 现在：逐分片探测首帧 PTS/DTS，检测时间线断裂（显式标记或隐藏跳变），
-      // 为每个分片计算 baseMediaDecodeTime 偏移（输出时间 = 原始时间 + 偏移），
-      // 把断裂的源时间线"焊接"成连续的输出时间线。
-      await ensureMuxJs();
-      const TS_CLOCK = 90000;    // MPEG-TS 时钟频率
-      const JUMP_TOL = TS_CLOCK; // 1 秒内的时间戳波动视为连续（EXTINF 舍入误差量级）
-      const out = [];
-      let outEnd = 0;            // 输出时间线上，下一分片应开始的位置（90kHz）
-      let prevOffset = 0;        // 上一分片应用的偏移
-      let anchored = false;      // 输出时间线基准是否已确立
-      for (let i = 0; i < parts.length; i++) {
-        const seg = media.segs[i] || {};
-        const firstDts = probeTsFirstDts(new Uint8Array(parts[i]));
-        const dur90 = Math.round((seg.dur || 0) * TS_CLOCK);
-        let offset;
-        if (!anchored) {
-          if (firstDts !== null) {
-            // 首个可探测分片：分片0直接归零；此前分片探测失败时沿用原始时间线
-            offset = i === 0 ? -firstDts : 0;
-            anchored = true;
+    try {
+      if (media.map) {
+        // fMP4：init 段 + 全部分片顺序直拼，无需转封装
+        await emitChunk(new Uint8Array(await robustFetch(media.map, false, null)));
+        for (let i = 0; i < media.segs.length; i++) await emitChunk(await readSeg(i));
+      } else {
+        // TS → MP4 转封装（mux.js）。
+        // 关键修复：广告插入处（#EXT-X-DISCONTINUITY）源 PTS 会重置（广告从 0 重新计时），
+        // 旧实现 keepOriginalTimestamps 原样透传，成片里广告片段的 baseMediaDecodeTime(tfdt)
+        // 突然跳回 0 → 本地播放器按时间线显示进度，一播到广告进度条瞬间归零、广告结束后又跳回。
+        // 现在：逐分片探测首帧 PTS/DTS，检测时间线断裂（显式标记或隐藏跳变），
+        // 为每个分片计算 baseMediaDecodeTime 偏移，把断裂的源时间线"焊接"成连续输出时间线。
+        await ensureMuxJs();
+        const TS_CLOCK = 90000;    // MPEG-TS 时钟频率
+        const JUMP_TOL = TS_CLOCK; // 1 秒内的时间戳波动视为连续（EXTINF 舍入误差量级）
+        let outEnd = 0;            // 输出时间线上，下一分片应开始的位置（90kHz）
+        let prevOffset = 0;        // 上一分片应用的偏移
+        let anchored = false;      // 输出时间线基准是否已确立
+        let initWritten = false;   // initSegment 只需在最前面写一次
+        for (let i = 0; i < media.segs.length; i++) {
+          const part = await readSeg(i);
+          const seg = media.segs[i] || {};
+          const firstDts = probeTsFirstDts(part);
+          const dur90 = Math.round((seg.dur || 0) * TS_CLOCK);
+          let offset;
+          if (!anchored) {
+            if (firstDts !== null) {
+              offset = i === 0 ? -firstDts : 0; // 分片0归零；此前探测失败则沿用原始时间线
+              anchored = true;
+            } else offset = 0;
+          } else if (firstDts === null) {
+            offset = prevOffset;
+          } else if (i > 0 && (seg.disc || Math.abs(firstDts + prevOffset - outEnd) > JUMP_TOL)) {
+            offset = outEnd - firstDts; // 时间线断裂：锚定到前一分片结束处
           } else {
-            offset = 0; // 整体探测失败：退回旧行为（保留原始时间戳）
+            offset = prevOffset;
           }
-        } else if (firstDts === null) {
-          offset = prevOffset; // 无锚点：沿用上一偏移
-        } else if (i > 0 && (seg.disc || Math.abs(firstDts + prevOffset - outEnd) > JUMP_TOL)) {
-          // 时间线断裂：显式 EXT-X-DISCONTINUITY，或无标签的 PTS 跳变（部分源插广告不打标记）
-          // → 把本分片锚定到前一分片的结束位置
-          offset = outEnd - firstDts;
-        } else {
-          offset = prevOffset; // 连续：沿用偏移，由原始 PTS 自然衔接
+          const outStart = firstDts !== null ? firstDts + offset : outEnd;
+          outEnd = outStart + dur90;
+          prevOffset = offset;
+
+          const chunks = [];
+          const trans = new window.muxjs.Transmuxer({
+            keepOriginalTimestamps: true,
+            baseMediaDecodeTime: offset, // mux.js 会把它加到各轨首帧 DTS 上（90kHz）
+            duration: parseInt(task.durationSec || 0, 10) // 定制版 mux.js 用它回填 moov 真实时长
+          });
+          trans.on('data', segment => {
+            if (!initWritten && segment.initSegment && segment.initSegment.byteLength) {
+              chunks.push(new Uint8Array(segment.initSegment));
+              initWritten = true;
+            }
+            if (segment.data && segment.data.byteLength) chunks.push(new Uint8Array(segment.data));
+          });
+          trans.push(part);
+          trans.flush();
+          for (const c of chunks) await emitChunk(c);
         }
-        const outStart = firstDts !== null ? firstDts + offset : outEnd;
-        outEnd = outStart + dur90;
-        prevOffset = offset;
-
-        const trans = new window.muxjs.Transmuxer({
-          keepOriginalTimestamps: true,
-          baseMediaDecodeTime: offset, // mux.js 会把它加到各轨首帧 DTS 上（90kHz）
-          duration: parseInt(task.durationSec || 0, 10)
-        });
-        trans.on('data', segment => {
-          if (i === 0 && segment.initSegment && segment.initSegment.byteLength) {
-            const u8 = new Uint8Array(segment.initSegment.byteLength + segment.data.byteLength);
-            u8.set(segment.initSegment, 0);
-            u8.set(segment.data, segment.initSegment.byteLength);
-            out.push(u8);
-          } else {
-            out.push(segment.data);
-          }
-        });
-        trans.push(new Uint8Array(parts[i]));
-        trans.flush();
-        parts[i] = null; // 及时释放
       }
-      if (!out.length) throw new Error('MP4 转码失败：无有效输出，可改用 TS 格式重新下载');
-      blob = new Blob(out, { type: 'video/mp4' });
-      out.length = 0; // 尽早释放转封装中间数组，降低移动端内存峰值
+      if (!written) throw new Error('合成的文件为空（转封装无有效输出），请重试或换源');
+
+      if (sink) {
+        await sink.close();
+        task._writer = null;
+      } else {
+        const blob = new Blob(out, { type: 'video/mp4' });
+        out.length = 0; // Blob 已独立持有数据，尽早释放中间数组
+        await idbPut(STORE_FILES, { id: task.id, blob, size: blob.size, name: task.fileName, ts: Date.now() });
+      }
+      // 成片已落盘/入库，清理分片失败不该把已交付的任务判成失败
+      try { await clearTaskSegs(task.id); } catch (e) { }
+
+      task.state = 'done';
+      task.doneFrags = task.totalFrags;
+      task.fileSize = written;
+      task.fileSaved = !!sink;
+      task.savedToDisk = !!sink;
+      persistTask(task, true); emit(true);
+
+      if (sink) toast('《' + task.title + '》已保存到你选择的位置', 'success');
+      else triggerSave(task);
+    } catch (e) {
+      await abortWriter(task);
+      throw e;
     }
-    parts.length = 0; // Blob 已独立持有数据，立即释放分片数组（移动端大文件防 OOM）
-
-    if (!blob || !blob.size) throw new Error('合成的文件为空');
-
-    await idbPut(STORE_FILES, { id: task.id, blob, size: blob.size, name: task.fileName, ts: Date.now() });
-    await clearTaskSegs(task.id);
-
-    task.state = 'done';
-    task.doneFrags = task.totalFrags;
-    task.fileSize = blob.size;
-    task.fileSaved = false;
-    persistTask(task, true); emit(true);
-
-    triggerSave(task);
   }
 
   // 导出单个已完成任务的文件
@@ -973,11 +1100,12 @@
     let rec;
     try { rec = await idbGet(STORE_FILES, task.id); } catch (e) { }
     if (!rec || !rec.blob) { toast('文件数据缺失，无法导出（任务可能被系统清理）', 'error'); return; }
-    const fname = task.fileName + (task.format === 'ts' ? '.ts' : task.format === 'webm' ? '.webm' : '.mp4');
+    const isWebm = task.format === 'webm'; // 仅播放器录制的 WebM 兜底会走到这里
+    const mime = isWebm ? 'video/webm' : 'video/mp4';
+    const fname = task.fileName + (isWebm ? '.webm' : '.mp4');
     if (useShare && SHARE_FILES_OK) {
       try {
-        const ftype = task.format === 'ts' ? 'video/MP2T' : (task.format === 'webm' ? 'video/webm' : 'video/mp4');
-        const file = new File([rec.blob], fname, { type: ftype });
+        const file = new File([rec.blob], fname, { type: mime });
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file], title: fname });
           task.fileSaved = true;
@@ -993,7 +1121,7 @@
     // a[download] 下载的是 blob: 资源本身，Content-Type 取 Blob 内部类型——重新包装为
     // 干净 base MIME，防止带 codecs 参数等非常规类型让安卓内核下载管理器报 bad base-64
     // （Blob 包装不复制数据，无额外开销）
-    const url = URL.createObjectURL(new Blob([rec.blob], { type: task.format === 'ts' ? 'video/MP2T' : (task.format === 'webm' ? 'video/webm' : 'video/mp4') }));
+    const url = URL.createObjectURL(new Blob([rec.blob], { type: mime }));
     const a = document.createElement('a');
     a.href = url;
     a.download = fname;
@@ -1027,7 +1155,8 @@
   async function addLocalFile(blob, title, opts) {
     opts = opts || {};
     if (!blob || !blob.size) { toast('文件内容为空，未保存', 'error'); return null; }
-    const format = opts.format === 'ts' ? 'ts' : opts.format === 'webm' ? 'webm' : 'mp4';
+    // 剧集下载只产出 MP4；WebM 仅用于播放器录屏在不支持 MP4 录制时的兜底
+    const format = opts.format === 'webm' ? 'webm' : OUTPUT_FORMAT;
     const t = sanitizeName(title || '录制');
     if (!t) { toast('文件名无效，未保存', 'error'); return null; }
     const id = 'local-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1042,7 +1171,7 @@
       format,
       state: 'done',
       totalFrags: 0, doneFrags: 0, bytes: blob.size,
-      durationSec: 0, fileSize: blob.size, fileSaved: false,
+      durationSec: 0, fileSize: blob.size, fileSaved: false, savedToDisk: false,
       error: '',
       createdAt: Date.now(), updatedAt: Date.now(),
       speed: 0, _plan: null
@@ -1050,7 +1179,7 @@
     try {
       await idbPut(STORE_FILES, {
         id: task.id, blob, size: blob.size,
-        name: task.fileName + (format === 'ts' ? '.ts' : format === 'webm' ? '.webm' : '.mp4'),
+        name: task.fileName + (format === 'webm' ? '.webm' : '.mp4'),
         ts: Date.now()
       });
     } catch (e) {
@@ -1095,6 +1224,7 @@
 
   function deleteTask(id) {
     const t = findTask(id);
+    if (t) abortWriter(t); // 丢弃未提交的写盘流，不留半成品文件
     if (t && activeRun && activeRun.taskId === id) activeRun.ctrl.abort();
     const idx = tasks.findIndex(x => x.id === id);
     if (idx !== -1) tasks.splice(idx, 1);
@@ -1107,13 +1237,18 @@
 
   function saveTask(id) {
     const t = findTask(id);
-    if (t && t.state === 'done') exportTaskFile(t, IS_IOS); // iOS 保存 = 系统分享面板；安卓/桌面 = 直接下载
+    if (!t || t.state !== 'done') return;
+    // 磁盘直写的文件已在用户选的位置，没有内存副本可再导出；明确说明而不是报「文件缺失」
+    if (t.savedToDisk) { toast('文件已直接保存到你选择的位置，无需再次保存', 'info'); return; }
+    exportTaskFile(t, IS_IOS); // iOS 保存 = 系统分享面板；安卓/桌面 = 直接下载
   }
 
   // 安卓上 a[download] 直落下载目录为主路径；分享面板作为备用导出方式（可发到 VLC/文件管理等）
   function shareTask(id) {
     const t = findTask(id);
-    if (t && t.state === 'done') exportTaskFile(t, true);
+    if (!t || t.state !== 'done') return;
+    if (t.savedToDisk) { toast('文件已直接保存到你选择的位置，无需再次分享', 'info'); return; }
+    exportTaskFile(t, true);
   }
 
   async function clearDoneTasks() {
@@ -1300,6 +1435,10 @@
       if (hint) hint.textContent = IS_IOS
         ? '下载期间请保持本页面在前台；完成后点「保存」→ 分享面板选「存储到文件」'
         : '下载期间请保持本页面在前台（已自动保持屏幕常亮），文件直存下载目录';
+    } else if (supportsFsAccess()) {
+      // 让保存能力可见（同 LibreTV 下载管理器）：用户才知道单集是边下边存盘的
+      const hint = root.querySelector('.wdtv-dl-hint');
+      if (hint) hint.textContent = '单集下载可边下边存到你选择的位置；批量下载完成后再保存到下载目录';
     }
 
     root.addEventListener('click', (e) => {
@@ -1360,7 +1499,10 @@
       case 'merging':
         return btn('delete', '删除', 'danger');
       case 'done':
-        return btn('save', '保存') + (SHARE_FILES_OK ? btn('share', '分享') : '') + btn('delete', '删除', 'danger');
+        return (t.savedToDisk
+          ? '<span class="wdtv-dl-tag dim">已存磁盘</span>'
+          : btn('save', '保存') + (SHARE_FILES_OK ? btn('share', '分享') : ''))
+          + btn('delete', '删除', 'danger');
       case 'error':
         return btn('retry', '重试') + btn('delete', '删除', 'danger');
       default:
@@ -1385,7 +1527,7 @@
           <span class="wdtv-dl-task-name" title="${escapeHtml(t.title)} ${escapeHtml(t.episodeLabel)}">${escapeHtml(t.title)}${t.episodeLabel ? ' · ' + escapeHtml(t.episodeLabel) : ''}</span>
           <span class="wdtv-dl-task-tags">
             ${t.quality && t.quality !== '默认' ? `<em class="wdtv-dl-tag">${escapeHtml(t.quality)}</em>` : ''}
-            <em class="wdtv-dl-tag">${t.format === 'ts' ? 'TS' : t.format === 'webm' ? 'WEBM' : 'MP4'}</em>
+            <em class="wdtv-dl-tag">${t.format === 'webm' ? 'WEBM' : 'MP4'}</em>
             ${dur ? `<em class="wdtv-dl-tag dim">${dur}</em>` : ''}
           </span>
         </div>
@@ -1418,7 +1560,7 @@
 
   // ===== 批量下载弹窗 =====
 
-  let batchCtx = null; // { opts, selected:Set, qualityIdx, format }
+  let batchCtx = null; // { opts, selected:Set, qualityIdx } —— 格式固定 MP4，无需选项
 
   function ensureBatchDom() {
     if (document.getElementById('wdtvDlBatch')) return;
@@ -1438,7 +1580,6 @@
         </div>
         <div class="wdtv-dl-batch-body">
           <div id="wdtvDlBatchQuality" class="wdtv-dl-opt-row"></div>
-          <div id="wdtvDlBatchFormat" class="wdtv-dl-opt-row"></div>
           <div class="wdtv-dl-batch-tools">
             <span class="wdtv-dl-opt-label">选择集数</span>
             <span class="wdtv-dl-batch-tools-btns">
@@ -1468,8 +1609,6 @@
       }
       const q = e.target.closest('[data-qidx]');
       if (q) { batchCtx.qualityIdx = parseInt(q.dataset.qidx, 10); renderBatchOptions(); return; }
-      const f = e.target.closest('[data-fmt]');
-      if (f) { batchCtx.format = f.dataset.fmt; renderBatchOptions(); return; }
       const ep = e.target.closest('[data-ep]');
       if (ep) {
         const i = parseInt(ep.dataset.ep, 10);
@@ -1483,17 +1622,13 @@
 
   function renderBatchOptions() {
     const qRow = document.getElementById('wdtvDlBatchQuality');
-    const fRow = document.getElementById('wdtvDlBatchFormat');
-    if (!qRow || !fRow || !batchCtx) return;
+    if (!qRow || !batchCtx) return;
     const qs = batchCtx.opts.qualities || [];
+    // 格式固定 MP4：不再渲染「格式」行与 TS 原流按钮（旧版按钮点了也不会生效）
     qRow.innerHTML = qs.length > 1
       ? `<span class="wdtv-dl-opt-label">画质</span><span class="wdtv-dl-opt-chips">${qs.map((q, i) =>
         `<button type="button" class="wdtv-dl-chip${i === batchCtx.qualityIdx ? ' active' : ''}" data-qidx="${i}">${escapeHtml(q.label)}</button>`).join('')}</span>`
       : (qs.length === 1 ? `<span class="wdtv-dl-opt-label">画质</span><span class="wdtv-dl-opt-chips"><span class="wdtv-dl-chip static">${escapeHtml(qs[0].label)}</span></span>` : '');
-    fRow.innerHTML = `<span class="wdtv-dl-opt-label">格式</span><span class="wdtv-dl-opt-chips">
-        <button type="button" class="wdtv-dl-chip${batchCtx.format === 'mp4' ? ' active' : ''}" data-fmt="mp4">MP4（推荐）</button>
-        ${IS_IOS ? '' : `<button type="button" class="wdtv-dl-chip${batchCtx.format === 'ts' ? ' active' : ''}" data-fmt="ts">TS 原流</button>`}
-      </span>`;
   }
 
   function renderBatchGrid() {
@@ -1524,7 +1659,7 @@
 
   function confirmBatch() {
     if (!batchCtx) return;
-    const { opts, selected, qualityIdx, format } = batchCtx;
+    const { opts, selected, qualityIdx } = batchCtx;
     if (!selected.size) { toast('请先选择要下载的集数', 'info'); return; }
     const qs = opts.qualities || [];
     const q = qs[qualityIdx] || null;
@@ -1543,8 +1678,7 @@
         title: opts.title || '未知视频',
         episodeLabel: multi ? ((labels && labels[i]) || `第${i + 1}集`) : '',
         quality: q ? q.label : '默认',
-        qualityHint: q ? (q.hint || null) : null,
-        format
+        qualityHint: q ? (q.hint || null) : null
       };
     });
     closeBatchModal();
@@ -1567,8 +1701,7 @@
     batchCtx = {
       opts,
       selected: defaultSel,
-      qualityIdx: Math.min(qualityIdx, Math.max(0, qualityCount - 1)),
-      format: 'mp4'
+      qualityIdx: Math.min(qualityIdx, Math.max(0, qualityCount - 1))
     };
     document.getElementById('wdtvDlBatchTitle').textContent = `批量下载${opts.title ? ' · ' + opts.title : ''}`;
     renderBatchOptions();

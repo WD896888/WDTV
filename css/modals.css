@@ -373,7 +373,7 @@
 /* ===== 标签管理模态框：复用首页豆瓣卡片的设计 token =====
    同源样式：
    - css/index.css  .douban-card（背景/描边/圆角/hover）、.douban-rate-badge、.douban-card-title-area
-   - index.html      .wdtv-douban-tag（药丸）、.wdtv-douban-refresh（按钮）、.wdtv-sub-input（输入框）
+   - index.html      .wdtv-douban-tag（药丸）、.wdtv-douban-refresh（按钮）
    token：背景 rgba(155,180,218,0.06)、强调底 rgba(80,128,176,0.2)、
          描边 var(--glass-border)、强调 var(--accent)、文字 var(--pale)/var(--text-secondary)/var(--text-muted)。
    弹窗挂载在 body 上，首页位于 #splash（fixed; z-index:9999），必须显式高于该层。 */
@@ -529,7 +529,7 @@
     opacity: 1;
 }
 
-/* 输入框：与 .wdtv-sub-input 同款（rgba(255,255,255,0.08) + 玻璃描边） */
+/* 输入框：半透明玻璃底（rgba(255,255,255,0.08) + 玻璃描边） */
 #tagManageModal input[type="text"] {
     flex: 1;
     min-width: 0;

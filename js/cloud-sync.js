@@ -11,11 +11,11 @@
 
     // ========================= 常量 =========================
 
-    // 需要同步的列表 / 设置键（共 14 个；videoProgress_<id> 通过前缀单独扫描）
-    // wdtvSourceSubscriptions 为批次3 数据源订阅条目（含 url/周期/熔断状态，不含解析后的源集合）
+    // 需要同步的列表 / 设置键（共 13 个；videoProgress_<id> 通过前缀单独扫描）
     // wdtvSkipMarks 为批次4 片头/中段/片尾跳过标记（默认关闭，_merge 按 updatedAt 整体覆盖）
+    // 2026-11-10：数据源订阅已下线，wdtvSourceSubscriptions 不再同步；
+    // 旧云端数据的 _merge 兼容分支仍保留，避免历史账号同步报错。
     const SYNC_LIST_KEYS = [
-        'wdtvSourceSubscriptions',
         'wdtvSkipMarks',
         'viewingHistory',
         'myCinemaFavorites',

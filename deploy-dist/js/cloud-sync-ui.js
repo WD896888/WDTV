@@ -714,7 +714,7 @@
                 if (reason !== 'payload-limit') return;
                 if (typeof window.showToast === 'function') {
                     try {
-                        window.showToast('同步数据过大，已裁剪部分跳过标记/订阅记录以保证同步成功');
+                        window.showToast('同步数据过大，已裁剪部分跳过标记以保证同步成功');
                     } catch (err) { /* 静默 */ }
                 }
             });

@@ -260,8 +260,27 @@
 // v88（2026-11-08）：标签管理弹窗改为白色磨砂玻璃 + 深色文字：高透白色卡片、深色标题与中性灰说明、统一 10px 圆角控件、深色主按钮与纯文字次按钮，去掉内发光/渐变/多重描边；升级缓存版本确保新资源即时到达
 // v89（2026-11-08）：标签管理弹窗次按钮去除残留磨砂底，保持纯文字样式；升级缓存版本确保新资源即时到达
 // v90（2026-11-08）：标签管理弹窗改为复用首页豆瓣卡片 token：蓝灰透明玻璃底、var(--glass-border) 描边、10px 卡片圆角、var(--pale) 文字，药丸/输入框/按钮分别对齐豆瓣标签、订阅输入框与刷新按钮样式；升级缓存版本确保新资源即时到达
-// v91（2026-11-20）：搜索分页立即渲染与每页120、源治理与前三源直连、真实画质、播放器返回搜索页、共同观影复制引用撤回与恢复防闪、动态效果精细化；升级缓存版本确保新资源即时到达
-const CACHE_VERSION = 'wdtv-sw-v91';
+// v91（2026-11-09）：数据源大体检：原 6 个停用源（黑木耳/卧龙/新华为/华为吧/豆瓣/魔爪）经官方站与公开配置多轮探测确认服务终止，槽位改接猫眼/量子/金鹰/速博/豪华/百度六条三路径实测可用线路，14 个源全部恢复可用；config.js 升 ?v=26；升级缓存版本确保新资源即时到达
+// v92（2026-11-09）：数据源恢复收口：老用户 localStorage 选中集合一次性补齐 6 个恢复槽位，不覆盖用户对其它源的选择；app.js 升 ?v=44；升级缓存版本确保新资源即时到达
+// v93（2026-11-09）：播放链路复核修正：百度资源 api.apibdzy.com 搜索可用但 5 条播放地址均取不到清单，mozhua 槽位改接 iKun 资源 www.ikunzy.com（播放清单直连与生产代理均有效）；config.js 升 ?v=27；升级缓存版本确保新资源即时到达
+// v94（2026-11-09）：播放链路复核收口：暴风资源播放 CDN 抽样 6 部仅 1 部可取清单，bfzy 槽位改接电影天堂 caiji.dyttzyapi.com（搜索三路径可用、播放清单直连有效）；config.js 升 ?v=28；升级缓存版本确保新资源即时到达
+// v95（2026-11-09）：恢复原有数据源配置（用户指正）：播放地址路径含中文时临时探测脚本未做百分号编码导致 404 误判，暴风资源从未失效；内置 14 个源全部还原为 2026-11-08 上游原配置，新增线路改用独立 key 作补充、不占用任何原有槽位；老用户选中集合一次性清理停用项并补齐新增 key；config.js 升 ?v=29、app.js 升 ?v=45；升级缓存版本确保新资源即时到达
+// v96（2026-11-10）：下载器移植 LibreTV 设计：新增 js/download-utils.js 纯函数模块（4xx 确定性缺片快速失败+建议换源、混合内容/CORS/配额不足可读诊断）；合成改逐片流式写出，单集下载在用户手势内取 FS Access 句柄边转封装边写盘（不聚合 Blob、不占 IDB），批量/不支持时回退；格式统一只留 MP4（移除批量弹窗无效的 TS 选项）；新增 test/download-utils.test.mjs 39 项行为单测。js/downloader.js 升 ?v=23；升级缓存版本确保新资源即时到达
+// v97（2026-11-10）：数据源订阅与自定义接入入口全线下线，源集合完全内置：设置面板删除订阅输入/列表/状态/导出 JSON 与订阅样式，index.html 不再加载 source-subscription.js 与 customer_site.js；app.js 移除订阅渲染、自动刷新与事件委托并清理老用户订阅残留；七七资源并入 config.js 内置表（源集合不变），移除 extendAPISites/removeAPISitesByPrefix 运行时注入源钩子；cloud-sync 移除订阅同步键；README 与静态契约同步更新；config.js/app.js/ui.js/cloud-sync.js/cloud-sync-ui.js/index-page.js/modals.css 升 ?v=；升级缓存版本确保新资源即时到达
+// v98（2026-11-10）：隐私政策页 about.html 改版为首页同款风格——移除 Tailwind/浅色 styles.css，接入首页同款背景层（光晕、bg-canvas 背景图、雨幕、玻璃水波涟漪、雾气、preloader）与「动态效果」开关；新增 css/site-bg.css?v=1、css/about.css?v=1、js/site-fx.js?v=1（镜像首页内联 FX，首页本身不改动）；升级缓存版本确保新页面与新资源即时到达
+// v99（2026-11-10）：隐私政策页组件按用户要求改为首页豆瓣卡片同款「几乎全透明」样式（深蓝玻璃 / 白色磨砂玻璃两版均被否）——信息块、邮箱按钮、分隔线统一 rgba(155,180,218,0.06) + 1px var(--glass-border) + 10px 圆角，去掉 backdrop-filter / 白边 / 内高光 / 投影；顶栏改透明无底，hover 沿用 .douban-card 的 rgba(80,128,176,0.2) + var(--accent) 反馈；删除 #splash::after 暗化层，文字保持 #2a3a5c 深色层级与首页蓝色渐变标题；css/about.css 升 ?v=5；升级缓存版本确保新资源即时到达
+// v100（2026-11-10）：设置面板移除「一般功能」里的「清除Cookie」功能项及其 clearLocalStorage() 实现（含确认弹窗 / 清空 localStorage 与全部 Cookie / 倒计时刷新），不再提供清空 Cookie 的入口；ui.js 升 ?v=18；升级缓存版本确保新资源即时到达
+// v101（2026-11-10）：首页主视觉标题改为「你看过的电影，不只是电影」，副句按语义分三行排版、窄屏回流为一段，浏览器标签标题同步呼应；改动仅在 index.html 文案与内联样式，外部 css/js 的 ?v= 不变；升级缓存版本清空旧页面缓存，避免老用户离线回退到旧首页 HTML
+// v102（2026-11-10）：应用户要求回退 v101——首页标题恢复为「WDTV / 自由观影，畅享精彩」原文案与原样式（index.html 与 v100 状态一致）；仍升级缓存版本清空页面缓存，确保所有用户立即拿到回退后的首页
+// v103（2026-11-10）：隐私政策页字体/文字层级改回复用首页体系——about.html 引入与首页完全相同的外部 CSS 栈（styles/index/modals/downloader/states）与 Google Fonts，正文用 'Noto Sans SC' 300 + var(--text-primary)/rgba(224,234,248,0.9) 浅色细字 + 首页弹窗标题同款深色阴影（加一层紧实描边适配明亮水雾），主标题/副标题/分区标题/卡片标题分别照抄 .wdtv-title / .wdtv-slogan / .wdtv-douban-header h2 / .wdtv-panel-header h3；组件保持 .douban-card 的 0.06 极淡透明；首页设置面板「隐私政策」按钮去掉 wdtv-secondary，与「视频缓存管理」按钮样式统一；css/about.css 升 ?v=7；升级缓存版本确保新资源即时到达
+// v104（2026-11-11）：不降画质/特效的渲染性能优化——① 首页内联 FX 与 js/site-fx.js 同步改造：水波 renderWater 在小端设备用 Uint32Array 一次写入 RGBA（数值验证逐字节等价，同时删掉从未被使用的 gx 与每像素 3 次数组写）、stepWater 预计算相位查表、雨幕渐变色按雨滴预生成字符串、两条 rAF 在页面隐藏时真正 cancel 并在 visibilitychange / 动态效果开关切回时恢复；② 去掉 #splash 对纯色背景毫无视觉作用的 30px 全屏高斯模糊（保留 saturate/brightness 与 Backdrop Root，内部玻璃层采样边界不变），.splash-glow 加 will-change:filter,opacity 让 58s 呼吸动画走合成器；③ 首页 27 个自有 JS 统一 defer（defer 保证按文档顺序执行，依赖链不变；Tailwind Play CDN 保持同步以免首屏无样式闪烁）；④ 动态海报图补 decoding="async"。js/app.js 升 ?v=47、douban.js ?v=18、cinema.js ?v=18、watch-party-ui.js ?v=48、site-fx.js ?v=2、site-bg.css ?v=2；升级缓存版本确保新资源即时到达
+// v105（2026-11-11）：清理未接通的雾气擦除层（#gw-fogwipe）——该 canvas 继承 .gw-ly{pointer-events:none}，4 个 pointer 监听器永远不触发；retarget('bg') 从不初始化它，≤900px 手机端完全不可见；redrawFog 还会在每次 resize 做 5 次全屏绘制并常驻一张 dpr2 约 33MB 纹理。删除 index.html / about.html 的 DOM、首页内联样式与 css/site-bg.css 的规则、两处 FX 的 paintHaze/redrawFog/renderWipeStroke/wipeSegLive/blotch/fogPt 及监听器和 retarget 的 fog 分支，视觉无可察觉损失。另修 bfcache 状态机：pageshow(persisted) 里只 add('gw-exit') 且全项目无 remove，导致从播放器 history.back() 返回后 #gw-slot 永久 opacity:0（背景图/水波消失）且 idleNow() 永久跳过渲染；改为 remove 并重启 FX。css/site-bg.css 升 ?v=3、js/site-fx.js 升 ?v=3；升级缓存版本确保新资源即时到达
+// v106（2026-11-11）：补齐 player.html —— 此前所有性能优化只覆盖首页内联 FX 与 js/site-fx.js，播放器页面一直是独立的旧版实现。① 播放器内联 FX 同步：renderWater 小端 Uint32 快路径（数值逐字节等价）+ 删掉从未使用的 gx、stepWater 相位查表、雨幕渐变色按雨滴预生成、makeOut/buildPhases、gwRafId + visibilitychange 真正休眠（旧版 loop 无条件排队、切后台也不停）、idleNow 增加 #modal 检查让弹层打开时冻结背景，雨幕同样加 rafId 休眠；② 清掉 player.html 残留的雾气层（DOM / CSS / 整段 fog 代码，上轮清理只覆盖了首页与 about.html）；③ #splash 去掉对纯色背景无效的 blur(30px)（保留 saturate/brightness 与 Backdrop Root）、.splash-glow 加 will-change:filter,opacity；④ 新增弹层打开时暂停 splash-glow 动画与 backdrop-filter 的两条规则（与首页一致）；⑤ 三个页面加 bg-canvas.jpg 的 preload，让首屏背景图更早到位。本轮只改 HTML，外部 css/js 的 ?v= 不变；升级缓存版本清空旧页面缓存，确保播放器页面立即拿到新内联脚本
+// v107（2026-11-11）：① 静态资源缓存分级——带 ?v=N 的 css/js/libs 改 Cache-First（命中即返回，不再发起后台 fetch），不带版本号的 bg-canvas.jpg / image/* / manifest.json 保留 SWR。此前统一 SWR 让每次导航在全部命中缓存时仍发 33 个后台请求（27 JS + 5 CSS + 1 库），与字体/封面图/搜索 API 抢连接；项目 URL 带版本号即内容永不变，后台更新纯属浪费，忘升 ?v= 由 SW 版本升级清空 wdtv-* 缓存兜住。② 删除 3 个从未被 CSS 引用的 Google 字体族（Great Vibes / Pinyon Script / Spectral），减少 @font-face 规则与 CSSOM 体积，视觉零变化。③ .wdtv-loading:not(.show) *{animation-play-state:paused}，停掉隐藏遮罩里常驻的 spinner 无限动画（visibility:hidden 只跳绘制、动画时间线仍在 tick）。④ 三处 preloader 显示时机同步：不再等 window.load，改为 DOMContentLoaded + 背景图就绪取较晚 + 120ms 淡出，1.5s 兜底；淡出时背景已就位不露纯色底，首屏可交互明显提前。libs/ 下 5 处脚本引用补 ?v=1 使其一并走 Cache-First（mux-mp4.js 为按需动态注入、不在导航路径）；js/site-fx.js 升 ?v=4；升级缓存版本清空旧缓存，确保新策略与新脚本即时生效
+// v108（2026-11-12）：修复播放器页面滑动回归卡顿（v106/v107 引入，首页不受影响）。根因：① player.html 新加的 body:has(#modal:not(.hidden)) 两条规则让 body 样式依赖后代状态，播放器页面弹幕/控制栏/剧集列表持续增删 DOM 时反复触发整棵 body 子树样式失效（首页 DOM 变化稀疏所以无感）；其中 backdrop-filter:none 还会让 #splash 的 Backdrop Root 反复消失/重建，弹层内滚动时全屏背景重新合成。② .wdtv-loading:not(.show) * 的后代通配选择器放大每次 DOM 变化的匹配成本。③ 滚动时 #splash 的 pointermove 无条件触发 stir → toSim 每次调用 pane.getBoundingClientRect() 造成强制同步布局、每次最多 6 次 poke，且 pane 模式监听缺 passive。修复：删掉两条 :has()，改用只观察 #modal class 的 MutationObserver 切换 body.fx-frozen 普通类（失效范围从整棵子树收窄到一个属性），且不再移除 backdrop-filter；loading 规则收窄到具体 spinner；player.html FX 缓存 paneRect、pointer 监听全部加 passive、内容区拖动不再驱动水波（点击涟漪保留）。仅 index.html / player.html / service-worker.js 变动，外部 css/js ?v= 不变；升级缓存版本清空旧页面缓存
+// v109（2026-11-12）：修复播放页「手指脱手后的惯性滚动比拖动时更卡」。根因：① 结构性——css/player.css 的 body,html{height:100%!important} 叠加 body.player-page-bg{overflow-x:hidden}（隐含 overflow-y:auto）把实际滚动容器从 viewport 挪到 body；首页是 html{overflow-y:scroll} 且 body 高度 auto，走 compositor 快速滚动。播放页 body 滚动容器再叠 #splash 全屏 fixed + backdrop-filter（Backdrop Root），滚动更容易被降级到主线程路径。② 帧预算——idleNow() 只查 document.hidden 与 #modal，滚动/fling 完全不冻结；惯性期间水波 rAF（手机 bg 模式约 8.6 万格，每帧 2×stepWater + renderWater + putImageData + 全屏 drawImage）、雨幕 rAF、.splash-glow 的 58s filter 动画每帧重绘全屏渐变，再叠加视频解码、弹幕 DOM、控制栏状态，主线程被占满。③ v108 的 fxOnContent 让内容区拖动跳过 stir() 的 poke，拖动阶段负载更低，反而放大了「脱手后没有 pointermove、rAF 仍满速」的反差。④ 感知层——惯性位移由衰减曲线连续推进，掉一帧下一帧位移突增；拖动位移由手指决定，掉帧只是跟手略迟，故同样掉帧数体感差得多。修复：player.html 新增滚动活跃检测（scroll/wheel/touch 全部 passive，scroll 用捕获阶段以覆盖弹层/剧集列表等内部滚动容器），维护 __fxScrollHold 时间戳；水波与雨幕 loop 在活跃期跳过重算并保留上一帧，停止后从当前高度场继续（last=ts 防 dt 突变，无跳变）；光晕呼吸动画改单个元素内联 animationPlayState，仅在状态切换时写一次。纯点击（无 touchmove）不触发冻结，点击涟漪保持即时。不动 CSS 层叠、不引入后代选择器、不移除 backdrop-filter，首页内联 FX 与 js/site-fx.js 均不改。结构性根因（把滚动容器还给 viewport，需 overflow-x:clip 与 body height:auto）会改变 flex 压缩行为，本轮不擅改，留待真机布局回归后再做。仅 player.html / service-worker.js 变动，外部 css/js ?v= 不变；升级缓存版本清空旧页面缓存
+// v110（2026-11-20）：合并 GitHub 最新播放页滚动性能/下载器/隐私页改版，并保留搜索分页120、真实画质、优先源直连、共同观影聊天/雨滴优化；升级缓存版本确保新资源即时到达
+const CACHE_VERSION = 'wdtv-sw-v110';
 const ASSET_CACHE = `wdtv-assets-${CACHE_VERSION}`;
 const PAGE_CACHE = `wdtv-pages-${CACHE_VERSION}`;
 
@@ -327,12 +346,16 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // --- 版本化静态资源：Stale-While-Revalidate ---
+    // --- 静态资源：带 ?v=N 的走 Cache-First，未版本化的保留 SWR ---
+    // 原理：本项目所有 css/js/libs 都带内容式版本号，发版即换 URL，URL 不变则内容永远不变，
+    // 命中缓存后再发一次后台 fetch 是 100% 浪费（一次导航约 33 个请求），还会与字体/封面图/
+    // 搜索 API 抢连接。不带版本的 bg-canvas.jpg / image/* / manifest.json 仍可能原地更新，保留 SWR。
     if (ASSET_PATH_PATTERNS.some(re => re.test(url.pathname))) {
+        const versioned = /(?:\?|&)v=/.test(url.search);
         event.respondWith((async () => {
             const cache = await caches.open(ASSET_CACHE);
             const cached = await cache.match(request);
-            // 无论命中与否都发起后台更新（命中时用 waitUntil 挂后台，不阻塞响应）
+            if (cached && versioned) return cached;
             const networkUpdate = fetch(request).then(fresh => {
                 if (fresh && fresh.ok) {
                     cache.put(request, fresh.clone());
@@ -344,7 +367,7 @@ self.addEventListener('fetch', event => {
                 event.waitUntil(networkUpdate);
                 return cached;
             }
-            // 首次访问：等网络返回（后续访问才会命中缓存）
+            // 首次访问 / 升级缓存版本后：等网络返回（后续访问才会命中缓存）
             const fresh = await networkUpdate;
             return fresh || Response.error();
         })());

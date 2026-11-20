@@ -117,17 +117,15 @@ npx wrangler pages secret put AUTH_SECRET  # 生成：openssl rand -base64 32
 - 用户数据整包存储于 D1（每用户 1 行），免费额度内自用绰绰有余
 - 本地 `node server.mjs` 已实现同形 API，可直接体验完整账号功能
 
-## 🔧 自定义配置
+## 🔧 数据源
+
+所有搜索源由系统内置维护（见 `js/config.js` 的 `API_SITES`），页面不提供订阅、导入或自定义接入数据源的入口；新增或调整源由维护者直接修改该配置。
 
 ### API兼容性
 
-WDTV 支持标准的苹果 CMS V10 API 格式。添加自定义 API 时需遵循以下格式：
+内置源遵循标准的苹果 CMS V10 API 格式：
 - 搜索接口: `https://example.com/api.php/provide/vod/?ac=videolist&wd=关键词`
 - 详情接口: `https://example.com/api.php/provide/vod/?ac=detail&ids=视频ID`
-
-**添加 CMS 源**:
-1. 在设置面板中选择"自定义接口"
-2. 接口地址: `https://example.com/api.php/provide/vod`
 
 ## ⌨️ 键盘快捷键
 

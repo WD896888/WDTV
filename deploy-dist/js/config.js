@@ -19,17 +19,71 @@ const SITE_CONFIG = {
 //   'html' —— 仅详情页 HTML 解析（detail 字段域名 + 正则提取 m3u8）
 //   'auto' —— 标准接口优先，失败自动回退详情页解析
 // 配置依据为实测结果；源站行为变化时请以实测为准调整
+//
+// 2026-11-09 更正（重要）：下方 14 个内置源全部保持 2026-11-08 上游原配置，一个都不替换。
+//   此前用临时探测脚本判定「暴风资源不能播」并改接其它线路，属误判：暴风的播放地址路径
+//   含中文（…/HD国语/index.m3u8），脚本未做百分号编码导致裸请求 404；浏览器会自动编码，
+//   编码后直连即返回有效 m3u8 播放清单。「最大资源」等源的单次失败也只是链接/CDN 波动。
+//   结论：服务端探测的单次结果不能作为停用或替换用户原有源的依据。
+//   原 6 个停用源（黑木耳/卧龙/新华为/华为吧/豆瓣/魔爪）按上游配置保留 disabled 状态与
+//   失效原因，便于日后站点恢复时直接启用；它们的域名级复核结果见 .workbuddy/memory/2026-11-09.md。
+//   文件末尾 7 个源是「补充线路」，使用独立 key，不占用任何内置源槽位；如不需要，
+//   整体删除末尾 7 项即可，内置 14 个源完全不受影响。
+// 2026-11-10 更正：数据源订阅与自定义接入入口全线下线，此表即系统全部内置源。
+//   原由 js/customer_site.js 运行时合并的「七七资源」已并入表尾（key 不变、源集合不变）；
+//   页面不再加载任何外部源配置，也不再暴露运行时注入源的全局钩子。
 const API_SITES = {
+    heimuer: {
+        api: 'https://json.heimuer.xyz',
+        name: '黑木耳',
+        detail: 'https://heimuer.tv',
+        detailMode: 'api',  // 实测：详情页被反爬验证页拦截（无法提取 m3u8），标准接口可用
+        // 2026-11-08 体检：json.heimuer.xyz 已跳转域名停放页（urldance.com，返回 HTML），
+        // detail 域 heimuer.tv TLS 证书链无效；官方渠道未能确认新址，标注停用但保留配置便于回溯。
+        disabled: true,
+        disabledReason: '域名已跳转停放页，未获官方确认的新地址'
+    },
     ffzy: {
         api: 'http://ffzy5.tv',
         name: '非凡影视',
         detail: 'http://ffzy5.tv',
         detailMode: 'api'   // 实测：详情页返回 5xx，标准接口可用；若详情页恢复可改回 'html'（历史集数更全）
     },
+    tyyszy: {
+        api: 'https://tyyszy.com',
+        name: '天涯资源',
+        detailMode: 'api',  // 2026-11-08 实测：详情接口正常（plays=7）
+        // 该源不认标准 wd= 参数（返回"暂不支持搜索"），只认 keywords=；实测可返回 20 条。
+        searchParam: 'keywords'
+    },
     zy360: {
         api: 'https://360zy.com',
         name: '360资源',
         detailMode: 'api'
+    },
+    wolong: {
+        api: 'https://wolongzyw.com',
+        name: '卧龙资源',
+        detailMode: 'api',
+        // 2026-11-08 体检：站点返回 Angie WAF 的 JS 挑战页（HTML），代理与直连都无法拿到 JSON。
+        disabled: true,
+        disabledReason: '接口被 WAF JS 挑战拦截，未获官方确认的新地址'
+    },
+    cjhw: {
+        api: 'https://cjhwba.com',
+        name: '新华为',
+        detailMode: 'api',
+        // 2026-11-08 体检：DNS 解析失败（ENOENT），域名已不存在。
+        disabled: true,
+        disabledReason: 'DNS 解析失败（ENOENT），域名失效'
+    },
+    hwba: {
+        api: 'https://cjwba.com',
+        name: '华为吧资源',
+        detailMode: 'api',
+        // 2026-11-08 体检：DNS 解析失败（ENOTFOUND），域名已不存在。
+        disabled: true,
+        disabledReason: 'DNS 解析失败（ENOTFOUND），域名失效'
     },
     jisu: {
         api: 'https://jszyapi.com',
@@ -37,27 +91,96 @@ const API_SITES = {
         detail: 'https://jszyapi.com',
         detailMode: 'auto'  // 实测：接口与详情页稳定性均一般，双路径互为兜底
     },
+    dbzy: {
+        api: 'https://dbzy.com',
+        name: '豆瓣资源',
+        detailMode: 'api',
+        // 2026-11-08 体检：http 返回「dbzy.com is For Sale」域名出售页，https 连接超时。
+        disabled: true,
+        disabledReason: '域名已挂牌出售，服务停止'
+    },
+    bfzy: {
+        api: 'https://bfzyapi.com',
+        name: '暴风资源',
+        detailMode: 'api'   // 实测：搜索与标准接口详情均正常（46集）
+    },
+    mozhua: {
+        api: 'https://mozhuazy.com',
+        name: '魔爪资源',
+        detailMode: 'api',
+        // 2026-11-08 体检：DNS 可解析，但 TCP 连接超时（20s），服务不可达。
+        disabled: true,
+        disabledReason: '连接超时，服务不可达'
+    },
     mdzy: {
         api: 'https://www.mdzyapi.com',
         name: '魔都资源',
         detailMode: 'api'   // 实测：搜索与标准接口详情均正常（74集）
+    },
+    ruyi: {
+        api: 'https://www.ryzyw.com',
+        name: '如意资源',
+        detailMode: 'api',  // 实测：搜索与详情接口均正常（20 条，含播放地址）
+        // 2026-11-08 复检：原地址 cj.rycjapi.com 在本机直连与本地 /proxy/ 均被域名级重置
+        // （直连 ECONNRESET 约 130ms，代理回 500 UPSTREAM_FAILED），并非源站停服：
+        // 同源官方站 www.ryzyw.com（CNAME 同为 ry.ivipcdn.com、封面图床同为 pic.ry-pic.com）
+        // 直连与代理都能返回完整 JSON。故切换到该域名并恢复启用，原址保留便于回溯。
+        previousUrl: 'https://cj.rycjapi.com'
+    },
+    zuid: {
+        api: 'https://api.zuidapi.com',
+        name: '最大资源',
+        detailMode: 'api'
+    },
+
+    // ↓ 2026-11-09 新增补充线路：独立 key，不占用上方任何内置源的槽位。
+    //   来源为公开采集源清单（ZxxXinI/tvbox 线路表、LunaTV-config 每日健康报告等），
+    //   均经「搜索 list>0 + 详情含播放地址 + 播放清单可取」实测。删除以下 6 项即可完整还原内置配置。
+    maoyan: {
+        api: 'https://api.maoyanapi.top',
+        name: '猫眼资源',
+        detailMode: 'api'   // 线路表 myzy；搜索 30 条，播放清单双路径有效
+    },
+    lzi: {
+        api: 'https://cj.lziapi.com',
+        name: '量子资源',
+        detailMode: 'api'   // 线路表 lzi；搜索 20 条，播放清单有效
+    },
+    jyzy: {
+        api: 'https://jyzyapi.com',
+        name: '金鹰资源',
+        detailMode: 'api'   // 公开播放器源列表；搜索 20 条，播放清单双路径有效
+    },
+    subo: {
+        api: 'https://subocaiji.com',
+        name: '速博资源',
+        detailMode: 'api'   // 线路表 subocaiji；搜索 20 条，播放清单双路径有效
+    },
+    hhzy: {
+        api: 'https://hhzyapi.com',
+        name: '豪华资源',
+        detailMode: 'api'   // 线路表 hhzyapi；搜索 20 条，播放清单双路径有效
+    },
+    ikun: {
+        api: 'https://www.ikunzy.com',
+        name: 'iKun资源',
+        detailMode: 'api'   // 线路表 ikun；库约 6.7 万条，播放清单双路径有效
+    },
+    // 原 js/customer_site.js 的七七资源：v97 起并入内置（key 与源集合均不变）
+    qiqi: {
+        api: 'https://www.qiqidys.com/api.php/provide/vod',
+        name: '七七资源'
     }
-    // 您可以按需添加更多源
 };
 
-// 默认内置源优先级：换源/聚合结果排序时按此顺序优先（未列出的源排在后面）
+// 默认内置源优先级：搜索结果排序与「点击直接播放」按此顺序优先，未列出的源排在后面。
+// 用户可在设置面板调整前三个优先源（本地存储键见 SOURCE_PRIORITY_STORAGE）。
 const DEFAULT_SOURCE_PRIORITY = ['ffzy', 'jisu', 'mdzy'];
-// 用户自定义优先级的本地存储键名
 const SOURCE_PRIORITY_STORAGE = 'wdtvSourcePriority';
 
-// 定义合并方法
-function extendAPISites(newSites) {
-    Object.assign(API_SITES, newSites);
-}
-
 // 拼接资源站接口 URL：
-//   内置源 api 字段是纯域名（https://www.mdzyapi.com），直接拼接 API_CONFIG 的 path；
-//   自定义源（customer_site）常把完整接口地址填进 api 字段（…/api.php/provide/vod），
+//   多数源 api 字段是纯域名（https://json.heimuer.xyz），直接拼接 API_CONFIG 的 path；
+//   七七资源等源把完整接口地址填进 api 字段（…/api.php/provide/vod），
 //   此时再拼 path 会出现 …/provide/vod/api.php/provide/vod/?ac=… 双重路径（ERR_ABORTED）。
 //   检测到 base 已包含接口路径时只补查询串。
 function buildVodApiUrl(apiBase, path) {
@@ -72,7 +195,7 @@ function buildVodApiUrl(apiBase, path) {
     return base + path;
 }
 
-// 个别源不支持标准 wd= 搜索参数（需改用 keywords= 等参数）。
+// 个别内置源不支持标准 wd= 搜索参数（天涯资源只认 keywords=）。
 // 仅在源配置显式声明 searchParam 时替换 path 里的 wd=，默认源行为完全不变。
 function applySearchParam(path, site) {
     const param = site && site.searchParam;
@@ -90,29 +213,12 @@ function normalizeRuyiPicUrl(url) {
     return url.replace(/\/\/(?:ps\.ryzypics\.com|ry-pic\.com)\//i, '//pic.ry-pic.com/');
 }
 
-// 暴露到全局
+// 暴露到全局（只读使用：不提供运行时新增/删除源的方法，源集合以本文件为准）
 window.API_SITES = API_SITES;
-window.extendAPISites = extendAPISites;
 window.applySearchParam = applySearchParam;
 window.normalizeRuyiPicUrl = normalizeRuyiPicUrl;
 window.DEFAULT_SOURCE_PRIORITY = DEFAULT_SOURCE_PRIORITY;
 window.SOURCE_PRIORITY_STORAGE = SOURCE_PRIORITY_STORAGE;
-
-// 数据源订阅（批次3）：按 key 前缀整体移除某订阅导入的源。
-// 订阅导入的源 key 形如 sub_<订阅hash>_<源hash>，移除/重新同步订阅时用前缀一次性清理，
-// 不影响 extendAPISites 的合并语义，也不触碰内置源与手动添加的源（customer_site）。
-window.removeAPISitesByPrefix = function (prefix) {
-    if (!prefix) return 0;
-    var removed = 0;
-    Object.keys(API_SITES).forEach(function (key) {
-        if (key.indexOf(prefix) === 0) {
-            delete API_SITES[key];
-            removed++;
-        }
-    });
-    return removed;
-};
-
 
 // 添加聚合搜索的配置选项
 const AGGREGATED_SEARCH_CONFIG = {

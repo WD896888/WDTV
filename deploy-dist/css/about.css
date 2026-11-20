@@ -1,0 +1,309 @@
+/* =====================================================================
+   WDTV 隐私政策 / 关于页（about.html）
+   ---------------------------------------------------------------------
+   字体与文字层级完全复用首页（不再自己另设一套）：
+     body / 正文：'Noto Sans SC' 300 + var(--text-primary) / rgba(224,234,248,0.9)
+     主标题：首页 .wdtv-title（Cormorant Garamond 2.4rem 300 / 0.24em / 蓝色渐变）
+     副标题：首页 .wdtv-slogan（Raleway 0.78rem 300 / 0.16em / #5a7faa）
+     分区标题：首页 .wdtv-douban-header h2（1.2rem 700 / var(--pale)）
+     卡片标题：首页 .wdtv-panel-header h3（Cormorant 1.2rem 300 / 0.1em /
+               rgba(222,234,250,0.92) + 深色文字阴影）
+     强调字：首页 .wdtv-disc-text strong（#9cc4f5）
+   浅色文字沿用首页 .wdtv-modal-header h2 / .wdtv-panel-header h3 的
+   深色文字阴影，保证在明亮蓝白水雾背景上可读。
+   组件材质沿用首页 .douban-card：rgba(155,180,218,0.06) +
+   1px var(--glass-border) + 10px 圆角，无模糊/白边/内高光/投影/白底。
+   外部 CSS 栈、Google Fonts、:root 变量均由 about.html 与 css/site-bg.css
+   提供（与首页同款同序）。
+   ===================================================================== */
+
+.abt-left{
+  position:relative;
+  z-index:2;
+  width:100%;
+  max-width:none;
+  margin:0;
+  padding:116px 32px 96px;
+}
+.abt-shell{
+  width:100%;
+  max-width:880px;
+  margin:0 auto;
+  pointer-events:auto;
+  font-family:'Noto Sans SC',sans-serif;
+  font-weight:300;
+  color:var(--text-primary);
+  /* 首页 .wdtv-modal-header h2 / .wdtv-panel-header h3 的深色文字阴影，
+     加一层紧实描边以适配本页更亮的背景与更长的正文 */
+  text-shadow:0 1px 2px rgba(6,16,36,0.82),0 0 7px rgba(6,16,36,0.6),0 0 18px rgba(6,16,36,0.32);
+  -webkit-user-select:text;
+  user-select:text;
+}
+
+/* ---- 顶栏：与首页 #history-btn / #account-btn 同款「无感融入」 ---- */
+.abt-topbar{
+  position:fixed;
+  top:24px;
+  left:24px;
+  right:24px;
+  z-index:10002;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  pointer-events:none;
+  color:rgba(236,244,255,0.82);
+  text-shadow:0 1px 2px rgba(6,16,36,0.82),0 0 7px rgba(6,16,36,0.6),0 0 18px rgba(6,16,36,0.32);
+}
+.abt-brand,
+.abt-back{pointer-events:auto}
+.abt-brand{
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  height:44px;
+  padding:0 12px;
+  border:none;
+  background:transparent;
+  color:rgba(236,244,255,0.82);
+  text-decoration:none;
+  border-radius:12px;
+  outline:none;
+  transition:background .3s,color .3s;
+}
+.abt-brand:hover{background:rgba(200,220,245,0.12);color:rgba(236,244,255,0.96)}
+.abt-brand svg{width:17px;height:17px;color:rgba(200,220,245,0.8)}
+.abt-brand-name{
+  font-family:'Cormorant Garamond',serif;
+  font-size:1.15rem;
+  font-weight:600;
+  letter-spacing:.14em;
+  color:rgba(236,244,255,0.9);
+}
+.abt-back{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  height:44px;
+  padding:0 14px;
+  border:none;
+  background:transparent;
+  color:rgba(236,244,255,0.82);
+  border-radius:12px;
+  font-family:'Noto Sans SC',sans-serif;
+  font-size:.82rem;
+  font-weight:300;
+  letter-spacing:.08em;
+  text-decoration:none;
+  cursor:pointer;
+  outline:none;
+  transition:background .3s,color .3s,transform .2s;
+  -webkit-tap-highlight-color:transparent;
+}
+.abt-back svg{width:16px;height:16px;color:rgba(200,220,245,0.8)}
+.abt-back:hover{background:rgba(200,220,245,0.12);color:rgba(236,244,255,0.96)}
+.abt-back:active{transform:scale(.97)}
+
+/* ---- 页头标题：一字不差照抄首页 .wdtv-title / .wdtv-slogan ---- */
+.abt-hero{
+  text-align:center;
+  margin-bottom:52px;
+  animation:abtFadeUp .85s cubic-bezier(.4,0,.2,1) both;
+}
+.abt-kicker{
+  margin:0 0 14px;
+  font-family:'Raleway','Noto Sans SC',sans-serif;
+  font-size:.78rem;
+  font-weight:300;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:#5a7faa;
+}
+.abt-title{
+  margin:0;
+  font-family:'Cormorant Garamond',serif;
+  font-size:2.4rem;
+  font-weight:300;
+  line-height:1.2;
+  letter-spacing:.24em;
+  background:linear-gradient(135deg,#1a3a6b 0%,#2c5aa0 40%,#4a7cc9 70%,#6a9ae0 100%);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+  /* 渐变字不继承 shell 的深色文字阴影，保持首页 .wdtv-title 原样 */
+  text-shadow:none;
+  filter:drop-shadow(0 2px 12px rgba(44,90,160,0.2));
+}
+.abt-lead{
+  max-width:620px;
+  margin:20px auto 0;
+  font-size:.94rem;
+  font-weight:300;
+  line-height:2;
+  letter-spacing:.03em;
+  color:rgba(224,234,248,0.92);
+}
+
+/* ---- 分区标题：首页 .wdtv-douban-header h2 同款 ---- */
+.abt-section{
+  margin-bottom:46px;
+  animation:abtFadeUp .85s cubic-bezier(.4,0,.2,1) both;
+}
+.abt-section:nth-of-type(1){animation-delay:.08s}
+.abt-section:nth-of-type(2){animation-delay:.16s}
+.abt-section-head{
+  display:flex;
+  align-items:baseline;
+  gap:14px;
+  padding:0 2px 12px;
+  border-bottom:1px solid var(--glass-border);
+  margin-bottom:18px;
+}
+.abt-section-num{
+  font-family:'Cormorant Garamond',serif;
+  font-size:1.15rem;
+  font-style:italic;
+  font-weight:300;
+  letter-spacing:.08em;
+  color:var(--accent-light);
+}
+.abt-section-title{
+  margin:0;
+  font-size:1.2rem;
+  font-weight:700;
+  letter-spacing:.06em;
+  color:var(--pale);
+}
+.abt-section-note{
+  margin-left:auto;
+  font-family:'Raleway','Noto Sans SC',sans-serif;
+  font-size:.72rem;
+  font-weight:300;
+  letter-spacing:.1em;
+  color:var(--text-muted);
+}
+
+/* ---- 信息块：与 .douban-card 完全同款（0.06 底 + 淡边框 + 10px 圆角） ---- */
+.abt-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  gap:14px;
+}
+.abt-stack{display:flex;flex-direction:column;gap:14px}
+.abt-card{
+  position:relative;
+  padding:20px 22px 22px;
+  background:rgba(155,180,218,0.06);
+  border:1px solid var(--glass-border);
+  border-radius:10px;
+  color:var(--text-primary);
+}
+.abt-card-head{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:12px;
+  padding-bottom:10px;
+  border-bottom:1px solid var(--glass-border);
+}
+.abt-dot{
+  width:7px;
+  height:7px;
+  flex:none;
+  border-radius:50%;
+  background:var(--accent-light);
+}
+.abt-card-head svg{
+  width:16px;
+  height:16px;
+  flex:none;
+  color:rgba(156,196,245,0.8);
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.abt-card h3{
+  margin:0;
+  font-family:'Cormorant Garamond',serif;
+  font-size:1.2rem;
+  font-weight:300;
+  letter-spacing:.1em;
+  color:rgba(222,234,250,0.92);
+}
+.abt-card p{
+  margin:0;
+  font-size:.9rem;
+  font-weight:300;
+  line-height:2;
+  letter-spacing:.02em;
+  color:rgba(224,234,248,0.9);
+}
+.abt-card p + p{margin-top:10px}
+.abt-card strong{color:#9cc4f5;font-weight:600}
+.abt-card .abt-mail{margin-top:16px}
+
+/* 联系邮箱：与 .wdtv-douban-tag 同款极淡透明胶囊 */
+.abt-mail{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  max-width:100%;
+  padding:9px 16px;
+  border-radius:10px;
+  border:1px solid var(--glass-border);
+  background:rgba(155,180,218,0.06);
+  color:var(--pale);
+  font-family:'Noto Sans SC',sans-serif;
+  font-size:.88rem;
+  font-weight:300;
+  letter-spacing:.04em;
+  text-decoration:none;
+  word-break:break-all;
+  outline:none;
+  -webkit-tap-highlight-color:transparent;
+  transition:background .3s,border-color .3s,color .3s,transform .3s;
+}
+.abt-mail svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.abt-mail:hover{background:rgba(80,128,176,0.2);border-color:var(--accent);color:var(--white);transform:translateY(-2px)}
+.abt-mail:active{transform:translateY(0) scale(.985)}
+
+/* ---- 页脚：首页 .wdtv-footer 同款浅色细字 ---- */
+.abt-footer{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:10px 20px;
+  margin-top:56px;
+  padding:22px 2px 0;
+  border-top:1px solid var(--glass-border);
+  font-size:.78rem;
+  font-weight:300;
+  letter-spacing:.04em;
+  color:var(--text-muted);
+  animation:abtFadeUp .85s cubic-bezier(.4,0,.2,1) .26s both;
+}
+.abt-footer-links{display:flex;gap:18px}
+.abt-footer a{color:var(--text-muted);text-decoration:none;outline:none;transition:color .2s}
+.abt-footer a:hover{color:var(--accent-light)}
+
+@keyframes abtFadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+/* ---- 响应式：与首页断点一致 ---- */
+@media (max-width:900px){
+  .abt-left{padding:100px 24px 88px}
+}
+@media (max-width:640px){
+  .abt-topbar{top:14px;left:14px;right:14px}
+  .abt-left{padding:84px 16px 76px}
+  .abt-hero{margin-bottom:40px}
+  .abt-lead{font-size:.88rem;line-height:1.9}
+  .abt-section-note{display:none}
+  .abt-section-title{font-size:1.08rem}
+  .abt-grid{grid-template-columns:1fr;gap:12px}
+  .abt-card{padding:18px 18px 20px}
+  .abt-card p{font-size:.86rem;line-height:1.9}
+  .abt-footer{justify-content:center;text-align:center;margin-top:42px}
+}
