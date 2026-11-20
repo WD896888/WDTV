@@ -36,9 +36,9 @@ t('toggle 只在初始化与 change 两处引用', (app.match(/wdtvQualityProbeT
     String((app.match(/wdtvQualityProbeToggle/g) || []).length));
 t('存储键名一致', app.includes("'wdtvQualityProbeEnabled'") && html.includes('wdtvQualityProbeToggle'));
 
-console.log('\n[2] 默认关闭 → 零新增请求（静态 guard）');
-t('HTML 开关默认不勾选', /id="wdtvQualityProbeToggle"[^>]*>/.test(html) && !/id="wdtvQualityProbeToggle"[^>]*checked/.test(html));
-t('isQualityProbeEnabled 只在 true 时启用', /localStorage\.getItem\(QUALITY_PROBE_STORAGE\)\s*===\s*'true'/.test(app));
+console.log('\n[2] 默认开启 → 关闭时才零新增请求（静态 guard）');
+t('HTML 提供画质探测开关', /id="wdtvQualityProbeToggle"[^>]*>/.test(html));
+t('isQualityProbeEnabled 仅在显式 false 时关闭', /localStorage\.getItem\(QUALITY_PROBE_STORAGE\)\s*!==\s*'false'/.test(app));
 t('armQualityProbeRender 首行 guard', /qualityProbeArmed = isQualityProbeEnabled\(\);\s*if \(!qualityProbeArmed\) return;/.test(app));
 t('observeQualityProbeCard 双 guard', app.includes('if (!qualityProbeArmed || !isQualityProbeEnabled()) return;'));
 t('关闭开关立即中止在途', /if \(!e\.target\.checked\) cancelQualityProbes\(\)/.test(app));
@@ -122,7 +122,8 @@ const factory = new Function(block + EXPORTS);
 const GLOBAL_NAMES = [
     'window', 'document', 'localStorage', 'fetch', 'IntersectionObserver',
     'setTimeout', 'clearTimeout', 'getPrefetchedDetail', 'fetchVideoDetailData',
-    'getFilteredSearchResults', 'deriveGroupedResults', 'cssEscapeAttr',
+    'getFilteredSearchResults', 'deriveGroupedResults', 'deriveOrderedGroupedResults',
+    'getMeasuredQualityHeight', 'cssEscapeAttr',
     'PROXY_URL', 'RESULTS_PER_PAGE', 'currentResultPage', 'renderFilteredSearchResults'
 ];
 
@@ -216,9 +217,11 @@ function loadA6(cfg) {
         (async () => ({ episodes: ['https://cdn.test/hls/master.m3u8'] }));
     g.getFilteredSearchResults = () => (cfg.filtered || [itemA]);
     g.deriveGroupedResults = (list) => [{ key: 'g1', items: list }];
+    g.deriveOrderedGroupedResults = (list) => [{ key: 'g1', items: list }];
+    g.getMeasuredQualityHeight = () => undefined;
     g.cssEscapeAttr = (v) => String(v).replace(/["\\]/g, '\\$&');
     g.PROXY_URL = '/proxy/';
-    g.RESULTS_PER_PAGE = 60;
+    g.RESULTS_PER_PAGE = 120;
     g.currentResultPage = 1;
     g.fetch = cfg.fetch || (async () => ({ ok: true, status: 200, body: null, text: async () => '' }));
     // 整页渲染入口：计数用于验证 applyQualityProbeResult 只定向更新、不整页重渲染
@@ -234,20 +237,18 @@ function loadA6(cfg) {
     return { api, state, mockEl, badge, flushTimers, restore };
 }
 
-console.log('\n[6] 开关默认 false：零 observer / 零 fetch / 零队列');
+console.log('\n[6] 开关默认开启：无存储值即创建 observer / session');
 {
     const env = loadA6({});
     const { api, state, mockEl } = env;
-    t('isQualityProbeEnabled() === false（localStorage 无值）', api.isQualityProbeEnabled() === false);
+    t('isQualityProbeEnabled() === true（localStorage 无值）', api.isQualityProbeEnabled() === true);
     api.armQualityProbeRender([{ key: 'g1', items: [itemA] }]);
     api.observeQualityProbeCard(mockEl);
     api.armQualityProbeForVisibleCards();
-    t('未创建 IntersectionObserver', state.observerCtor === 0, 'ctor=' + state.observerCtor);
-    t('未创建探测队列', state.queueCreated === 0);
-    t('未发起任何 fetch', state.fetchCalls.length === 0);
-    t('未 push 任何条目', state.pushCalls.length === 0);
-    t('getArmed() === false', api.getArmed() === false);
-    t('getSession() 为 null（连 session 都不建）', api.getSession() === null);
+    t('创建了 IntersectionObserver', state.observerCtor >= 1, 'ctor=' + state.observerCtor);
+    t('getArmed() === true', api.getArmed() === true);
+    t('getSession() 非 null', !!api.getSession());
+    t('未进视口前不 push / 不发 fetch', state.pushCalls.length === 0 && state.fetchCalls.length === 0);
     env.restore();
 }
 

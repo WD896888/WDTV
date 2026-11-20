@@ -147,6 +147,35 @@ body.wp-watch-mode #wpInline {
 body.wp-watch-mode footer {
   display: none !important;
 }
+
+/* ============================================================
+   首帧房间恢复占位（html.wp-restoring 由 player.html 极早内联脚本添加）：
+   隐藏普通播放器/剧集/页脚/入口，使用 body::after 玻璃层提示"正在恢复房间连接..."；
+   恢复成功/失败/退出时由 watch-party-ui 移除该类，不得影响已进房后的布局
+   ============================================================ */
+html.wp-restoring main.container,
+html.wp-restoring footer,
+html.wp-restoring .wp-entry-btn {
+  visibility: hidden !important;
+}
+html.wp-restoring body::after {
+  content: '正在恢复房间连接...';
+  position: fixed;
+  inset: 0;
+  z-index: 9990;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  color: rgba(236, 244, 255, 0.92);
+  background: rgba(10, 18, 36, 0.72);
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+}
 @media (min-width: 900px) {
   /* 页面锁定：html/body 均禁止滚动（页眉已移除，无 padding-top 让位需求） */
   html.wp-watch-mode,
@@ -447,6 +476,15 @@ body.wp-watch-mode footer {
   body.wp-watch-mode #wpInline {
     margin-top: 10px;
   }
+  /* 移动端观影模式：消息区独立滚动（约半屏），输入框常驻可见。
+     flex-basis 回退 auto——外层 .wp-chat 高度不确定时 basis:0 会把消息区压成 0 高 */
+  body.wp-watch-mode #wpInline .wp-msgs {
+    flex: 0 1 auto;
+    max-height: 50vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 /* ============================================================
@@ -661,6 +699,12 @@ body.wp-watch-mode footer {
   font-weight: 600;
   letter-spacing: 5px;
   color: #c4dcff;
+  /* 房间码双击/长按复制：不参与文本选中，避免移动端系统选择菜单干扰 */
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
 }
 
 /* 成员区：人形剪影头像（无背景色） + 昵称 + 状态点 + 徽标 */
@@ -1191,20 +1235,34 @@ body.wp-watch-mode footer {
 }
 
 /* ============================================================
-   聊天区（自然展开，消息全部直接显示，无内部滚动）——无隔断线
+   聊天区：flex 列 + 独立滚动容器（桌面与移动端一致，输入框常驻）
    ============================================================ */
 .wp-chat {
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 .wp-msgs {
   padding: 2px 2px 6px;
+}
+/* 房内面板中的消息列表：flex 剩余空间内独立滚动（抽屉模式保持原自然展开） */
+#wpInline .wp-msgs {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .wp-msg {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   margin: 6px 0;
+  /* 长按/右键消息菜单：禁用系统选择与长按呼出，垂直滚动仍交给浏览器 */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .wp-msg.me {
   flex-direction: row-reverse;
@@ -1257,6 +1315,132 @@ body.wp-watch-mode footer {
   font-size: 11px;
   color: var(--text-muted, rgba(180, 200, 230, 0.5));
   margin: 6px 0;
+}
+/* 已撤回：系统行弱化（斜体区分普通系统提示） */
+.wp-msg-recalled span {
+  font-style: italic;
+}
+
+/* 气泡内引用小块：昵称 + 截断文本 */
+.wp-bubble-text {
+  display: inline;
+}
+.wp-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0 0 4px;
+  padding: 3px 8px 4px;
+  max-width: 100%;
+  border-left: 2px solid rgba(122, 180, 255, 0.55);
+  border-radius: 4px;
+  background: rgba(10, 18, 36, 0.22);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.wp-quote-name {
+  color: rgba(160, 200, 255, 0.9);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wp-quote-text {
+  color: var(--text-secondary, rgba(180, 200, 230, 0.72));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wp-msg.me .wp-quote {
+  border-left-color: rgba(255, 255, 255, 0.55);
+  background: rgba(10, 18, 36, 0.16);
+}
+
+/* 输入框上方引用预览：昵称 + 摘要 + 取消 */
+.wp-quote-prev {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 6px 0 0;
+  padding: 5px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(122, 180, 255, 0.3);
+  background: rgba(74, 168, 255, 0.1);
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(200, 220, 245, 0.8);
+}
+.wp-quote-prev[hidden] {
+  display: none;
+}
+.wp-quote-prev-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wp-quote-prev-text b {
+  color: rgba(160, 200, 255, 0.95);
+  font-weight: 600;
+}
+.wp-quote-cancel {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(200, 220, 245, 0.7);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.wp-quote-cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* 长按/右键消息菜单：固定定位玻璃浮层 */
+.wp-msg-menu {
+  position: fixed;
+  z-index: 9600;
+  display: flex;
+  flex-direction: column;
+  min-width: 108px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(20, 32, 52, 0.86);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(200, 220, 245, 0.28);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4);
+  font-family: 'Noto Sans SC', sans-serif;
+}
+.wp-msg-menu[hidden] {
+  display: none;
+}
+.wp-msg-menu button {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary, rgba(236, 244, 255, 0.96));
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.wp-msg-menu button:hover {
+  background: rgba(122, 180, 255, 0.18);
+}
+.wp-msg-menu button[data-act="recall"] {
+  color: #ff9d9d;
+}
+.wp-msg-menu button[hidden] {
+  display: none;
 }
 /* 聊天输入行：玻璃胶囊外壳，发送按钮内嵌右端（圆形纸飞机图标） */
 .wp-chat-input-row {

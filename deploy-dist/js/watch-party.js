@@ -20,6 +20,7 @@
   var DRAW_MIN_DIST = 0.002;  // 画笔收点最小归一化距离（抗抖动）
   var DRAW_FLUSH_MS = 100;    // 画笔增量批量发送周期
   var CHAT_MAX_LEN = 500;     // 单条聊天最大长度（服务端同限）
+  var CHAT_QUOTE_MAX = 120;   // 引用摘要最大长度（服务端同限）
   var CHAT_QUEUE_MAX = 20;    // 断线待发聊天队列上限
   var RETRY_BASE_MS = 800;    // 重连退避基数
   var RETRY_CAP_MS = 15000;   // 重连退避封顶
@@ -58,7 +59,7 @@
     playBlocked: false,       // 静音降级也失败（极罕见）：待用户任意点击后重试
     gestureArm: null,         // 一次性全局点击监听（静音恢复声音用）
     shared: false,            // 控制权共享（房主开启）：所有成员均可发送播放控制与选片
-    chatQueue: [],            // 断线待发聊天文本
+    chatQueue: [],            // 断线待发聊天（{text, quote, cid}，重连后原样补发）
     coveragePercent: null,    // 本端最近一次 M2 覆盖率（buf 上报 cached 字段）
     slowCount: 0,             // 对端连续低缓冲计数
     slowNotified: false,      // 本轮 slowpeer 是否已提示（避免重复打扰）
@@ -522,6 +523,14 @@
         // 对端昵称补充（服务端以连接参数为准，防伪造）
         if (m.uid !== undefined && String(m.uid) === String(peerUid()) && m.name) st.peer.name = m.name;
         emit('chat', m); // kind 'system' 同样透出（UI 负责灰色居中渲染）
+        break;
+      case 'chatAck':
+        // 发送者回执：客户端 cid → 服务端 seq 关联（乐观消息回填，供后续撤回定位）
+        emit('chatAck', { cid: m.cid, seq: m.seq });
+        break;
+      case 'recall':
+        // 消息撤回广播（服务端全房广播，含发送者）：UI 更新 chatLog 并重渲染
+        emit('recall', { seq: m.seq, uid: m.uid });
         break;
       case 'stroke': canvasRemoteStroke(m); break;
       case 'undo': canvasRemoteUndo(m); break;
@@ -1153,17 +1162,36 @@
 
   // ============================================================
   // 聊天（≤500 字；断线入待发队列，重连 snap 后补发）
+  // quote 可选 {seq, uid, name, text}（text 限 120 字）；cid 为客户端唯一 id，
+  // 服务端保存后单发 chatAck{cid, seq} 给发送者（不入历史），供 UI 回填 seq
   // ============================================================
-  function sendChat(text) {
+  function normalizeChatQuote(quote) {
+    if (!quote || typeof quote !== 'object') return null;
+    var text = String(quote.text == null ? '' : quote.text).slice(0, CHAT_QUOTE_MAX);
+    if (!text) return null;
+    return {
+      seq: typeof quote.seq === 'number' ? quote.seq : (Number(quote.seq) || 0),
+      uid: quote.uid == null ? '' : String(quote.uid).slice(0, 64),
+      name: String(quote.name == null ? '' : quote.name).slice(0, 32),
+      text: text
+    };
+  }
+
+  function sendChat(text, quote, cid) {
     var t = String(text == null ? '' : text).trim();
     if (!t || t.length > CHAT_MAX_LEN) return false;
+    var q = normalizeChatQuote(quote);
+    var id = cid == null ? '' : String(cid).slice(0, 64);
     if (st.connected && st.ws && st.ws.readyState === 1) {
-      return send({ t: 'chat', text: t });
+      var payload = { t: 'chat', text: t };
+      if (q) payload.quote = q;
+      if (id) payload.cid = id;
+      return send(payload);
     }
     // 断线：入待发队列（超限淘汰最旧），返回 true 维持"已发送"语义（UI 置灰由其决定）
     if (st.code) {
       if (st.chatQueue.length >= CHAT_QUEUE_MAX) st.chatQueue.shift();
-      st.chatQueue.push(t);
+      st.chatQueue.push({ text: t, quote: q, cid: id });
       return true;
     }
     return false;
@@ -1171,8 +1199,20 @@
 
   function flushChatQueue() {
     while (st.chatQueue.length && st.connected && st.ws && st.ws.readyState === 1) {
-      send({ t: 'chat', text: st.chatQueue.shift() });
+      var it = st.chatQueue.shift();
+      var payload = { t: 'chat', text: it.text };
+      if (it.quote) payload.quote = it.quote;
+      if (it.cid) payload.cid = it.cid;
+      send(payload);
     }
+  }
+
+  // 撤回自己的消息：服务端校验 uid 后广播 recall{seq, uid}；失败返回 false
+  function recallChat(seq) {
+    var n = typeof seq === 'number' ? seq : Number(seq);
+    if (!n) return false;
+    if (!st.connected || !st.ws || st.ws.readyState !== 1) return false;
+    return send({ t: 'recall', seq: n });
   }
 
   // 就绪上报（M2 覆盖率 / M3 指纹）：watch-party-local 经此发送；percent 记录为 buf 上报数据源
@@ -1592,7 +1632,8 @@
     startCoWatch: startCoWatch, // host 专用 'M1'|'M2'：从 getters 构造并广播 src
     startM3: startM3,         // host 专用：本地 m3Play 成功后广播 src {mode:'M3',...}
     hostPlay: hostPlay,       // M2/M3 门禁通过后开始播放（经包装触发 ctl）
-    sendChat: sendChat,       // ≤500 字；断线入待发队列返回 true
+    sendChat: sendChat,       // (text, quote?, cid?) ≤500 字；断线入待发队列返回 true
+    recallChat: recallChat,   // (seq)：撤回本人消息（服务端校验归属后广播 recall）
     uid: myUid,               // 当前登录 uid（UI 判定消息左右/成员身份）
     name: myName,             // 当前昵称（UI 乐观渲染自己的消息）
     sendReady: sendReady,     // 就绪上报（M2 覆盖率 / M3 指纹，watch-party-local 使用）

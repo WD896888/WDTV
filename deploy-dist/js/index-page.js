@@ -22,24 +22,6 @@ window.prefetchAPISiteDns = (function () {
 
 // 页面加载后显示弹窗脚本
 document.addEventListener('DOMContentLoaded', function() {
-    // 弹窗显示脚本
-    // 检查用户是否已经看过声明
-    const hasSeenDisclaimer = localStorage.getItem('hasSeenDisclaimer');
-
-    if (!hasSeenDisclaimer) {
-        // 显示弹窗
-        const disclaimerModal = document.getElementById('disclaimerModal');
-        disclaimerModal.style.display = 'flex';
-
-        // 添加接受按钮事件
-        document.getElementById('acceptDisclaimerBtn').addEventListener('click', function() {
-            // 保存用户已看过声明的状态
-            localStorage.setItem('hasSeenDisclaimer', 'true');
-            // 隐藏弹窗
-            disclaimerModal.style.display = 'none';
-        });
-    }
-
     // 搜索源 DNS 预解析：DOMContentLoaded 时只调用一次；订阅合并新源后由订阅模块再次调用重跑
     window.prefetchAPISiteDns();
 

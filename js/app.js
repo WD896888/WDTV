@@ -4,6 +4,71 @@ const enabledAPIKeys = () => Object.keys(API_SITES).filter(k => API_SITES[k] && 
 let selectedAPIs = (JSON.parse(localStorage.getItem('selectedAPIs') || 'null') || enabledAPIKeys())
     .filter(k => API_SITES[k] && !API_SITES[k].disabled);
 
+// ===== 前三源优先级（默认顺序与存储键由 config.js 提供）=====
+// 优先级用于：多源聚合卡片排序 / 组内来源排序 / 点击多源卡片直接播放优先源。
+const SOURCE_PRIORITY_LIMIT = 3;
+let sourcePriorityCache = null;
+
+function getSourcePriorityStorageKey() {
+    if (typeof SOURCE_PRIORITY_STORAGE === 'string' && SOURCE_PRIORITY_STORAGE) return SOURCE_PRIORITY_STORAGE;
+    if (window.SOURCE_PRIORITY_STORAGE) return window.SOURCE_PRIORITY_STORAGE;
+    return 'wdtvSourcePriority';
+}
+
+function getDefaultSourcePriorityList() {
+    const valid = enabledAPIKeys();
+    const defaults = Array.isArray(window.DEFAULT_SOURCE_PRIORITY) ? window.DEFAULT_SOURCE_PRIORITY : [];
+    const out = [];
+    defaults.concat(valid).concat(selectedAPIs).forEach(k => {
+        if (valid.indexOf(k) !== -1 && out.indexOf(k) === -1 && out.length < SOURCE_PRIORITY_LIMIT) out.push(k);
+    });
+    return out;
+}
+
+// 读取用户优先级：只保留 API_SITES 中存在且启用中的唯一 key，不足 3 个按默认顺序补齐
+function getSourcePriority() {
+    if (sourcePriorityCache) return sourcePriorityCache.slice();
+    const valid = enabledAPIKeys();
+    let stored = [];
+    try {
+        const parsed = JSON.parse(localStorage.getItem(getSourcePriorityStorageKey()) || '[]');
+        if (Array.isArray(parsed)) stored = parsed;
+    } catch (e) { /* 存储损坏按默认顺序处理 */ }
+    const out = [];
+    stored.forEach(k => {
+        if (typeof k === 'string' && valid.indexOf(k) !== -1 && out.indexOf(k) === -1
+            && out.length < SOURCE_PRIORITY_LIMIT) out.push(k);
+    });
+    getDefaultSourcePriorityList().forEach(k => {
+        if (out.indexOf(k) === -1 && out.length < SOURCE_PRIORITY_LIMIT) out.push(k);
+    });
+    if (out.length < SOURCE_PRIORITY_LIMIT) {
+        valid.forEach(k => { if (out.indexOf(k) === -1 && out.length < SOURCE_PRIORITY_LIMIT) out.push(k); });
+    }
+    sourcePriorityCache = out;
+    return out.slice();
+}
+
+// 写入合法唯一数组（最多 3 个）
+function setSourcePriority(list) {
+    const valid = enabledAPIKeys();
+    const out = [];
+    (Array.isArray(list) ? list : []).forEach(k => {
+        if (typeof k === 'string' && valid.indexOf(k) !== -1 && out.indexOf(k) === -1
+            && out.length < SOURCE_PRIORITY_LIMIT) out.push(k);
+    });
+    try { localStorage.setItem(getSourcePriorityStorageKey(), JSON.stringify(out)); } catch (e) { /* 写入失败仅影响下次恢复 */ }
+    sourcePriorityCache = out;
+    return out.slice();
+}
+
+// 优先源排名：0/1/2；非优先源返回 99
+function priorityRank(code) {
+    if (!code) return 99;
+    const idx = getSourcePriority().indexOf(String(code));
+    return idx === -1 ? 99 : idx;
+}
+
 // 添加当前播放的集数索引
 let currentEpisodeIndex = 0;
 // 添加当前视频的所有集数
@@ -30,17 +95,8 @@ let varietyThresholdMinutes = 60;
 
 // 页面初始化
 document.addEventListener('DOMContentLoaded', function () {
-    // 初始化API复选框
-    initAPICheckboxes();
-
-    // 初始化显示选中的API数量
-    updateSelectedApiCount();
-
-    // 渲染搜索历史
-    renderSearchHistory();
-
-    // 设置默认API选择（如果是第一次加载）
-    if (!localStorage.getItem('hasInitializedDefaults_v2')) {
+    // 设置默认API选择（v3 迁移：默认全选所有启用源，已停用源由 filter 自动排除）
+    if (!localStorage.getItem('hasInitializedDefaults_v3')) {
         // 默认选中所有可用资源（已停用源不参与）
         selectedAPIs = enabledAPIKeys();
         localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
@@ -52,8 +108,17 @@ document.addEventListener('DOMContentLoaded', function () {
         localStorage.setItem('doubanEnabled', 'false');
 
         // 标记已初始化默认值
-        localStorage.setItem('hasInitializedDefaults_v2', 'true');
+        localStorage.setItem('hasInitializedDefaults_v3', 'true');
     }
+
+    // 初始化API复选框
+    initAPICheckboxes();
+
+    // 初始化显示选中的API数量
+    updateSelectedApiCount();
+
+    // 渲染搜索历史
+    renderSearchHistory();
 
     // 设置广告过滤开关初始状态
     const adFilterToggle = document.getElementById('adFilterToggle');
@@ -61,13 +126,19 @@ document.addEventListener('DOMContentLoaded', function () {
         adFilterToggle.checked = localStorage.getItem(PLAYER_CONFIG.adFilteringStorage) !== 'false'; // 默认为true
     }
 
-    // 设置广告自动跳过开关初始状态（默认关闭，显式写 false 便于云同步首日生效）
+    // 设置广告自动跳过开关初始状态（默认开启：无值写入 true，仅显式 false 视为关闭）
+    // 旧版本首次加载会强制写入 'false'，升级后用一次性迁移键把这类历史默认值改为开启；
+    // 迁移完成后用户手动关闭仍会保持关闭。
+    if (!localStorage.getItem('wdtvAdAutoSkipDefaultMigrated_v1')) {
+        if (localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) === null
+            || localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) === 'false') {
+            localStorage.setItem(PLAYER_CONFIG.adAutoSkipStorage, 'true');
+        }
+        localStorage.setItem('wdtvAdAutoSkipDefaultMigrated_v1', 'true');
+    }
     const adAutoSkipToggle = document.getElementById('adAutoSkipToggle');
     if (adAutoSkipToggle) {
-        if (localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) === null) {
-            localStorage.setItem(PLAYER_CONFIG.adAutoSkipStorage, 'false');
-        }
-        adAutoSkipToggle.checked = localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) === 'true';
+        adAutoSkipToggle.checked = localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) !== 'false';
     }
 
     // 设置动态效果开关初始状态（默认开启）
@@ -113,14 +184,20 @@ document.addEventListener('DOMContentLoaded', function () {
         danmuCustomApiInput.value = localStorage.getItem('danmuCustomApi') || '';
     }
 
-    // 设置卡片画质探测开关初始状态（默认关闭：localStorage 无值时 '=== true' 为 false，不勾选）
+    // 设置卡片画质探测开关初始状态（默认开启：无值时写入 'true'，仅显式 'false' 视为关闭）
+    if (localStorage.getItem(QUALITY_PROBE_STORAGE) === null) {
+        localStorage.setItem(QUALITY_PROBE_STORAGE, 'true');
+    }
     const qualityProbeToggle = document.getElementById('wdtvQualityProbeToggle');
     if (qualityProbeToggle) {
-        qualityProbeToggle.checked = localStorage.getItem('wdtvQualityProbeEnabled') === 'true';
+        qualityProbeToggle.checked = localStorage.getItem(QUALITY_PROBE_STORAGE) !== 'false';
     }
 
     // 设置事件监听器
     setupEventListeners();
+
+    // 初始化前三源优先级下拉（元素由 index.html 提供，不存在时静默返回）
+    initSourcePriorityControls();
 
     // ===== 批次3 ①：数据源订阅首屏渲染 + 打开站点时检查一次（模块内幂等、静默、不阻塞首屏）=====
     if (window.WDTVSourceSubscriptions) {
@@ -318,6 +395,41 @@ function updateSelectedApiCount() {
     }
 }
 
+// 前三源优先级下拉（index.html 提供 sourcePriority1/2/3；元素缺失时静默返回）
+function initSourcePriorityControls() {
+    const selects = [1, 2, 3].map(n => document.getElementById('sourcePriority' + n));
+    if (selects.every(s => !s)) return;
+    const keys = enabledAPIKeys();
+    const options = ['<option value="">不指定</option>'].concat(keys.map(k => {
+        const name = (API_SITES[k] && API_SITES[k].name) || k;
+        return `<option value="${escapeResultText(k)}">${escapeResultText(name)}</option>`;
+    })).join('');
+    selects.forEach(sel => { if (sel) sel.innerHTML = options; });
+
+    const applyValues = () => {
+        const current = getSourcePriority();
+        selects.forEach((sel, i) => { if (sel) sel.value = current[i] || ''; });
+    };
+    applyValues();
+
+    const onChange = () => {
+        const raw = selects.map(s => (s ? String(s.value || '') : ''));
+        const seen = new Set();
+        let dup = false;
+        raw.forEach(v => {
+            if (!v) return;
+            if (seen.has(v)) dup = true;
+            else seen.add(v);
+        });
+        // 重复选择时回退默认顺序；否则按当前选择写入（setSourcePriority 内部再去重/截断）
+        const list = dup ? getDefaultSourcePriorityList() : raw.filter(Boolean);
+        setSourcePriority(list);
+        applyValues();
+        if (lastSearchResults.length > 0) renderFilteredSearchResults();
+    };
+    selects.forEach(sel => { if (sel) sel.addEventListener('change', onChange); });
+}
+
 // 全选或取消全选API
 function selectAllAPIs(selectAll = true) {
     const checkboxes = document.querySelectorAll('#apiCheckboxes input[type="checkbox"]');
@@ -470,7 +582,7 @@ function setupEventListeners() {
         danmuCustomApiInput.addEventListener('blur', saveDanmuCustomApi);
     }
 
-    // 卡片画质探测开关（默认关闭；关闭时立即断开观察器并取消在途探测，恢复零新增请求）
+    // 卡片画质探测开关（默认开启；关闭时立即断开观察器并取消在途探测，恢复零新增请求）
     const qualityProbeToggle = document.getElementById('wdtvQualityProbeToggle');
     if (qualityProbeToggle) {
         qualityProbeToggle.addEventListener('change', function (e) {
@@ -493,7 +605,7 @@ function applyDynamicEffects(enabled) {
 
 // 重置搜索区域
 function resetSearchArea() {
-    // 清理搜索结果与进度提示（同时作废还在等封面尺寸的卡片）
+    // 清理搜索结果与进度提示（同时作废上一批渲染回调）
     resetSearchCardMount(document.getElementById('results'));
     const searchProgress = document.getElementById('searchProgress');
     if (searchProgress) {
@@ -615,6 +727,44 @@ function getPrefetchedDetail(id, sourceCode) {
     return detailPrefetchCache.get(`${sourceCode}_${id}`) || null;
 }
 
+// 多源卡片直接播放：取该组第一条详情并跳到播放页（优先源组专用）。
+// 返回 true 表示已发起播放跳转；false 表示失败（调用方回退为展开面板）。
+async function directPlayPriorityGroup(item) {
+    if (!item) return false;
+    const vodId = String(item.vod_id || '');
+    const sourceCode = String(item.source_code || '');
+    const vodName = item.vod_name || '';
+    if (!vodId || !sourceCode) return false;
+    const seq = ++detailSeq;
+    showLoading();
+    try {
+        let data = getPrefetchedDetail(vodId, sourceCode);
+        if (!data) data = await fetchVideoDetailData({ id: vodId, source: sourceCode });
+        if (seq !== detailSeq) return false; // 已有更新的点击/播放，放弃本次
+        if (data && data.code === 200 && Array.isArray(data.episodes) && data.episodes.length > 0) {
+            currentEpisodes = data.episodes;
+            currentEpisodeNames = (Array.isArray(data.episodeNames) && data.episodeNames.length === data.episodes.length)
+                ? data.episodeNames : [];
+            currentEpisodeIndex = 0;
+            currentDetailSource = sourceCode;
+            currentDetailId = vodId;
+            currentDetailVideoInfo = data.videoInfo || null;
+            currentVideoTitle = vodName || '未知视频';
+            hideLoading();
+            playVideo(data.episodes[0], vodName, sourceCode, 0, vodId);
+            return true;
+        }
+        hideLoading();
+        showToast('该来源暂无可用播放集数', 'error');
+        return false;
+    } catch (e) {
+        if (seq !== detailSeq) return false;
+        hideLoading();
+        showToast('获取播放资源失败，请稍后重试', 'error');
+        return false;
+    }
+}
+
 // 搜索序号：连续搜索时丢弃旧搜索的迟到的渲染/结果，防止遮罩与内容错位
 let searchSeq = 0;
 // 当前搜索会话的请求控制器：新搜索发起时 abort 旧搜索的全部在途请求
@@ -636,7 +786,7 @@ let currentSearchCacheKey = '';
 let currentResultPage = 1;
 let paginationInFlight = false;
 // 搜索结果每页展示条数（分页栏按此切分，见 config.js API_CONFIG.search.resultsPerPage）
-const RESULTS_PER_PAGE = Math.max(1, Number(API_CONFIG.search.resultsPerPage) || 60);
+const RESULTS_PER_PAGE = Math.max(1, Number(API_CONFIG.search.resultsPerPage) || 120);
 
 // 搜索触发防抖：连续触发（回车/按钮）只执行最后一次
 let searchDebounceTimer = null;
@@ -725,7 +875,8 @@ async function search() {
                     searchResultKeys = new Set(lastSearchResults.map(item => `${item.source_code}_${item.vod_id}`));
                     currentSearchQuery = query;
                     currentSearchCacheKey = cacheKey;
-                    currentResultPage = 1;
+                    // 恢复上次停留的页码（渲染函数会对超界页码做 clamp）
+                    currentResultPage = Math.max(1, parseInt(parsed.page, 10) || 1);
                     // 隐藏可能残留的搜索进度提示
                     const progressEl = document.getElementById('searchProgress');
                     if (progressEl) {
@@ -758,7 +909,7 @@ async function search() {
         // 时长缓存与筛选条件保留——换关键词继续搜索时仍按原区间筛选
         durationQueue = [];
         const resultsDiv = document.getElementById('results');
-        resetSearchCardMount(resultsDiv); // 清空并作废上一次搜索还在等封面尺寸的卡片
+        resetSearchCardMount(resultsDiv); // 清空并作废上一次搜索的渲染回调
         showSearchSkeleton(resultsDiv, 8); // 真正等待首批结果时填充骨架屏，首张真卡入网格即移除
         const searchResultsCount = document.getElementById('searchResultsCount');
         if (searchResultsCount) searchResultsCount.textContent = 0;
@@ -806,15 +957,13 @@ async function search() {
             // 渐进渲染期间只展示第 1 页（分页栏在最终渲染时生成），超出的部分留给翻页
             const visible = Math.min(filtered.length, RESULTS_PER_PAGE);
             if (visible > renderedCount) {
-                // 首批：清掉"正在搜索/无结果"占位并重置入队下标；后续批次按原下标接续
+                // 首批：清掉"正在搜索/无结果"占位并重置渲染；后续批次增量接续
                 if (renderedCount === 0) {
                     resetSearchCardMount(div);
-                    // 卡片要等封面尺寸读到才会出现：第一张真正入网格时再收起遮罩，
-                    // 避免遮罩一关露出空网格；本批一张都没能读出来（封面全失败）时，
-                    // 队列排空后同样收起，不留死等
+                    // 第一张卡插入后立即收起遮罩并移除骨架屏；整批插入完成后再兜底触发一次
                 if (loadingOwnerSeq === searchLoadingOwner) {
                     const closeLoading = () => {
-                        clearSearchSkeleton(div); // 首张真卡入网格 / 队列排空时移除骨架屏
+                        clearSearchSkeleton(div); // 首张真卡入网格 / 整批完成时移除骨架屏
                         if (loadingOwnerSeq === searchLoadingOwner) hideLoading();
                     };
                     searchCardMount.onFirstMount = closeLoading;
@@ -1020,25 +1169,72 @@ function escapeResultText(text) {
         .replace(/'/g, '&#39;');
 }
 
-// 从备注/标题中提取画质标签（按清晰度从高到低优先匹配）
-function extractQualityTag(texts) {
-    const text = texts.filter(Boolean).join(' ');
-    const rules = [
-        [/4K|2160[Pp]/, '4K'],
-        [/1080[PpIi]?|1080/, '1080P'],
-        [/蓝光|Blu-?Ray|\bBD\b/, '蓝光'],
-        [/超清/, '超清'],
-        [/高清/, '高清'],
-        [/\bHD\b/, 'HD'],
-        [/720[Pp]/, '720P'],
-        [/标清/, '标清'],
-        [/\bT[SC]\b|抢先|枪版/, '抢先'],
-    ];
-    for (const [re, tag] of rules) {
-        if (re.test(text)) return tag;
-    }
-    return '';
+// ===== 真实画质（播放器实测解码分辨率，按 source_id 落库）=====
+// 播放页测得真实高度后写入 localStorage（格式兼容 {height, ts} 或直接数字），
+// 首页卡片/聚合面板优先展示实测值，探测结果不得覆盖。
+const MEASURED_QUALITY_STORAGE = 'wdtvMeasuredQuality';
+const MEASURED_QUALITY_MAX = 300;
+const measuredQualityEntries = new Map(); // `${source}_${id}` -> height(number)
+
+(function loadMeasuredQualityEntries() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(MEASURED_QUALITY_STORAGE) || '{}');
+        if (!raw || typeof raw !== 'object') return;
+        Object.keys(raw).forEach(k => {
+            const v = raw[k];
+            const h = (v && typeof v === 'object') ? v.height : v;
+            if (typeof h === 'number' && isFinite(h) && h > 0) measuredQualityEntries.set(k, h);
+        });
+    } catch (e) { /* 存储损坏按空处理 */ }
+})();
+
+function getMeasuredQualityHeight(source, id) {
+    if (source == null || id == null) return undefined;
+    const v = measuredQualityEntries.get(String(source) + '_' + String(id));
+    return (typeof v === 'number' && isFinite(v) && v > 0) ? v : undefined;
 }
+
+function persistMeasuredQualityEntries() {
+    try {
+        const obj = {};
+        measuredQualityEntries.forEach((h, k) => { obj[k] = h; });
+        localStorage.setItem(MEASURED_QUALITY_STORAGE, JSON.stringify(obj));
+    } catch (e) { /* 写入失败不影响本次展示 */ }
+}
+
+// 播放器实测回写：更新内存/本地缓存，并定向更新当前页对应卡片徽章
+window.addEventListener('wdtv-quality-measured', function (e) {
+    const d = (e && e.detail) || {};
+    const source = String(d.source || d.source_code || d.sourceCode || '');
+    const id = String(d.id || d.vod_id || d.vodId || '');
+    const height = Number(d.height || d.videoHeight || d.qualityHeight);
+    if (!source || !id || !isFinite(height) || height <= 0) return;
+    const key = source + '_' + id;
+    if (!measuredQualityEntries.has(key) && measuredQualityEntries.size >= MEASURED_QUALITY_MAX) {
+        const oldest = measuredQualityEntries.keys().next().value;
+        measuredQualityEntries.delete(oldest);
+    }
+    measuredQualityEntries.set(key, height);
+    persistMeasuredQualityEntries();
+
+    // 当前页没有该卡（已翻页/已筛选）时只存缓存
+    const card = document.querySelector(`#results .douban-card[data-key="${cssEscapeAttr(key)}"]`);
+    if (!card) return;
+    const image = card.querySelector('.douban-card-image');
+    if (!image) return;
+    let badge = card.querySelector('.wdtv-quality-badge');
+    if (!badge) {
+        badge = document.createElement('div');
+        image.appendChild(badge);
+    }
+    const Q = window.WDTVQuality;
+    const label = (Q && typeof Q.qualityLabel === 'function')
+        ? Q.qualityLabel(height) : (height + 'P');
+    badge.textContent = label || (height + 'P');
+    badge.className = 'wdtv-quality-badge wdtv-quality-probed';
+    badge.setAttribute('data-quality-state', 'measured');
+    if (typeof badge.removeAttribute === 'function') badge.removeAttribute('data-quality-retry');
+});
 
 // 本地占位图：内联 SVG data URI（深色底 + 片名首字），不依赖外部占位图服务（慢且常挂）
 function buildPlaceholderCover(title) {
@@ -1110,9 +1306,8 @@ function markCoverRatio(card, ratio) {
     else card.classList.add('cover-portrait');
 }
 
-// 封面尺寸兜底：主路径已改为入网格前由 measureCardCover 量好比例（见下方
-// "封面尺寸就绪后才入网格"），这里仅处理图片事后重新加载（如代理重试成功）时
-// 同步一次朝向类，保证图片填充方式与真实比例一致。
+// 封面尺寸兜底：卡片插入后由 <img onload> 读取真实比例，这里在图片事后重新加载
+// （如代理重试成功）时同步一次朝向类，保证图片填充方式与真实比例一致。
 window.handleCoverLoaded = function (img) {
     try {
         const w = img.naturalWidth;
@@ -1122,117 +1317,49 @@ window.handleCoverLoaded = function (img) {
     } catch (e) { /* 尺寸读取失败保持默认填充 */ }
 };
 
-// ===== 封面尺寸就绪后才入网格 =====
-// 搜索接口只给封面地址、不给宽高。若先按固定比例插进网格、等图片加载完再改
-// 比例，就会出现"先横版、加载后变竖版"的跳动（还会把整行顶高）。
-// 这里改为：卡片先在文档外构建（其 <img> 会立即开始加载），读到真实宽高、标好
-// 填充方式后再插入网格；读不到尺寸（防盗链失败、走完代理仍是占位图、
-// 超时）的整条结果直接不展示。
-// 插入严格按结果原下标顺序 flush：慢图只会拖住自己后面的卡，不会让后到的卡片
-// 插到已展示的卡片前面造成整块位移。
-const SEARCH_COVER_MEASURE_TIMEOUT = 5000; // 单张封面测量超时（毫秒），超时按读取失败处理
+// ===== 搜索结果卡片立即入网格 =====
+// 卡片构建后立即追加进网格（图片比例由 handleCoverLoaded 异步修正），不再等待封面
+// 尺寸、也不会因封面读取失败丢弃结果。首张插入后同步触发 onFirstMount（收起遮罩/
+// 骨架屏），整批插入完成后触发 onIdle；用 seq 保证旧渲染的迟到回调不干扰新渲染。
+const searchCardMount = { seq: 0, container: null, onFirstMount: null, onIdle: null };
 
-const searchCardMount = { seq: 0, next: 0, pending: new Map(), container: null, onFirstMount: null, onIdle: null };
-
-// 由卡片 HTML 构建游离节点（不用 <template>：template 内容不加载图片，永远测不到尺寸）
+// 由卡片 HTML 构建游离节点
 function createResultCardElement(item) {
     const holder = document.createElement('div');
     holder.innerHTML = buildResultCard(item).trim();
     return holder.firstElementChild;
 }
 
-// 读取卡片封面真实宽高并标记填充方式，返回是否读取成功
-function measureCardCover(cardEl) {
-    const img = cardEl.querySelector('.douban-card-image img');
-    if (!img) return Promise.resolve(false);
-    // 有 data-original 说明这条结果本来有真实封面；没有则是本地占位图（已知 300×450）
-    const hasRealCover = !!img.getAttribute('data-original');
-    const applySize = () => {
-        // 真实封面最终落到 data: 占位图，说明直连与代理都读不到——整条不展示
-        if (hasRealCover && img.src.startsWith('data:')) return false;
-        const w = img.naturalWidth;
-        const h = img.naturalHeight;
-        if (!w || !h) return false;
-        markCoverRatio(cardEl, w / h);
-        return true;
-    };
-    if (img.complete && img.naturalWidth) return Promise.resolve(applySize());
-    return new Promise(resolve => {
-        let done = false;
-        const finish = (ok) => {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            img.removeEventListener('load', onLoad);
-            resolve(ok ? applySize() : false);
-        };
-        const onLoad = () => finish(true);
-        // 只等 load：直连失败时 handleCoverLoadError 会先换代理、再换占位图，
-        // 占位图同样会触发 load，由 applySize 里的 data: 判断兜底；这里不监听 error，
-        // 否则首个 error 就会把还能走代理成功的封面判死
-        const timer = setTimeout(() => finish(false), SEARCH_COVER_MEASURE_TIMEOUT);
-        img.addEventListener('load', onLoad);
-        if (img.complete) finish(img.naturalWidth > 0);
-    });
-}
-
-// 清空网格并作废正在等待尺寸的上一批卡片（换搜索词/筛选/翻页/回首页时调用）
+// 清空网格并作废上一批渲染的回调（换搜索词/筛选/翻页/回首页时调用）
 function resetSearchCardMount(container) {
     clearQualityProbeWatch(); // 断开上一批卡片的视口观察并清掉 500ms 待触发计时器
     searchCardMount.seq++;
-    searchCardMount.pending.clear();
-    searchCardMount.next = 0;
     searchCardMount.container = container || null;
     searchCardMount.onFirstMount = null;
     searchCardMount.onIdle = null;
     if (container) container.innerHTML = '';
 }
 
-// 按下标顺序把已测好的卡片插入网格
-function flushSearchCardMount() {
-    const st = searchCardMount;
-    if (!st.container) return;
-    for (;;) {
-        const entry = st.pending.get(st.next);
-        if (!entry || !entry.settled) return;
-        st.pending.delete(st.next);
-        if (entry.ok) {
-            st.container.appendChild(entry.el);
-            observeQualityProbeCard(entry.el); // 仅「开关开启 + 最终渲染」时挂视口观察
-            if (st.onFirstMount) {
-                const cb = st.onFirstMount;
-                st.onFirstMount = null;
-                st.onIdle = null;
-                cb();
-            }
-        }
-        st.next++;
-    }
-    // 队列里一张都没剩（全部测完/全部失败）：兜底通知一次，避免遮罩一直不关
-    if (st.pending.size === 0 && st.onIdle) {
-        const cb = st.onIdle;
-        st.onIdle = null;
-        st.onFirstMount = null;
-        cb();
-    }
-}
-
-// 入队一批结果：卡片先测尺寸，成功且轮到它时才进 DOM
+// 立即插入一批结果：每张卡建好即 append，随后挂画质探测观察
 function queueSearchCards(container, items, startIndex) {
     const seq = searchCardMount.seq;
     searchCardMount.container = container;
-    items.forEach((item, i) => {
-        const index = startIndex + i;
+    const list = Array.isArray(items) ? items : [];
+    list.forEach((item, i) => {
+        if (seq !== searchCardMount.seq) return; // 已被新的渲染取代，丢弃
         const el = createResultCardElement(item);
-        const entry = { el, settled: false, ok: false };
-        searchCardMount.pending.set(index, entry);
-        measureCardCover(el).then(ok => {
-            if (seq !== searchCardMount.seq) return; // 已被新的渲染取代，丢弃
-            entry.settled = true;
-            entry.ok = ok;
-            flushSearchCardMount();
-        });
+        container.appendChild(el);
+        observeQualityProbeCard(el); // 仅「开关开启 + 最终渲染」时挂视口观察
+        if (i === 0) {
+            const firstCb = searchCardMount.onFirstMount;
+            searchCardMount.onFirstMount = null;
+            if (typeof firstCb === 'function') firstCb();
+        }
     });
+    if (seq !== searchCardMount.seq) return;
+    const idleCb = searchCardMount.onIdle;
+    searchCardMount.onIdle = null;
+    if (typeof idleCb === 'function') idleCb();
 }
 
 // ===== 批次 2 · A1 跨源同名聚合：渲染层派生视图 =====
@@ -1259,27 +1386,59 @@ function deriveGroupedResults(flatItems) {
     }));
 }
 
-// 展开面板排序：优先用 WDTVQuality（另一组提供，可能不存在）的画质降序，
-// 否则沿用 aggregateResults 已做好的 source_name 升序。模块缺失/异常静默降级，不报错。
+// 派生分组后按「前三源优先级」稳定排序：组内含优先源则按最小 rank 升序，
+// 非优先组排在后面且保持原相对顺序。
+function deriveOrderedGroupedResults(flatItems) {
+    const groups = deriveGroupedResults(flatItems);
+    return groups.map((g, idx) => {
+        let minRank = 99;
+        (g && Array.isArray(g.items) ? g.items : []).forEach(it => {
+            const r = priorityRank(it && it.source_code);
+            if (r < minRank) minRank = r;
+        });
+        return { g, idx, minRank };
+    }).sort((a, b) => (a.minRank - b.minRank) || (a.idx - b.idx))
+        .map(x => {
+            // 组内条目也按优先源排序：卡片主条目（封面/来源徽章）与直接播放都取 items[0]
+            if (x.g && Array.isArray(x.g.items)) x.g.items = sortGroupItems(x.g.items);
+            return x.g;
+        });
+}
+
+// 当前页已渲染的分组（group.key -> group），供多源卡片点击直接播放优先源使用
+let renderedGroupsByKey = new Map();
+
+// 展开面板排序：先按前三源优先级升序，再按画质高度降序；无数据保持原相对顺序。
 function sortGroupItems(items) {
     const Q = window.WDTVQuality;
-    if (Q) {
-        try {
-            // 组内有 item 带画质高度（探测回填）时按高度降序；无数据时退回 sortByQuality，
-            // 后者缺少 entries 时按原相对顺序返回（即 aggregateResults 的 source_name 升序）。
-            if (typeof Q.heightOf === 'function' &&
-                items.some(it => typeof Q.heightOf(it) === 'number')) {
-                return items.slice().sort((a, b) =>
-                    (Number(Q.heightOf(b)) || 0) - (Number(Q.heightOf(a)) || 0));
-            }
-            if (typeof Q.sortByQuality === 'function') {
-                // 传入画质探测缓存：展开面板下次打开时按已探明的高度降序（无数据时按 source_name 原序）
-                const sorted = Q.sortByQuality(items.slice(), qualityProbeEntries);
-                if (Array.isArray(sorted)) return sorted;
-            }
-        } catch (e) { /* 按源名顺序降级 */ }
-    }
-    return items.slice();
+    const probeHeightOf = (it) => {
+        if (!Q || typeof Q.qualityKey !== 'function') return undefined;
+        const entry = qualityProbeEntries[Q.qualityKey((it && it.source_code) || '', (it && it.vod_id) || '')];
+        if (!entry) return undefined;
+        if (typeof Q.isQualityEntryFresh === 'function' && !Q.isQualityEntryFresh(entry)) return undefined;
+        if (typeof Q.heightOf === 'function') {
+            const h = Q.heightOf(entry);
+            if (typeof h === 'number' && h > 0) return h;
+        }
+        return undefined;
+    };
+    const heightOfItem = (it) => {
+        const m = getMeasuredQualityHeight(it && it.source_code, it && it.vod_id);
+        if (typeof m === 'number' && m > 0) return m;
+        if (Q && typeof Q.heightOf === 'function') {
+            const h = Q.heightOf(it);
+            if (typeof h === 'number' && h > 0) return h;
+        }
+        return probeHeightOf(it);
+    };
+    return (Array.isArray(items) ? items.slice() : []).sort((a, b) => {
+        const ra = priorityRank(a && a.source_code);
+        const rb = priorityRank(b && b.source_code);
+        if (ra !== rb) return ra - rb;
+        const ha = heightOfItem(a);
+        const hb = heightOfItem(b);
+        return (typeof hb === 'number' ? hb : -1) - (typeof ha === 'number' ? ha : -1);
+    });
 }
 
 // 备注归一（typeof 防御，模块缺失回退原转义文案）
@@ -1377,14 +1536,21 @@ function buildResultCard(entry) {
     // 备注归一：多源用组内统一结论，单源用本条文案；模块缺失回退原文（仅转义）
     const remarksRaw = group.remarks || (primary && primary.vod_remarks) || '';
     const safeRemarks = escapeResultText(formatCardRemarks(remarksRaw));
-    // 画质徽章：优先用已探明的内存缓存（翻页/筛选/补页整页重渲染后仍显示 1080P/4K，
-    // 不退回 HD、不因 qualityProbeSeen 已标记而永不补探）。键形状与 applyQualityProbeResult
-    // 写入一致：WDTVQuality.qualityKey = source:vodId（冒号，非 data-key 的下划线格式）。
-    // 无有效探测结果（含测不出/失败无 label）时回退原有的备注/标题提取标签。
-    const fallbackQualityTag = extractQualityTag([primary.vod_remarks, displayName]);
+    // 画质徽章：最高优先为实测高度（播放器解码分辨率，按 source_vod 落库）；
+    // 其次用已探明的探测缓存；都没有则不输出画质，不再用备注/标题兜底猜标签。
     const Q = window.WDTVQuality;
     let badgeState = '', badgeLabel = '', badgeTip = '';
-    if (Q && qualityProbeEntries && typeof Q.qualityKey === 'function' &&
+    const measuredHeight = getMeasuredQualityHeight(primary.source_code || '', primary.vod_id || '');
+    if (typeof measuredHeight === 'number' && measuredHeight > 0) {
+        const measuredLabel = (Q && typeof Q.qualityLabel === 'function')
+            ? Q.qualityLabel(measuredHeight) : (measuredHeight + 'P');
+        if (measuredLabel) {
+            badgeState = 'measured';
+            badgeLabel = measuredLabel;
+            badgeTip = '实测画质';
+        }
+    }
+    if (!badgeState && Q && qualityProbeEntries && typeof Q.qualityKey === 'function' &&
         typeof Q.isQualityEntryFresh === 'function' && typeof Q.describeQualityBadge === 'function') {
         const cacheKey = Q.qualityKey(primary.source_code || '', primary.vod_id || '');
         const probeEntry = qualityProbeEntries[cacheKey];
@@ -1399,7 +1565,7 @@ function buildResultCard(entry) {
             }
         }
     }
-    // 失败 / 未知态：徽章可点「重试」（清 seen 后重新入队探测）
+    // 失败 / 未知态：徽章可点「重试」（清 seen 后重新入队探测）；实测态不可重试
     const retryable = (badgeState === 'failed' || badgeState === 'unknown');
     const retryAttr = retryable ? ' data-quality-retry="1"' : '';
     let qualityBadgeHtml = '';
@@ -1408,14 +1574,13 @@ function buildResultCard(entry) {
         qualityBadgeHtml = `<div class="wdtv-quality-badge wdtv-quality-probed" data-quality-state="${escapeResultText(badgeState)}"${retryAttr}${tip}>${escapeResultText(badgeLabel)}</div>`;
     } else if (badgeState === 'loading' || retryable) {
         qualityBadgeHtml = `<div class="wdtv-quality-badge wdtv-quality-probed" data-quality-state="${escapeResultText(badgeState)}"${retryAttr}>${badgeState === 'loading' ? '探测中…' : '未测到'}</div>`;
-    } else if (fallbackQualityTag) {
-        qualityBadgeHtml = `<div class="wdtv-quality-badge">${fallbackQualityTag}</div>`;
     }
     // 时长徽章：仅探测过的视频有值；未探测时元素保留但隐藏，探测完成后定向填充
     const durSec = getCachedDuration(primary);
 
     // 多源展开面板：每行一个来源，点击打开该源详情（复用 showDetails / hover 预取缓存），
     // 行点击 stopPropagation 防止连带触发整卡的展开/收起。
+    // 画质：实测 > 探测缓存 > 不输出（不再用备注/标题猜标签）。
     const panelRows = isMulti ? sortGroupItems(items).map(it => {
         const sid = it.vod_id ? it.vod_id.toString().replace(/[^\w-]/g, '') : '';
         const rid = escapeResultText(sid);
@@ -1423,14 +1588,25 @@ function buildResultCard(entry) {
         const rcode = escapeResultText(it.source_code || '');
         const rsource = escapeResultText(it.source_name || it.source_code || '未知来源');
         const rremarks = escapeResultText(compactCardRemarks(it.vod_remarks));
-        const rquality = extractQualityTag([it.vod_remarks, it.vod_name]);
+        let rqHeight = getMeasuredQualityHeight(it.source_code || '', it.vod_id || '');
+        if (typeof rqHeight !== 'number' && Q && typeof Q.qualityKey === 'function') {
+            const pe = qualityProbeEntries[Q.qualityKey(it.source_code || '', it.vod_id || '')];
+            if (pe && (typeof Q.isQualityEntryFresh !== 'function' || Q.isQualityEntryFresh(pe))
+                && typeof Q.heightOf === 'function') {
+                const h = Q.heightOf(pe);
+                if (typeof h === 'number' && h > 0) rqHeight = h;
+            }
+        }
+        const rquality = (typeof rqHeight === 'number' && rqHeight > 0)
+            ? ((Q && typeof Q.qualityLabel === 'function') ? Q.qualityLabel(rqHeight) : (rqHeight + 'P'))
+            : '';
         return `
             <div class="wdtv-group-source" role="button" tabindex="0"
                  data-vod-id="${rid}" data-source-code="${rcode}" data-vod-name="${rname}"
                  title="${rsource}${rremarks ? ' · ' + rremarks : ''}">
                 <span class="wdtv-group-source-name">${rsource}</span>
                 ${rremarks ? `<span class="wdtv-group-source-remarks">${rremarks}</span>` : ''}
-                <span class="wdtv-quality-badge">${rquality}</span>
+                ${rquality ? `<span class="wdtv-quality-badge">${escapeResultText(rquality)}</span>` : ''}
             </div>`;
     }).join('') : '';
 
@@ -1525,13 +1701,18 @@ function renderFilteredSearchResults() {
 
     const filtered = getFilteredSearchResults();
     // 批次 2 / 必修 A1：先在「全部筛选结果」上派生分组，再按「组数」切页展示。
-    // 这样跨第 60/61 条边界的同名条目合并进同一张卡（5 源而非 2 源/3 源），屏幕按组计数；
+    // 这样跨分页边界的同名条目合并进同一张卡（5 源而非 2 源/3 源），屏幕按组计数；
     // 扁平池 lastSearchResults / searchResultKeys 去重 / appendResults / 补抓仍按条推进。
-    const groups = deriveGroupedResults(filtered);
+    const groups = deriveOrderedGroupedResults(filtered);
     const totalPages = Math.max(1, Math.ceil(groups.length / RESULTS_PER_PAGE));
     if (currentResultPage > totalPages) currentResultPage = totalPages;
     const start = (currentResultPage - 1) * RESULTS_PER_PAGE;
     const pageGroups = groups.slice(start, start + RESULTS_PER_PAGE);
+    // 当前页分组索引：多源卡片点击「直接播放优先源」时按 data-group-key 回查
+    renderedGroupsByKey.clear();
+    pageGroups.forEach(g => {
+        if (g) renderedGroupsByKey.set(String(g.key), g);
+    });
     // 当前页组展平回扁平条目：供时长探测 enqueueDurationProbes 与筛选计数使用，
     // 入参语义与旧版「当前页扁平 pageItems」一致（不改变 enqueueDurationProbes 形状）。
     const pageItems = [];
@@ -1541,14 +1722,14 @@ function renderFilteredSearchResults() {
     armQualityProbeRender(pageGroups); // 稳定的整页渲染入口：开关开启时建立 group.key -> items 映射
 
     if (pageItems.length === 0 && lastSearchResults.length > 0) {
-        resetSearchCardMount(resultsDiv); // 同时作废上一页还在等封面尺寸的卡片
+        resetSearchCardMount(resultsDiv); // 同时作废上一页的渲染回调
         resultsDiv.innerHTML = `
             <div class="col-span-full" style="text-align:center;padding:40px 0;color:var(--text-muted);font-size:0.9rem;">
                 当前筛选条件下没有可显示的结果
             </div>
         `;
     } else {
-        // 整页重建：卡片测好封面尺寸后才按顺序入网格（见 queueSearchCards）
+        // 整页重建：卡片构建后立即入网格（见 queueSearchCards）
         resetSearchCardMount(resultsDiv);
         queueSearchCards(resultsDiv, pageGroups, 0);
     }
@@ -1643,7 +1824,7 @@ async function goToResultPage(pageNum) {
     // 补抓/loadMore 仍按扁平结果推进：ensureResultsForPage 的 needed = 目标页 * RESULTS_PER_PAGE
     // 用的是扁平条数，翻页只是展示层按组切，两者互不干扰。目标展示页超出当前组页数且源还有
     // 后续页时，换算成「下一扁平页」补抓，补抓可能带来新组从而扩展展示页。
-    const displayPages = Math.max(1, Math.ceil(deriveGroupedResults(getFilteredSearchResults()).length / RESULTS_PER_PAGE));
+    const displayPages = Math.max(1, Math.ceil(deriveOrderedGroupedResults(getFilteredSearchResults()).length / RESULTS_PER_PAGE));
 
     if (target > displayPages && hasMoreSourcePages()) {
         const flatNextPage = Math.ceil(getFilteredSearchResults().length / RESULTS_PER_PAGE) + 1;
@@ -1652,7 +1833,7 @@ async function goToResultPage(pageNum) {
     }
 
     // 抓取后组页数可能已增长；目标仍超界时收敛到最后一页
-    const totalPages = Math.max(1, Math.ceil(deriveGroupedResults(getFilteredSearchResults()).length / RESULTS_PER_PAGE));
+    const totalPages = Math.max(1, Math.ceil(deriveOrderedGroupedResults(getFilteredSearchResults()).length / RESULTS_PER_PAGE));
     currentResultPage = Math.min(target, totalPages);
     renderFilteredSearchResults();
     scrollToResultsTop();
@@ -1735,7 +1916,8 @@ function saveSearchPageCache() {
             sessionStorage.setItem(currentSearchCacheKey, JSON.stringify({
                 ts: Date.now(),
                 results: lastSearchResults,
-                pageState: searchPageState
+                pageState: searchPageState,
+                page: currentResultPage
             }));
         } catch (e) { /* 缓存写入失败不影响结果展示 */ }
     });
@@ -1892,7 +2074,7 @@ function cssEscapeAttr(value) {
     return String(value).replace(/["\\]/g, '\\$&');
 }
 
-// ===== 批次 2 · A6 卡片画质探测（默认关闭；开启后才有网络请求）=====
+// ===== 批次 2 · A6 卡片画质探测（默认开启；关闭后零新增请求）=====
 // 开关关闭时：不创建队列、不创建 IntersectionObserver、不发任何请求。
 // 开关开启时：卡片进视口延迟 500ms 入队 → 队列(并发≤2/每批≤8) → 解析 m3u8 master
 // 的 RESOLUTION 短边 → 只定向更新徽章与内存缓存，不整页重渲染。
@@ -1916,7 +2098,7 @@ function isQualityProbeProbing(sourceKey, vodId) {
 }
 
 function isQualityProbeEnabled() {
-    return localStorage.getItem(QUALITY_PROBE_STORAGE) === 'true';
+    return localStorage.getItem(QUALITY_PROBE_STORAGE) !== 'false';
 }
 
 // 断开观察器与所有待触发计时器；不动已在队列里的请求（由 session abort / queue.cancel 收尾）
@@ -1976,7 +2158,7 @@ function armQualityProbeForVisibleCards() {
     qualityProbePageItems.clear();
     // 与 renderFilteredSearchResults 相同的「先派生分组、再按组切页」逻辑，
     // 保证 group.key -> items 映射与卡片 data-group-key 一致。
-    const groups = deriveGroupedResults(getFilteredSearchResults());
+    const groups = deriveOrderedGroupedResults(getFilteredSearchResults());
     const start = (currentResultPage - 1) * RESULTS_PER_PAGE;
     groups.slice(start, start + RESULTS_PER_PAGE).forEach(g => {
         if (g && Array.isArray(g.items)) qualityProbePageItems.set(String(g.key), g.items);
@@ -2215,6 +2397,8 @@ function applyQualityProbeResult(result) {
     qualityProbeProbing.delete(sourceKey + '_' + vodId);
     if (result.error && /取消|abort/i.test(result.error)) return; // 取消/中断不写缓存、不改徽章
     if (!sourceKey || !vodId) return;
+    // 已有播放器实测高度：探测结果不得覆盖（徽章与缓存保持实测）
+    if (typeof getMeasuredQualityHeight(sourceKey, vodId) === 'number') return;
     const cacheKey = (typeof Q.qualityKey === 'function')
         ? Q.qualityKey(sourceKey, vodId) : (sourceKey + ':' + vodId);
     const entry = { from: 'probe', timestamp: Date.now() };
@@ -2235,6 +2419,8 @@ function applyQualityProbeResult(result) {
 // 用现有 [data-key] 定向更新（参考 updateDurationCard）：只改文本/类，绝不整页重渲染。
 // 多源组内非主 item 的 data-key 与主卡不一致，其结果仅进缓存，供展开面板下次打开按高度降序。
 function updateQualityProbeBadge(sourceKey, vodId, entry, probing) {
+    // 已有播放器实测高度：忽略探测结果覆盖，徽章保持实测
+    if (typeof getMeasuredQualityHeight(sourceKey, vodId) === 'number') return;
     const Q = window.WDTVQuality;
     const card = document.querySelector(
         `#results .douban-card[data-key="${cssEscapeAttr(sourceKey + '_' + vodId)}"]`);
@@ -2247,7 +2433,7 @@ function updateQualityProbeBadge(sourceKey, vodId, entry, probing) {
     const label = desc.label
         || (state === 'loading' ? '探测中…' : '')
         || ((state === 'failed' || state === 'unknown') ? '未测到' : '');
-    if (!label) return; // 其余态无 label：保留原 extractQualityTag 文案，不抹掉
+    if (!label) return; // 其余态无 label：保留卡片原有徽章内容
     let badge = card.querySelector('.wdtv-quality-badge');
     if (!badge) {
         badge = document.createElement('div');
@@ -2480,8 +2666,30 @@ document.addEventListener('click', (e) => {
         if (id && code && typeof showDetails === 'function') showDetails(id, name, code);
         return;
     }
-    // 单源卡片由 inline onclick 处理，不在此重复；仅多源卡片切换展开面板
+    // 单源卡片由 inline onclick 处理，不在此重复；多源卡片：
+    // 组内含优先源时直接播放优先源，否则切换展开面板
     if (card.getAttribute('data-group-multi') === '1') {
+        const groupKey = card.getAttribute('data-group-key') || '';
+        const group = renderedGroupsByKey.get(groupKey);
+        const hasPriority = !!(group && Array.isArray(group.items) &&
+            group.items.some(it => priorityRank(it && it.source_code) < 99));
+        if (hasPriority) {
+            e.preventDefault();
+            e.stopPropagation();
+            // items 已在 deriveOrderedGroupedResults 内按优先级排序，取最高优先源
+            const bestItem = group.items.slice().sort((a, b) =>
+                priorityRank(a && a.source_code) - priorityRank(b && b.source_code))[0] || group.items[0];
+            directPlayPriorityGroup(bestItem).then(ok => {
+                if (ok) return;
+                // 直接播放失败：手动展开该卡来源面板，让用户改用其它源
+                const panel = card.querySelector('.wdtv-group-panel');
+                if (panel) {
+                    panel.style.display = '';
+                    card.setAttribute('aria-expanded', 'true');
+                }
+            });
+            return;
+        }
         const panel = card.querySelector('.wdtv-group-panel');
         if (panel) {
             const open = panel.style.display !== 'none';
@@ -2876,20 +3084,13 @@ function openDetailBatchDownload(event) {
 // 更新播放视频函数，直接跳转到player.html
 // resumePosition：续播起始秒数（我的影院单击续播用，从上次进度回退 10 秒后传入）
 function playVideo(url, vod_name, sourceCode, episodeIndex = 0, vodId = '', resumePosition = 0) {
-    // 获取当前路径作为返回页面
-    let currentPath = window.location.href;
-
-    // 确定返回URL的优先级：1. 当前页面(index/首页) 2. referrer 3. 默认首页
-    let returnUrl = '';
-    if (currentPath.includes('index.html') || currentPath.endsWith('/')) {
-        returnUrl = currentPath;
-    } else {
-        const referrer = document.referrer;
-        if (referrer && referrer.trim() !== '') {
-            returnUrl = referrer;
-        } else {
-            returnUrl = '/';
-        }
+    // 返回地址即当前页；若当前已在播放页（大小写不敏感）则回首页，避免返回自身
+    let returnUrl = '/';
+    try {
+        const href = window.location.href || '';
+        if (!/player\.html/i.test(href)) returnUrl = href;
+    } catch (e) {
+        returnUrl = '/';
     }
 
     // 构建播放页面URL，直接跳转到player.html（resumePosition>0 时附带续播位置）
@@ -2916,7 +3117,7 @@ function playVideo(url, vod_name, sourceCode, episodeIndex = 0, vodId = '', resu
         localStorage.setItem('currentEpisodeIndex', episodeIndex);
         localStorage.setItem('currentSourceCode', sourceCode || '');
         localStorage.setItem('lastPlayTime', Date.now());
-        localStorage.setItem('lastSearchPage', currentPath);
+        localStorage.setItem('lastSearchPage', window.location.href);
         localStorage.setItem('lastPageUrl', returnUrl);  // 确保保存返回页面URL
         // 同步排序方式与已检测时长，播放页保持与详情页一致的展示
         localStorage.setItem('episodesReversed', episodesReversed);

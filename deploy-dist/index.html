@@ -41,7 +41,7 @@
 </script>
 
 <!-- WDTV External CSS -->
-<link rel="stylesheet" href="css/styles.css?v=7">
+<link rel="stylesheet" href="css/styles.css?v=8">
 <link rel="stylesheet" href="css/index.css?v=39">
 <link rel="stylesheet" href="css/modals.css?v=11">
 <link rel="stylesheet" href="css/downloader.css?v=4">
@@ -510,17 +510,6 @@ body:has(#modal:not(.hidden)) #splash{backdrop-filter:none;-webkit-backdrop-filt
 .wdtv-variety-label{font-size:0.72rem}
 }
 
-/* WDTV Disclaimer Modal */
-.wdtv-disclaimer-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:10000;background:rgba(200,220,245,0.25);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5)}
-.wdtv-disclaimer-modal.show{display:flex}
-.wdtv-disclaimer-box{background:rgba(200,220,245,0.13);backdrop-filter:blur(32px) saturate(1.5);-webkit-backdrop-filter:blur(32px) saturate(1.5);border:1px solid rgba(200,220,245,0.42);box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1);color:rgba(236,244,255,0.96);border-radius:24px;padding:32px;width:92%;max-width:560px;max-height:90vh;overflow-y:auto}
-.wdtv-disclaimer-box h2{font-size:1.4rem;font-weight:500;letter-spacing:0.14em;color:rgba(222,234,250,0.92);text-shadow:0 1px 8px rgba(0,0,0,0.58),0 0 16px rgba(0,0,0,0.22);margin-bottom:24px;text-align:center}
-.wdtv-disclaimer-box .wdtv-disc-text{color:rgba(224,234,248,0.85);line-height:2}
-.wdtv-disclaimer-box .wdtv-disc-text p{margin-bottom:12px}
-.wdtv-disclaimer-box .wdtv-disc-text strong{color:#9cc4f5;font-weight:600}
-.wdtv-disclaimer-box .wdtv-disc-accept{display:block;margin:24px auto 0;padding:12px 32px;border-radius:14px;border:1px solid rgba(200,220,245,0.42);background:rgba(80,128,176,0.2);color:rgba(236,244,255,0.96);font-size:1rem;font-weight:500;cursor:pointer;font-family:'Noto Sans SC',sans-serif;letter-spacing:0.08em;transition:all 0.2s}
-.wdtv-disclaimer-box .wdtv-disc-accept:hover{background:rgba(80,128,176,0.35);border-color:rgba(200,220,245,0.6)}
-
 /* WDTV Toast */
 .wdtv-toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-100px);z-index:10001;padding:12px 28px;border-radius:9999px;background:rgba(255,255,255,0.85);backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);border:1px solid rgba(255,255,255,0.9);color:#1d1d1f;box-shadow:0 12px 40px rgba(0,0,0,0.1),inset 0 1px 0 rgba(255,255,255,0.95);font-weight:500;font-size:0.92rem;transition:transform 0.3s,opacity 0.3s;opacity:0;font-family:'Noto Sans SC',sans-serif}
 .wdtv-toast.show{transform:translateX(-50%) translateY(0);opacity:1}
@@ -597,14 +586,13 @@ body:has(#modal:not(.hidden)) #splash{backdrop-filter:none;-webkit-backdrop-filt
 .gw-grade-c{mix-blend-mode:normal}
 .gw-grade-s{mix-blend-mode:normal}}
 
-/* === FX OFF（动态效果关闭模式：停用一切动画与视觉特效，降低性能开销） === */
+/* === FX OFF（动态效果关闭模式：只关闭背景动态特效，保留界面过渡与玻璃质感） === */
 html.fx-off{scroll-behavior:auto}
-html.fx-off *{animation:none!important;transition:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;text-shadow:none!important;box-shadow:none!important;filter:none!important}
-html.fx-off #preloader,html.fx-off #rain-container,html.fx-off #gw-slot,html.fx-off #gw-ripple-bg{display:none!important}
+html.fx-off #rain-container{display:none!important}
+/* 仅停用可无限循环的装饰动画，使用精确选择器，不影响按钮/面板过渡、背景图与玻璃 blur */
+html.fx-off .cinema-edit-mode .douban-card,html.fx-off .wdtv-loading-spinner,html.fx-off .wdtv-skeleton-card{animation:none!important}
 
 /* FX OFF 豁免：选集弹窗与两侧侧边栏窗口保持原有玻璃样式（打开时才渲染，不影响首页持续性能；遮罩层不再加 blur） */
-html.fx-off .wdtv-disclaimer-modal{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.25)!important}
-html.fx-off .wdtv-disclaimer-box{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.13)!important;border:1px solid rgba(200,220,245,0.42)!important;box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1)!important}
 html.fx-off .wdtv-modal,html.fx-off #modal>.wdtv-modal{backdrop-filter:blur(32px) saturate(1.5)!important;-webkit-backdrop-filter:blur(32px) saturate(1.5)!important;background:rgba(200,220,245,0.13)!important;border:1px solid rgba(200,220,245,0.42)!important;box-shadow:0 24px 80px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.1)!important}
 /* FX OFF 豁免：右上角账号下拉菜单保持玻璃质感（药丸本身为透明无玻璃样式，无需豁免） */
 html.fx-off #accountMenu{backdrop-filter:blur(32px) saturate(1.4)!important;-webkit-backdrop-filter:blur(32px) saturate(1.4)!important;background:rgba(222,234,248,0.6)!important;border:1px solid rgba(255,255,255,0.55)!important;box-shadow:0 24px 60px rgba(0,0,0,0.18)!important}
@@ -996,10 +984,18 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">流量竞速兜底</div><div class="wdtv-sr-desc">直连过慢时自动代理并行竞速，多耗流量换流畅</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="raceHedgeToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
-    <div class="wdtv-settings-row" title="开启后对搜索卡片探测真实分辨率，会产生少量额外请求；默认关闭">
+    <div class="wdtv-settings-row" title="开启后对搜索卡片探测真实分辨率，会产生少量额外请求；默认开启">
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">卡片画质探测</div><div class="wdtv-sr-desc">开启后探测真实分辨率，并用于展开面板排序</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="wdtvQualityProbeToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
+  </div>
+  <!-- 优先播放源：设置搜索排序与直接播放的前三个源，优先级从上到下（选项由 app.js 动态填充） -->
+  <div class="wdtv-settings-block">
+    <label class="block-label">优先播放源</label>
+    <div class="wdtv-api-info" style="margin-bottom:8px"><span>设置搜索排序与直接播放的前三个源，优先级从上到下</span></div>
+    <select id="sourcePriority1" aria-label="优先播放源 1" style="display:block;width:100%;box-sizing:border-box;margin-bottom:8px;padding:8px 12px;border-radius:8px;border:1px solid rgba(200,220,245,0.3);background:rgba(255,255,255,0.45);color:#2a3a5c;font-size:0.78rem;font-family:'Noto Sans SC',sans-serif;outline:none"></select>
+    <select id="sourcePriority2" aria-label="优先播放源 2" style="display:block;width:100%;box-sizing:border-box;margin-bottom:8px;padding:8px 12px;border-radius:8px;border:1px solid rgba(200,220,245,0.3);background:rgba(255,255,255,0.45);color:#2a3a5c;font-size:0.78rem;font-family:'Noto Sans SC',sans-serif;outline:none"></select>
+    <select id="sourcePriority3" aria-label="优先播放源 3" style="display:block;width:100%;box-sizing:border-box;padding:8px 12px;border-radius:8px;border:1px solid rgba(200,220,245,0.3);background:rgba(255,255,255,0.45);color:#2a3a5c;font-size:0.78rem;font-family:'Noto Sans SC',sans-serif;outline:none"></select>
   </div>
   <!-- 弹幕设置：按需求整组隐藏（保留 DOM 与初始化逻辑，避免影响现有弹幕功能） -->
   <div class="wdtv-settings-block" style="display:none" aria-hidden="true">
@@ -1041,20 +1037,6 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
   </div>
 </div>
 
-<!-- WDTV Disclaimer Modal -->
-<div id="disclaimerModal" class="wdtv-disclaimer-modal">
-  <div class="wdtv-disclaimer-box">
-    <h2>使用声明</h2>
-    <div class="wdtv-disc-text">
-      <p>欢迎使用 WDTV。在开始使用前，请您了解并同意以下条款：</p>
-      <p><strong>服务性质：</strong> WDTV 仅提供视频搜索服务，不直接提供、存储或上传任何视频内容。所有搜索结果均来自第三方公开接口。</p>
-      <p><strong>用户责任：</strong> 用户在使用本站服务时，须遵守相关法律法规，不得利用搜索结果从事侵权行为。</p>
-      <p><strong>广告风险提示：</strong> 本站所有视频均来自第三方采集站，视频中出现的广告与本站无关，请勿相信或点击视频中的任何广告内容。</p>
-    </div>
-    <button id="acceptDisclaimerBtn" class="wdtv-disc-accept">我已了解并接受</button>
-  </div>
-</div>
-
 <!-- WDTV Toast -->
 <div id="toast" class="wdtv-toast"><p id="toastMessage"></p></div>
 
@@ -1084,7 +1066,7 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 
 <!-- External JS -->
 <script src="libs/tailwindcss.min.js"></script>
-<script src="js/config.js?v=25"></script>
+<script src="js/config.js?v=26"></script>
 <!-- 批次2：LibreTV 优势项移植模块（零构建、普通 script，加载顺序即依赖） -->
 <script src="js/states.js?v=1"></script>
 <script src="js/focus-trap.js?v=1"></script>
@@ -1100,17 +1082,17 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 <script src="js/customer_site.js?v=8"></script>
 <!-- 批次3：数据源订阅（需在 app.js 之前；解析全在浏览器端，直连优先 + /proxy/ 兜底） -->
 <script src="js/source-subscription.js?v=3"></script>
-<script src="js/ui.js?v=16"></script>
+<script src="js/ui.js?v=17"></script>
 <script src="js/source-health.js?v=3"></script>
-<script src="js/api.js?v=16"></script>
+<script src="js/api.js?v=17"></script>
 <!-- 批次3：首页推荐增源（需在 douban.js 之前；60s 榜单直连，Bangumi 可选默认关闭） -->
 <script src="js/recommend-sources.js?v=3"></script>
 <script src="js/douban.js?v=17"></script>
 <script src="js/search.js?v=14"></script>
-<script src="js/app.js?v=43"></script>
-<script src="js/cinema.js?v=17"></script>
+<script src="js/app.js?v=45"></script>
+<script src="js/cinema.js?v=18"></script>
 <script src="js/pwa-register.js?v=8"></script>
-<script src="js/index-page.js?v=13"></script>
+<script src="js/index-page.js?v=14"></script>
 <script src="js/dock.js?v=3"></script>
 <script src="js/cloud-sync.js?v=9"></script>
 <script src="js/cloud-sync-ui.js?v=6"></script>
@@ -1153,11 +1135,6 @@ window.addEventListener('pageshow', function(event) {
       modal.classList.add('hidden');
     }
     
-    var disclaimerModal = document.getElementById('disclaimerModal');
-    if (disclaimerModal) {
-      disclaimerModal.style.display = 'none';
-    }
-    
     // Hide loading indicator if visible
     // 用 class 而非内联 display 关闭：内联 display:none 会永久覆盖 .wdtv-loading 的
     // display:flex，导致后续 showLoading 永远无法再显示遮罩
@@ -1198,14 +1175,13 @@ window.addEventListener('pageshow', function(event) {
     drops.length=0;
     for(var i=0;i<45;i++){var d={};reset(d);drops.push(d)}
   }
-  var last=0,rafId=null,rainHeld=false;
+  var last=0,rafId=null,rainHeld=false,tickId=null,touchStop=null;
   function fxOff(){return document.documentElement.classList.contains('fx-off')}
-  function loop(ts){
-    if(fxOff()){rafId=null;return}
-    rafId=requestAnimationFrame(loop);
+  function step(ts){
     var mo=document.getElementById('modal');
     if(mo&&!mo.classList.contains('hidden')){if(!rainHeld){ctx.clearRect(0,0,W,H);rainHeld=true}last=ts;return}
     rainHeld=false;
+    if(last&&ts-last<8)return;
     var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);ctx.lineCap='round';
     for(var i=0;i<drops.length;i++){
@@ -1226,9 +1202,26 @@ window.addEventListener('pageshow', function(event) {
       ctx.beginPath();ctx.arc(d.x,d.y,d.w*0.55,0,6.2832);ctx.fill();
     }
   }
-  function startRain(){if(rafId==null&&!fxOff())rafId=requestAnimationFrame(loop)}
+  function loop(ts){
+    if(fxOff()){rafId=null;return}
+    rafId=requestAnimationFrame(loop);
+    step(ts);
+  }
+  function stopTick(){if(tickId!=null){clearInterval(tickId);tickId=null}}
+  function tick(){
+    if(fxOff()){stopTick();return}
+    step(performance.now());
+  }
+  function startTick(){if(tickId==null)tickId=setInterval(tick,33)}
+  function startRain(){if(fxOff())return;stopTick();if(rafId==null)rafId=requestAnimationFrame(loop)}
   window.__fxRain=startRain;
   addEventListener('resize',size);size();startRain();
+  /* 触摸兜底：部分移动端内核 rAF 在触摸/滚动期间被节流，用定时器补帧 */
+  addEventListener('touchstart',function(){if(fxOff())return;if(touchStop){clearTimeout(touchStop);touchStop=null}startTick()},{passive:true});
+  addEventListener('touchmove',function(){if(fxOff())return;if(touchStop){clearTimeout(touchStop);touchStop=null}startTick()},{passive:true});
+  function endTouch(){if(touchStop)clearTimeout(touchStop);touchStop=setTimeout(function(){touchStop=null;stopTick()},300)}
+  addEventListener('touchend',endTouch,{passive:true});
+  addEventListener('touchcancel',endTouch,{passive:true});
 })();
 </script>
 
@@ -1280,7 +1273,7 @@ function toSim(e){if(mode==='pane'){var r=pane.getBoundingClientRect();if(r.widt
 function stir(e){if(!(e.buttons&1))return;if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;var lp=stirPts[e.pointerId];if(!lp){stirPts[e.pointerId]={x:p.x,y:p.y};return}var dx=p.x-lp.x,dy=p.y-lp.y;var d=Math.sqrt(dx*dx+dy*dy);if(d<1.15)return;var steps=Math.min(6,Math.ceil(d/1.5));var s=Math.min(0.55,0.12+d*0.05);for(var i=1;i<=steps;i++)poke(lp.x+dx*i/steps,lp.y+dy*i/steps,s*MOUSE_STR_MAG,1.7*MOUSE_MAG);lp.x=p.x;lp.y=p.y}
 function tap(e){if(!tgtOk||idleNow())return;var p=toSim(e);if(!p)return;stirPts[e.pointerId]={x:p.x,y:p.y};poke(p.x,p.y,2.0*MOUSE_STR_MAG,2.8*MOUSE_MAG)}
 function lift(e){delete stirPts[e.pointerId]}
-function bgBlank(e){var t=e.target;if(!t||t===sp||t===slot||t===pane)return true;if(t.closest&&(t.closest('#searchArea')||t.closest('#doubanArea')||t.closest('#resultsArea')||t.closest('#cinemaEmpty')||t.closest('.wsp-stage')||t.closest('.wdtv-dock')||t.closest('.wdtv-modal-overlay')||t.closest('.wdtv-disclaimer-modal')||t.closest('.wdtv-history-panel')||t.closest('.wdtv-settings-panel')||t.closest('#chat-mini')))return false;return true}
+function bgBlank(e){var t=e.target;if(!t||t===sp||t===slot||t===pane)return true;if(t.closest&&(t.closest('#searchArea')||t.closest('#doubanArea')||t.closest('#resultsArea')||t.closest('#cinemaEmpty')||t.closest('.wsp-stage')||t.closest('.wdtv-dock')||t.closest('.wdtv-modal-overlay')||t.closest('.wdtv-history-panel')||t.closest('.wdtv-settings-panel')||t.closest('#chat-mini')))return false;return true}
 if(sp&&!REDUCED){var gwTouch={};sp.addEventListener('pointerdown',function(e){if(mode!=='bg')return;var ok=bgBlank(e);gwTouch[e.pointerId]=ok;if(ok)tap(e)},{passive:true});sp.addEventListener('pointermove',function(e){if(mode==='bg'&&gwTouch[e.pointerId]!==false)stir(e)},{passive:true});sp.addEventListener('pointerup',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointercancel',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true});sp.addEventListener('pointerleave',function(e){lift(e);delete gwTouch[e.pointerId]},{passive:true})}
 var fogCv=document.getElementById('gw-fogwipe');var fog=fogCv?fogCv.getContext('2d'):null;var wipeStrokes=[];
 function blotch(x,y,r,a){if(!fog)return;var g=fog.createRadialGradient(W*x,H*y,0,W*x,H*y,Math.max(W,H)*r);g.addColorStop(0,'rgba(222,234,250,'+a+')');g.addColorStop(1,'rgba(222,234,250,0)');fog.fillStyle=g;fog.fillRect(0,0,W,H)}
@@ -1299,7 +1292,7 @@ function computeMode(){return mqSmall.matches?'bg':'pane'}
 function idleNow(){if(document.hidden)return true;if(slot.classList.contains('gw-exit'))return true;var m=document.getElementById('modal');if(m&&!m.classList.contains('hidden'))return true;return false}
 var last=0,stepAcc=0,gwRaf=false;
 function gwStart(){if(gwRaf)return;if(document.documentElement.classList.contains('fx-off'))return;gwRaf=true;requestAnimationFrame(loop)}
-function loop(ts){if((sp&&sp.classList.contains('hidden'))||document.documentElement.classList.contains('fx-off')){gwRaf=false;return}requestAnimationFrame(loop);var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}if(!tgtOk||idleNow()){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}
+function loop(ts){if(sp&&sp.classList.contains('hidden')){gwRaf=false;return}requestAnimationFrame(loop);if(document.documentElement.classList.contains('fx-off')){last=ts;return}var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}if(!tgtOk||idleNow()){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}
 if(window.ResizeObserver)new ResizeObserver(function(){if(mode==='pane')tgtOk=retarget('pane')}).observe(pane);
 window.addEventListener('resize',function(){if(!gwIsTyping()&&mode)tgtOk=retarget(mode)});
 (function probe(names){if(!names.length)return;var name=names.shift();var im=new Image();im.onload=function(){img=im;if(REDUCED){mode='pane';if(retarget('pane')){renderWater();slot.classList.add('gw-rippling')}return}if(mode==='pane')tgtOk=retarget('pane')};im.onerror=function(){probe(names)};im.src=name})(['bg-canvas.jpg','bg-canvas.png']);

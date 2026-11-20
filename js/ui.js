@@ -321,7 +321,7 @@ function renderSearchHistory() {
         return;
     }
 
-    // 单行紧凑布局：可横向滚动的历史标签 + 行尾清空按钮
+    // 单行紧凑布局：可横向滚动的历史标签（每个标签自带单项删除）
     historyContainer.innerHTML = '';
 
     history.forEach(item => {
@@ -358,18 +358,6 @@ function renderSearchHistory() {
         };
         historyContainer.appendChild(tag);
     });
-
-    // 行尾清空按钮（图标化，不占整行）
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'wdtv-recent-clear';
-    clearBtn.setAttribute('aria-label', '清空搜索历史');
-    clearBtn.title = '清空搜索历史';
-    clearBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
-    clearBtn.onclick = function(e) {
-        e.stopPropagation();
-        clearSearchHistory();
-    };
-    historyContainer.appendChild(clearBtn);
 }
 
 // 删除单条搜索历史记录

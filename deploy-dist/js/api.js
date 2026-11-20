@@ -280,7 +280,7 @@ function fetchDetailData(url, apiId, signal) {
 async function fetchVideoDetailData(opts) {
     // 详情 / 播放页换源链路把「业务层成败」写回源健康度，与搜索链路共用同一停用阶梯。
     // 画质探测等纯探测型调用传 trackHealth:false 跳过，避免「某片无 m3u8」被误判为源故障。
-    const { id, source = 'heimuer', signal = null } = opts || {};
+    const { id, source = 'ffzy', signal = null } = opts || {};
     const trackHealth = !opts || opts.trackHealth !== false;
     let healthSettled = false;
     const settleHealth = function (ok) {

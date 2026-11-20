@@ -175,6 +175,21 @@ function roomBroadcast(room, obj, excludeWs) {
     }
 }
 
+// 聊天引用块校验/裁剪（与 sync-worker normalizeQuote 同实现）：{seq, uid, name, text}
+// text 限 120 字；空文本视为无引用
+function roomNormalizeQuote(q) {
+    if (!q || typeof q !== 'object') return null;
+    const text = String(q.text == null ? '' : q.text).slice(0, 120);
+    if (!text) return null;
+    const seq = typeof q.seq === 'number' ? q.seq : (Number(q.seq) || 0);
+    return {
+        seq,
+        uid: q.uid == null ? '' : String(q.uid).slice(0, 64),
+        name: String(q.name == null ? '' : q.name).slice(0, 32),
+        text,
+    };
+}
+
 app.post('/api/room/create', (req, res) => {
     const payload = roomRequireAuth(req);
     if (!payload || payload.uid === undefined) return res.status(401).json({ error: 'unauthorized' });
@@ -285,10 +300,31 @@ function roomOnMessage(room, ws, raw) {
             if (log.length >= 10) return;
             log.push(now);
             const rec = { uid, name, kind: 'user', text: chatText, ts: now, seq: ++room.chatSeq };
+            const quote = roomNormalizeQuote(m.quote); // 引用块：校验/裁剪后随消息持久化
+            if (quote) rec.quote = quote;
             room.chatTail.push(rec);
             while (room.chatTail.length > 100) room.chatTail.shift();
             roomBroadcast(room, { t: 'chat', ...rec }, ws);
+            // 发送者单独回执：仅回 cid/seq，不广播、不入历史
+            const cid = typeof m.cid === 'string' ? m.cid.slice(0, 64) : '';
+            if (cid) roomSend(ws, { t: 'chatAck', cid, seq: rec.seq });
             return;
+        }
+        case 'recall': {
+            // 撤回：仅本人可撤回，命中后置 recalled 并持久化，广播给全房（含发送者）
+            const seq = typeof m.seq === 'number' ? m.seq : Number(m.seq);
+            if (!seq) return;
+            for (let i = room.chatTail.length - 1; i >= 0; i--) {
+                const rec = room.chatTail[i];
+                if (rec.seq !== seq) continue;
+                if (String(rec.uid) !== String(uid)) return; // 非本人：静默忽略
+                rec.recalled = true;
+                rec.text = '';
+                delete rec.quote;
+                roomBroadcast(room, { t: 'recall', seq, uid: rec.uid }, null);
+                return;
+            }
+            return; // 找不到：静默忽略
         }
         case 'stroke': {
             const op = m.op;

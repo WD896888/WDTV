@@ -221,16 +221,32 @@ function buildCinemaCard(fav) {
     const coverOriginalAttr = hasCover ? ` data-original="${encodeURIComponent(normalizedPic)}"` : '';
     const safeRemarks = escapeResultText(fav.remarks || '');
     const safeSourceName = escapeResultText(fav.source_name || '');
-    const qualityTag = extractQualityTag([fav.remarks, fav.title]);
     const key = fav.key || '';
-    // 卡片底部徽章："历史观看" + 集数进度 + 观看时长/总时长
+    // 卡片底部徽章："历史观看" + 集数进度
     const total = Array.isArray(fav.episodes) ? fav.episodes.length : 0;
     const current = total ? Math.min((parseInt(fav.lastEpisodeIndex, 10) || 0) + 1, total) : 0;
-    const lastPos = parseInt(fav.lastPosition, 10) || 0;
-    const lastDur = parseInt(fav.lastDuration, 10) || 0;
     let progressText = '历史观看';
     if (total) progressText += ` ${current}/${total}`;
-    if (lastDur > 0) progressText += ` · ${fmtCinemaDur(lastPos)}/${fmtCinemaDur(lastDur)}`;
+    // 真实实测画质：读 wdtvMeasuredQuality（键 source_vod，值 {height, ts} 或直接数字），
+    // 只有测到有效 height 才显示角标，不用 remarks/title 猜出来的伪画质
+    const qualityLabel = (function () {
+        try {
+            const map = JSON.parse(localStorage.getItem('wdtvMeasuredQuality') || '{}');
+            if (!map || typeof map !== 'object') return '';
+            const ids = [];
+            if (fav.source_code && fav.vod_id) ids.push(`${fav.source_code}_${fav.vod_id}`);
+            if (fav.key) ids.push(String(fav.key));
+            const Q = window.WDTVQuality;
+            if (!Q || typeof Q.qualityLabel !== 'function') return '';
+            for (let i = 0; i < ids.length; i++) {
+                const entry = map[ids[i]];
+                const height = typeof entry === 'number' ? entry : (entry && typeof entry === 'object' ? entry.height : 0);
+                const label = Q.qualityLabel(height);
+                if (label) return label;
+            }
+        } catch (e) { }
+        return '';
+    })();
 
     return `
         <div class="douban-card flex flex-col cursor-pointer" data-key="${key}"
@@ -247,7 +263,7 @@ function buildCinemaCard(fav) {
                      onerror="handleCoverLoadError(this)"
                      loading="lazy" referrerpolicy="no-referrer">
                 <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(0,0,0,0.6), transparent 50%); pointer-events: none;"></div>
-                ${qualityTag ? `<div class="wdtv-quality-badge">${qualityTag}</div>` : ''}
+                ${qualityLabel ? `<div class="wdtv-quality-badge">${qualityLabel}</div>` : ''}
                 ${safeSourceName ? `
                 <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-1.5">
                     <div class="douban-rate-badge truncate min-w-0" title="${safeSourceName}">

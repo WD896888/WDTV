@@ -19,18 +19,24 @@ function goBack(event) {
     
     // 1. 优先检查URL参数中的returnUrl（进入播放器前的页面）
     const urlParams = new URLSearchParams(window.location.search);
-    const returnUrl = urlParams.get('returnUrl');
-    
-    if (returnUrl && !isPlayerPageUrl(returnUrl)) {
-        // URLSearchParams.get 已解码一次；再解码一次以兼容旧流程的双重编码，失败则原样使用
-        let returnTarget = returnUrl;
-        try { returnTarget = decodeURIComponent(returnUrl); } catch (e) { }
-        window.location.href = returnTarget;
+    const returnUrl = urlParams.get('returnUrl'); // 已由 URLSearchParams 解码一次
+    const lastPageUrl = localStorage.getItem('lastPageUrl');
+    // 空值 / '/' / 播放页本身都不能作为返回目标
+    const hasReturnTarget = !!returnUrl && returnUrl !== '/' && !isPlayerPageUrl(returnUrl);
+
+    // returnUrl 缺失/为空/为根路径时：若记录的上一页是搜索结果页(/s=xxx)，优先回搜索页
+    if (!hasReturnTarget && lastPageUrl && lastPageUrl !== window.location.href && !isPlayerPageUrl(lastPageUrl)
+        && (lastPageUrl.includes('/s=') || lastPageUrl.includes('?s='))) {
+        window.location.href = lastPageUrl;
+        return;
+    }
+
+    if (hasReturnTarget) {
+        window.location.href = returnUrl;
         return;
     }
     
     // 2. 检查localStorage中保存的lastPageUrl（若被历史数据污染成播放页地址则跳过）
-    const lastPageUrl = localStorage.getItem('lastPageUrl');
     if (lastPageUrl && lastPageUrl !== window.location.href && !isPlayerPageUrl(lastPageUrl)) {
         window.location.href = lastPageUrl;
         return;
@@ -130,7 +136,7 @@ let userClickedPosition = null; // 记录用户点击的位置
 let shortcutHintTimeout = null; // 用于控制快捷键提示显示时间
 let adFilteringEnabled = true; // 默认开启广告过滤
 // ===== 多机制广告过滤（js/ad-filter.js 共享引擎）运行态 =====
-let adAutoSkipEnabled = false;  // 低置信度可疑区域播放时自动 seek 跳过（默认关，设置可开）
+let adAutoSkipEnabled = true;   // 低置信度可疑区域播放时自动 seek 跳过（默认开启，仅在设置里显式关闭后为 false）
 let adSkipRegions = null;       // 当前档位可疑区域 [{start,end,reason,confidence}]（输出时间轴坐标）
 let adSkipToastShown = false;   // 本集是否已弹过剔除摘要
 let adSkipLastAt = 0;           // 上次自动跳过的 performance.now()（1s 冷却防 seek 循环）
@@ -179,7 +185,11 @@ let tierProbeToken = 0; // 探测竞态令牌：换集/换源后旧探测结果�
 let tierSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加探测档位清晰度菜单
 let speedSettingsMenuAdded = false; // 设置面板（齿轮）是否已添加长按倍速/区域与双击快退快进秒数菜单
 let tierProbeInfo = null; // 最近一次探测结果摘要 { host, probed, trials, real }（面板透出探测透明度）
-const tierZeroToastHosts = new Set(); // 本页会话内已弹过"0 档可用"提示的源主机（避免每集重复打扰）
+// ===== 实测画质回写（真实解码分辨率按 source_id 落库，供首页/收藏/影院卡片读取）=====
+const MEASURED_QUALITY_STORAGE = 'wdtvMeasuredQuality'; // 与 app.js / cinema.js 约定一致
+const MEASURED_QUALITY_MAX = 300;   // 最多保留的剧集条目数（按 ts 淘汰最旧）
+let measuredQualityWritten = false; // 当前 URL 是否已回写过实测画质（换集/换源后重置）
+let measuredQualityTimer = 0;       // 2s 复查兜底 timer
 let longPressBoostActive = false; // 长按临时倍速进行中（临时速度不写入全局记忆）
 // 通用卡顿降速保护：seek 跳到未缓冲区/加载卡顿（waiting）/换集起播时倍速>1 则降为 1x，
 // 恢复纯由已缓存媒体秒数判定（无时间兜底，跨源分片时长差异免疫）：后 12 秒已缓存 →
@@ -378,8 +388,18 @@ function initializePageContent() {
 
     // 获取广告过滤设置
     adFilteringEnabled = localStorage.getItem(PLAYER_CONFIG.adFilteringStorage) !== 'false'; // 默认为true
-    // 广告自动跳过（低置信度可疑区域进入时 seek 跳走）：默认关
-    adAutoSkipEnabled = localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) === 'true';
+    // 广告自动跳过（低置信度可疑区域进入时 seek 跳走）：默认开启，无存储值/true 均视为开启。
+    // 旧版本首页会强制写入 'false'：用与 app.js 相同的一次性迁移键把历史默认值改为开启。
+    try {
+        if (!localStorage.getItem('wdtvAdAutoSkipDefaultMigrated_v1')) {
+            if (localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) === null
+                || localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) === 'false') {
+                localStorage.setItem(PLAYER_CONFIG.adAutoSkipStorage, 'true');
+            }
+            localStorage.setItem('wdtvAdAutoSkipDefaultMigrated_v1', 'true');
+        }
+    } catch (e) { /* 存储不可用时按默认开启处理 */ }
+    adAutoSkipEnabled = localStorage.getItem(PLAYER_CONFIG.adAutoSkipStorage) !== 'false';
     // 片头片尾跳过（播放器内单开关，默认开启）：与「广告自动跳过」相互独立，
     // 但共用 adAutoSkipCheck 的 1s 冷却 / isUserSeeking 避让 / 共看 guest 避让，杜绝双 seek 循环。
     wdtvRefreshSkipMarksState();
@@ -472,6 +492,7 @@ function initializePageContent() {
             syntheticTiers = [];
             tierProbeInfo = null;
             tierProbeToken++;
+            measuredQualityWritten = false; // 同页换源：重置实测画质回写标志
             qualitySwapSeek = null;
             videoHasEnded = false;
             nextManifestPrefetched = false;
@@ -860,6 +881,75 @@ function updateResolutionBadgeFromVideo() {
     }
 }
 
+// ===== 实测画质回写 =====
+// 从 URL 取 source / id（与首页/收藏约定的 `${source}_${id}` 键一致），缺一不记录
+function wdtvMeasuredQualityTarget() {
+    try {
+        const params = new URLSearchParams(location.search);
+        const source = params.get('source') || '';
+        const id = params.get('id') || '';
+        if (!source || !id) return null;
+        return { source: source, id: id, key: source + '_' + id };
+    } catch (e) {
+        return null;
+    }
+}
+
+// 记录实测分辨率：localStorage 键 `${source}_${id}`，值 {height, ts}；按 ts 保留最近 300 条
+function wdtvWriteMeasuredQuality(height) {
+    const target = wdtvMeasuredQualityTarget();
+    if (!target || !(height > 0)) return;
+
+    try {
+        let map = {};
+        try {
+            const parsed = JSON.parse(localStorage.getItem(MEASURED_QUALITY_STORAGE) || '{}');
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) map = parsed;
+        } catch (e) { map = {}; } // 坏数据：重建
+        map[target.key] = { height: height, ts: Date.now() };
+        const keys = Object.keys(map);
+        if (keys.length > MEASURED_QUALITY_MAX) {
+            const ordered = keys.map(function (k) {
+                const ent = map[k];
+                const ts = (ent && typeof ent === 'object') ? (Number(ent.ts) || 0) : 0;
+                return { k: k, ts: ts };
+            }).sort(function (a, b) { return a.ts - b.ts; });
+            const drop = ordered.length - MEASURED_QUALITY_MAX;
+            for (let i = 0; i < drop; i++) delete map[ordered[i].k];
+        }
+        localStorage.setItem(MEASURED_QUALITY_STORAGE, JSON.stringify(map));
+    } catch (e) { /* 存储不可用/超额：静默，不影响播放 */ }
+
+    try {
+        window.dispatchEvent(new CustomEvent('wdtv-quality-measured', {
+            detail: { source: target.source, id: target.id, height: height }
+        }));
+    } catch (e) { }
+}
+
+// 读取 video 元素真实解码分辨率；height>0 才回写，同一 URL 只写一次
+function wdtvMeasureCurrentQuality() {
+    try {
+        if (measuredQualityWritten) return;
+        if (!art || !art.video) return;
+        const h = art.video.videoHeight;
+        if (!(h > 0)) return;
+        measuredQualityWritten = true;
+        wdtvWriteMeasuredQuality(h);
+    } catch (e) { }
+}
+
+// 立即尝试 + 2s 后复查兜底（部分源 ready/loadedmetadata 时 videoHeight 仍为 0）
+function wdtvScheduleMeasuredQuality() {
+    wdtvMeasureCurrentQuality();
+    if (measuredQualityWritten) return;
+    if (measuredQualityTimer) clearTimeout(measuredQualityTimer);
+    measuredQualityTimer = setTimeout(function () {
+        measuredQualityTimer = 0;
+        wdtvMeasureCurrentQuality();
+    }, 2000);
+}
+
 // 让播放器容器尺寸贴合视频实际宽高比，消除多余黑边（全屏时交还 CSS 接管）
 // 视频元数据未知时按最常见的 16:9 给出紧凑占位，避免加载前出现全宽大黑块
 function applyVideoFitSize() {
@@ -1150,12 +1240,6 @@ async function maybeStartTierDiscovery() {
         tierProbeInfo = { host: info.host, probed: tokens.length, trials: trialCount, real: syntheticTiers.length };
 
         refreshQualityUiForTiers();
-
-        // 0 档可用的透出：每源主机每次会话只弹一次，详情看控制台 [tier] 日志
-        if (!syntheticTiers.length && !tierZeroToastHosts.has(info.host)) {
-            tierZeroToastHosts.add(info.host);
-            showToast(`同级目录已探测 ${tokens.length} 个，未发现可用清晰度档位`, 'error');
-        }
 
         // 始终最高画质策略：探测到比当前档更高的档位时自动切过去（整条 URL 换源重建，进度无缝恢复）。
         // 用户记忆档位仅在它本身就是当前可用的最高档时才延续，避免低档记忆把画质压下去；
@@ -1971,6 +2055,9 @@ async function initPlayer(videoUrl) {
     }
     // 本次实例代次：旧实例（换集 / 换源后已 destroy）残留的 error 事件不应弹错误层。
     const playerGeneration = ++wdtvPlayerGeneration;
+    // 换集/换源/换档：重置实测画质回写标志，新 URL 需重新测量
+    measuredQualityWritten = false;
+    if (measuredQualityTimer) { clearTimeout(measuredQualityTimer); measuredQualityTimer = 0; }
     videoUrl = await resolvePlayableUrl(videoUrl);
 
     // 重建播放器前中止旧集的后台缓存下载（换源/换集由 customType.m3u8 重新拉起）
@@ -2448,6 +2535,8 @@ async function initPlayer(videoUrl) {
         hideControls();
         // 批次4 A7-b：非 m3u8（customType 不走）时也确保进度保存监听挂上，WeakSet 幂等
         try { bindProgressListeners(art.video); } catch (e) { }
+        // 实测画质回写：真实解码分辨率就绪即记录（2s 复查兜底）
+        try { wdtvScheduleMeasuredQuality(); } catch (e) { }
     });
 
     // 全屏模式处理
@@ -2483,6 +2572,9 @@ async function initPlayer(videoUrl) {
         ensureResolutionBadge();
         updateResolutionBadgeFromVideo();
 
+        // 实测画质回写：以 video 元素真实解码分辨率为准（同一 URL 只写一次）
+        try { wdtvScheduleMeasuredQuality(); } catch (e) { }
+
         // 清晰度目录切换后的播放位置恢复（换档是整条 URL 重建播放器）
         // 批次4：走程序自动 seek 入口，避免共看把换档恢复当成用户拖动广播
         if (qualitySwapSeek != null) {
@@ -2516,7 +2608,10 @@ async function initPlayer(videoUrl) {
         try { tryRestoreProgress(); } catch (e) { }
         try { wdtvRenderSkipBand(); } catch (e) { }
     });
-    art.on('video:canplay', function () { try { tryRestoreProgress(); } catch (e) { } });
+    art.on('video:canplay', function () {
+        try { tryRestoreProgress(); } catch (e) { }
+        try { wdtvScheduleMeasuredQuality(); } catch (e) { }
+    });
     // 全屏 / 窗口尺寸变化时进度条宽度改变，色带用百分比定位，仍需重绘确保容器存在
     art.on('fullscreen', function () { try { setTimeout(wdtvRenderSkipBand, 120); } catch (e) { } });
     // resize / fullscreenchange 绑在全局，initPlayer 换集重建时不能重复挂载；
@@ -4274,6 +4369,7 @@ function playEpisode(index) {
     syntheticTiers = [];           // 新集重置探测档位（loadedmetadata 后重新探测）
     tierProbeInfo = null;          // 新集重置探测摘要（面板提示用）
     tierProbeToken++;              // 作废上一集仍在飞行中的探测
+    measuredQualityWritten = false; // 新集重置实测画质回写标志
     qualitySwapSeek = null;        // 换集不继承换档恢复位置
     videoHasEnded = false; // 重置视频结束标志
     nextManifestPrefetched = false; // 重置下一集预取标志，新集临近结尾时再预取其下一集

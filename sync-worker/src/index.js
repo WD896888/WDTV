@@ -13,6 +13,7 @@ const CHAT_TAIL = 100; // 聊天历史留存条数
 const IDLE_TTL_MS = 2 * 60 * 60 * 1000; // 房间空闲回收 TTL
 const CHAT_RATE = 10; // 聊天限速条数（每窗口每 uid）
 const CHAT_WINDOW_MS = 5000; // 聊天限速窗口
+const CHAT_QUOTE_MAX = 120; // 引用摘要最大长度（与本地 server.mjs 一致）
 const ACTIVITY_WRITE_MS = 60000; // lastActivity 落盘节流间隔
 
 // Response 构造（统一 JSON 输出）
@@ -87,6 +88,21 @@ function wsAtt(ws) {
 function wsUid(ws) {
   const a = wsAtt(ws);
   return a && a.uid ? a.uid : '';
+}
+
+// 聊天引用块校验/裁剪（与本地 server.mjs roomNormalizeQuote 同实现）：{seq, uid, name, text}
+// text 限 120 字；空文本视为无引用
+function normalizeQuote(q) {
+  if (!q || typeof q !== 'object') return null;
+  const text = String(q.text == null ? '' : q.text).slice(0, CHAT_QUOTE_MAX);
+  if (!text) return null;
+  const seq = typeof q.seq === 'number' ? q.seq : Number(q.seq) || 0;
+  return {
+    seq,
+    uid: q.uid == null ? '' : String(q.uid).slice(0, 64),
+    name: String(q.name == null ? '' : q.name).slice(0, 32),
+    text,
+  };
 }
 
 // 默认房间状态（创建 / 被回收后凭有效 token 重入时初始化）
@@ -404,11 +420,33 @@ export class WatchRoom {
         log.push(now);
         // 时间戳字段用 ts：协议中 t 是消息类型，避免 spread 覆盖
         const rec = { uid, name, kind: 'user', text, ts: now, seq: ++this.chatSeq };
+        const quote = normalizeQuote(m.quote); // 引用块：校验/裁剪后随消息持久化
+        if (quote) rec.quote = quote;
         this.chatTail.push(rec);
         while (this.chatTail.length > CHAT_TAIL) this.chatTail.shift();
         this.persist('chatTail', this.chatTail);
         this.broadcast({ t: 'chat', ...rec }, ws);
+        // 发送者单独回执：仅回 cid/seq，不广播、不入历史
+        const cid = typeof m.cid === 'string' ? m.cid.slice(0, 64) : '';
+        if (cid) this.send(ws, { t: 'chatAck', cid, seq: rec.seq });
         return;
+      }
+      // ---- 撤回：仅本人可撤回，命中后置 recalled 并持久化，广播给全房（含发送者）----
+      case 'recall': {
+        const target = typeof m.seq === 'number' ? m.seq : Number(m.seq);
+        if (!target) return;
+        for (let i = this.chatTail.length - 1; i >= 0; i--) {
+          const rec = this.chatTail[i];
+          if (!rec || rec.seq !== target) continue;
+          if (String(rec.uid) !== String(uid)) return; // 非本人：静默忽略
+          rec.recalled = true;
+          rec.text = '';
+          delete rec.quote;
+          this.persist('chatTail', this.chatTail);
+          this.broadcast({ t: 'recall', seq: target, uid: rec.uid }, null);
+          return;
+        }
+        return; // 找不到：静默忽略
       }
       // ---- 画布笔迹：同 id 增量合并 + 双上限修剪 + 持久化 + 转发（mode: draw|erase 橡皮擦）----
       case 'stroke': {

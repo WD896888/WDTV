@@ -102,6 +102,10 @@
     m2Timer: 0,           // M2 覆盖率轮询（3s，值变化才重渲染）
     chatLog: [],          // 聊天记录（重建 DOM 时回放）
     seenSeq: {},          // 服务端 seq 去重（断线重连历史回放不重复）
+    quote: null,          // 待引用消息 {seq, uid, name, text}（输入框上方预览）
+    chatMenu: null,       // 消息长按/右键菜单 DOM（懒创建）
+    menuItem: null,       // 当前菜单指向的消息 {text, seq, uid, name, mine}
+    restoreTimer: 0,      // 首帧恢复占位兜底计时（防止 wp-restoring 永久隐藏页面）
     roomSig: '',         // 房内主区渲染签名（相同则跳过，避免重渲染丢状态）
     lockNotified: false, // 纯观看锁定提示去重
     restoreWatch: false, // 刷新/后台归来恢复中：连接期间保持观影模式布局（消除两段式闪变）
@@ -234,6 +238,23 @@
     if (ui.body !== ui.cardBody) { ui.body = ui.cardBody; ui.main = null; ui.msgs = null; ui.roomSig = ''; }
   }
 
+  // 首帧恢复占位（html.wp-restoring 由 player.html 极早内联脚本添加）：
+  // 移除只在这里做——进房成功、恢复失败/退出、或兜底超时后页面必须恢复可见
+  function clearRestoring() {
+    try { document.documentElement.classList.remove('wp-restoring'); } catch (e) { }
+    try { document.body.classList.remove('wp-restoring'); } catch (e) { }
+    if (ui.restoreTimer) { clearTimeout(ui.restoreTimer); ui.restoreTimer = 0; }
+  }
+
+  // 恢复兜底：连接迟迟未成功时解除占位，避免页面被永久隐藏（连接仍在后台重试）
+  function armRestoreGuard() {
+    if (ui.restoreTimer) clearTimeout(ui.restoreTimer);
+    ui.restoreTimer = setTimeout(function () {
+      ui.restoreTimer = 0;
+      clearRestoring();
+    }, 15000);
+  }
+
   // 观影模式布局切换：connected 后 body.wp-watch-mode 生效（剧集按钮行保留原位、
   // 共同观影 UI 呈现为页面右栏）并收起创建/加入抽屉（功能已由右栏承载，抽屉
   // 若不关闭会残留上一视图——曾致"一直显示房间码+连接中"）；正常观影恢复原版布局
@@ -242,6 +263,7 @@
     // html 同步类：观影模式（桌面）锁定页面滚动（css html.wp-watch-mode）
     try { document.documentElement.classList.toggle('wp-watch-mode', !!inRoom); } catch (e) { }
     if (inRoom) {
+      if (ui.panel) ui.panel.hidden = false; // 恢复中同样保持面板容器可见
       closePanel(); // 抽屉使命完成（create/join 已成功），关闭防残留旧视图
       // 同步清空抽屉内残留的连接中/旧视图，杜绝任何路径重开抽屉时闪现过期内容
       if (ui.drawerBody && ui.body === ui.drawerBody) ui.drawerBody.innerHTML = '';
@@ -261,6 +283,10 @@
       // 退出观影模式时收起可能开着的剧集弹窗（弹窗仅观影模式下有样式，收起防残留）
       try { if (typeof closeEpisodesModal === 'function') closeEpisodesModal(); } catch (e) { }
     }
+    // 首帧恢复占位移除：已连上，或已判定退出/失败（无恢复标记）时
+    var connected = false;
+    try { var rs0 = wp() ? wp().roomState() : null; connected = !!(rs0 && rs0.state === 'connected'); } catch (e) { }
+    if (connected || !ui.restoreWatch) clearRestoring();
   }
 
   // 总渲染分发：error / idle / connecting → 抽屉（正常模式）；room → 内嵌卡片（观影模式）
@@ -573,8 +599,12 @@
         '<div id="wpMain" class="wp-main"></div>' +
         '<div class="wp-chat">' +
           '<div id="wpMsgs" class="wp-msgs"></div>' +
+          '<div id="wpQuotePrev" class="wp-quote-prev" hidden>' +
+            '<span class="wp-quote-prev-text" id="wpQuotePrevText"></span>' +
+            '<button type="button" class="wp-quote-cancel" id="wpQuoteCancel" title="取消引用" aria-label="取消引用">×</button>' +
+          '</div>' +
           '<div class="wp-chat-input-row">' +
-            '<input id="wpChatInput" class="wp-chat-input" type="text" maxlength="500" placeholder="说点什么...（回车发送）">' +
+            '<input id="wpChatInput" class="wp-chat-input" type="text" maxlength="500" placeholder="说点什么...">' +
             '<button type="button" class="wp-send" id="wpSend" aria-label="发送" title="发送">' + SEND_ICON + '</button>' +
           '</div>' +
         '</div>';
@@ -584,11 +614,14 @@
       $('#wpChatInput', ui.body).addEventListener('keydown', function (e) {
         if (e.key === 'Enter') sendChatMsg();
       });
+      var qc = $('#wpQuoteCancel', ui.body);
+      if (qc) qc.addEventListener('click', function () { ui.quote = null; syncQuotePreview(); });
+      bindMsgEvents(ui.msgs); // 长按/右键消息菜单（DOM 随壳重建，仅绑定一次）
       mountHeadTools(); // 工具条挂到头部「共同观影」标题同一行
       ui.roomSig = ''; // 强制主区重渲染
-      // 回放既有聊天记录
-      for (var i = 0; i < ui.chatLog.length; i++) appendMsgDom(ui.chatLog[i]);
-      scrollChat();
+      // 回放既有聊天记录（引用预览同步重建）
+      renderChat();
+      syncQuotePreview();
     }
     renderMain(rs);
     syncShareUI(rs);
@@ -1357,14 +1390,89 @@
   }
 
   // ============================================================
-  // 聊天：本地乐观渲染 + seq 去重 + 系统行
+  // 聊天：本地乐观渲染 + seq 去重 + 引用 + 撤回 + 系统行
   // ============================================================
   function resetChat() {
     ui.chatLog = [];
     ui.seenSeq = {};
     ui.unread = 0;
+    ui.quote = null;
+    ui.menuItem = null;
+    closeChatMenu();
     updateBadge();
+    syncQuotePreview();
     if (ui.msgs && ui.body && ui.body.contains(ui.msgs)) ui.msgs.innerHTML = '';
+  }
+
+  // 是否贴近底部（距底 ≤40px）：向上阅读历史时不强制跟随新消息
+  function isNearBottom() {
+    if (!ui.msgs || !ui.body || !ui.body.contains(ui.msgs)) return true;
+    return ui.msgs.scrollHeight - ui.msgs.scrollTop - ui.msgs.clientHeight <= 40;
+  }
+
+  // 仅在调用方已判定「原本接近底部」时调用
+  function scrollChat() {
+    if (ui.msgs && ui.body && ui.body.contains(ui.msgs)) {
+      ui.msgs.scrollTop = ui.msgs.scrollHeight;
+    }
+  }
+
+  // 清空消息区并按 chatLog 回放（撤回/引用更新后重渲染），保持滚动位置合理
+  function renderChat() {
+    if (!ui.msgs || !ui.body || !ui.body.contains(ui.msgs)) return;
+    var near = isNearBottom();
+    var prevTop = ui.msgs.scrollTop;
+    var prevHeight = ui.msgs.scrollHeight;
+    ui.msgs.innerHTML = '';
+    for (var i = 0; i < ui.chatLog.length; i++) appendMsgDom(ui.chatLog[i]);
+    if (near) ui.msgs.scrollTop = ui.msgs.scrollHeight;
+    else ui.msgs.scrollTop = Math.max(0, prevTop + (ui.msgs.scrollHeight - prevHeight));
+  }
+
+  // 引用块规范化（text 限 120 字，与服务端一致）
+  function normalizeQuote(q) {
+    if (!q || typeof q !== 'object') return null;
+    var text = String(q.text == null ? '' : q.text).slice(0, 120);
+    if (!text) return null;
+    return {
+      seq: typeof q.seq === 'number' ? q.seq : null,
+      uid: q.uid,
+      name: String(q.name == null ? '' : q.name).slice(0, 32),
+      text: text
+    };
+  }
+
+  function sameQuote(a, b) {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    return String(a.text || '') === String(b.text || '');
+  }
+
+  function quoteName(q) {
+    if (!q) return '';
+    var w = wp();
+    if (q.uid != null && w && w.uid() != null && String(q.uid) === String(w.uid())) return '我';
+    return q.name || '对方';
+  }
+
+  function syncQuotePreview() {
+    if (!ui.body) return;
+    var box = $('#wpQuotePrev', ui.body);
+    if (!box) return;
+    if (!ui.quote) { box.hidden = true; return; }
+    var t = $('#wpQuotePrevText', box);
+    if (t) {
+      var txt = String(ui.quote.text || '');
+      t.innerHTML = '引用 <b>' + esc(quoteName(ui.quote)) + '</b>：' +
+        esc(txt.length > 60 ? txt.slice(0, 60) + '…' : txt);
+    }
+    box.hidden = false;
+  }
+
+  function newCid() {
+    var u = 'c';
+    try { var w = wp(); if (w && w.uid() != null) u = String(w.uid()); } catch (e) { }
+    return u + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   }
 
   function sendChatMsg() {
@@ -1373,42 +1481,70 @@
     var text = input.value.trim().slice(0, 500);
     if (!text) return;
     var w = wp();
+    var quote = ui.quote
+      ? { seq: ui.quote.seq, uid: ui.quote.uid, name: ui.quote.name, text: ui.quote.text }
+      : null;
+    var cid = newCid();
     var ok = false;
-    try { ok = w.sendChat(text); } catch (e) { }
+    try { ok = w.sendChat(text, quote, cid); } catch (e) { }
     if (!ok) { toast('发送失败：未加入房间'); return; }
-    // 服务端不回显本人消息（闸3）：本地乐观渲染，重连历史回放时按文本匹配合并
-    var item = { uid: w.uid(), name: w.name() || '我', kind: 'user', text: text, t: Date.now(), optimistic: true, matched: false };
+    // 服务端不回显本人消息（闸3）：本地乐观渲染，seq 由 chatAck 回填
+    var item = {
+      uid: w.uid(), name: w.name() || '我', kind: 'user', text: text, quote: quote,
+      cid: cid, t: Date.now(), ts: Date.now(), optimistic: true, matched: false
+    };
+    var stick = isNearBottom();
     ui.chatLog.push(item);
     appendMsgDom(item);
-    scrollChat();
+    if (stick) scrollChat();
     input.value = '';
+    ui.quote = null;
+    syncQuotePreview();
+    try { input.focus(); } catch (e) { }
   }
 
   function onChatMsg(m) {
-    if (!m || typeof m.text !== 'string') return;
+    if (!m) return;
+    if (m.recalled) { applyRecall(m.seq, m.uid); return; } // 历史回放中的已撤回消息
+    if (typeof m.text !== 'string') return;
     var w = wp();
     var myUid = w ? w.uid() : null;
+    var mine = myUid != null && m.uid !== undefined && String(m.uid) === String(myUid);
     if (m.seq !== undefined && m.seq !== null) {
       if (ui.seenSeq[m.seq]) return;
       ui.seenSeq[m.seq] = true;
-    }
-    var mine = myUid != null && m.uid !== undefined && String(m.uid) === String(myUid);
-    if (mine && m.kind !== 'system') {
-      // 本人消息只会来自历史回放：与乐观渲染的同文本消息合并，避免重复
-      for (var i = 0; i < ui.chatLog.length; i++) {
-        var it = ui.chatLog[i];
-        if (it.optimistic && !it.matched && it.text === m.text) {
-          it.matched = true;
-          it.seq = m.seq;
-          if (m.t) it.t = m.t;
+      // 已有同 seq 条目（乐观消息已被 ack 回填）：只更新不重复插入
+      for (var s = 0; s < ui.chatLog.length; s++) {
+        var old = ui.chatLog[s];
+        if (old && old.seq != null && String(old.seq) === String(m.seq)) {
+          old.matched = true;
+          if (m.ts || m.t) old.t = m.ts || m.t;
           return;
         }
       }
     }
-    var item = { uid: m.uid, name: m.name, kind: m.kind === 'system' ? 'system' : 'user', text: m.text, t: m.t };
+    var quote = normalizeQuote(m.quote);
+    if (mine && m.kind !== 'system') {
+      // 本人消息只会来自历史回放：与乐观渲染的同文本消息合并，避免重复
+      for (var i = 0; i < ui.chatLog.length; i++) {
+        var it = ui.chatLog[i];
+        if (it.optimistic && !it.matched && it.text === m.text && sameQuote(it.quote, quote)) {
+          it.matched = true;
+          it.seq = m.seq;
+          it.quote = quote;
+          if (m.ts || m.t) it.t = m.ts || m.t;
+          return;
+        }
+      }
+    }
+    var item = {
+      uid: m.uid, name: m.name, kind: m.kind === 'system' ? 'system' : 'user',
+      text: m.text, t: m.ts || m.t, ts: m.ts, seq: m.seq, quote: quote
+    };
+    var stick = isNearBottom();
     ui.chatLog.push(item);
     appendMsgDom(item);
-    scrollChat();
+    if (stick) scrollChat();
     // 抽屉收起（正常模式）时累计未读；观影模式聊天常驻内嵌面板，无需未读
     if (!ui.open && !document.body.classList.contains('wp-watch-mode') && !mine && item.kind === 'user') {
       ui.unread++;
@@ -1416,40 +1552,240 @@
     }
   }
 
+  // chatAck：cid → seq 回填（乐观消息获得服务端序号，可撤回/去重）
+  function onChatAck(p) {
+    if (!p || !p.cid || p.seq == null) return;
+    for (var i = 0; i < ui.chatLog.length; i++) {
+      var it = ui.chatLog[i];
+      if (it && it.cid && it.cid === p.cid) {
+        it.seq = p.seq;
+        it.matched = true;
+      }
+    }
+    if (!ui.msgs || !ui.body || !ui.body.contains(ui.msgs)) return;
+    var els = ui.msgs.querySelectorAll('.wp-msg');
+    for (var j = 0; j < els.length; j++) {
+      if (els[j].getAttribute('data-cid') === p.cid) {
+        els[j].setAttribute('data-seq', String(p.seq));
+        break;
+      }
+    }
+  }
+
+  // 撤回广播：更新 chatLog 并重渲染消息区（撤回后呈现系统行）
+  function applyRecall(seq, uid) {
+    if (seq === undefined || seq === null) return;
+    for (var i = 0; i < ui.chatLog.length; i++) {
+      var it = ui.chatLog[i];
+      if (!it || it.seq == null || String(it.seq) !== String(seq)) continue;
+      if (it.recalled) return;
+      it.recalled = true;
+      it.text = '';
+      it.quote = null;
+      if (uid !== undefined) it.uid = uid;
+      renderChat();
+      return;
+    }
+    // 历史中无该消息（已被裁剪/离线期间撤回）：补一条系统行，撤回提示不丢
+    ui.chatLog.push({ kind: 'user', uid: uid, seq: seq, recalled: true, text: '', t: Date.now() });
+    renderChat();
+  }
+
   // 本地系统行（加入/离开，presence 事件驱动；服务端系统消息走 chat kind=system）
   function pushSystem(text) {
     var item = { kind: 'system-local', text: text, t: Date.now() };
+    var stick = isNearBottom();
     ui.chatLog.push(item);
     appendMsgDom(item);
-    scrollChat();
+    if (stick) scrollChat();
   }
 
   function msgHtml(m) {
+    if (m.recalled) {
+      var wR = wp();
+      var mineR = wR && wR.uid() != null && m.uid !== undefined && String(m.uid) === String(wR.uid());
+      return '<div class="wp-msg wp-msg-sys wp-msg-recalled"><span>' +
+        (mineR ? '你' : '对方') + '撤回了一条消息</span></div>';
+    }
     if (m.kind === 'system' || m.kind === 'system-local') {
       return '<div class="wp-msg wp-msg-sys"><span>' + esc(m.text) + '</span></div>';
     }
     var w = wp();
     var mine = w && w.uid() != null && m.uid !== undefined && String(m.uid) === String(w.uid());
     var name = m.name || (mine ? '我' : '对方');
-    return '<div class="wp-msg ' + (mine ? 'me' : 'peer') + '">' +
+    var attrs = ' data-mine="' + (mine ? '1' : '0') + '"';
+    if (m.seq !== undefined && m.seq !== null) attrs += ' data-seq="' + esc(m.seq) + '"';
+    if (m.cid) attrs += ' data-cid="' + esc(m.cid) + '"';
+    var q = '';
+    if (m.quote && m.quote.text) {
+      q = '<div class="wp-quote">' +
+        '<span class="wp-quote-name">' + esc(quoteName(m.quote)) + '</span>' +
+        '<span class="wp-quote-text">' + esc(m.quote.text) + '</span>' +
+      '</div>';
+    }
+    return '<div class="wp-msg ' + (mine ? 'me' : 'peer') + '"' + attrs + '>' +
       '<span class="wp-mavatar" style="background:' + hashColor(m.uid) + '">' + esc(firstChar(name)) + '</span>' +
       '<div class="wp-msg-col">' +
         '<span class="wp-msg-meta">' + esc(name) + ' ' + esc(fmtTime(m.ts || m.t)) + '</span>' +
-        '<div class="wp-bubble">' + esc(m.text) + '</div>' +
+        '<div class="wp-bubble">' + q + '<span class="wp-bubble-text">' + esc(m.text) + '</span></div>' +
       '</div>' +
     '</div>';
   }
 
   function appendMsgDom(m) {
-    if (!ui.msgs || !ui.body || !ui.body.contains(ui.msgs)) return; // 壳未建：仅存 chatLog，稍后回放
+    if (!ui.msgs || !ui.body || !ui.body.contains(ui.msgs)) return null; // 壳未建：仅存 chatLog，稍后回放
     var d = document.createElement('div');
     d.innerHTML = msgHtml(m);
-    if (d.firstChild) ui.msgs.appendChild(d.firstChild);
+    var el = d.firstChild;
+    if (el) ui.msgs.appendChild(el);
+    return el || null;
   }
 
-  function scrollChat() {
-    if (ui.msgs && ui.body && ui.body.contains(ui.msgs)) {
-      ui.msgs.scrollTop = ui.msgs.scrollHeight;
+  // ============================================================
+  // 消息菜单（长按 500ms / 右键）：复制 / 引用 / 撤回
+  // ============================================================
+  var msgPress = null; // 长按计时 {x, y, el, timer}
+
+  function cancelMsgPress() {
+    if (msgPress) {
+      if (msgPress.timer) clearTimeout(msgPress.timer);
+      msgPress = null;
+    }
+  }
+
+  function bindMsgEvents(el) {
+    if (!el) return;
+    el.addEventListener('pointerdown', onMsgPointerDown);
+    el.addEventListener('pointermove', onMsgPointerMove);
+    el.addEventListener('pointerup', cancelMsgPress);
+    el.addEventListener('pointercancel', cancelMsgPress);
+    el.addEventListener('contextmenu', function (e) {
+      var item = e.target && e.target.closest ? e.target.closest('.wp-msg') : null;
+      if (!item || item.classList.contains('wp-msg-sys')) return;
+      e.preventDefault(); // 桌面右键 / 移动端系统长按菜单统一接管
+      cancelMsgPress();
+      openMsgMenu(item, e.clientX, e.clientY);
+    });
+  }
+
+  function onMsgPointerDown(e) {
+    if (e.pointerType === 'mouse') return; // 桌面走右键菜单，避免与拖选冲突
+    var el = e.target && e.target.closest ? e.target.closest('.wp-msg') : null;
+    if (!el || el.classList.contains('wp-msg-sys')) return;
+    cancelMsgPress();
+    msgPress = {
+      x: e.clientX, y: e.clientY, el: el,
+      timer: setTimeout(function () {
+        var it = msgPress;
+        msgPress = null;
+        if (it) openMsgMenu(it.el, it.x, it.y);
+      }, 500)
+    };
+  }
+
+  function onMsgPointerMove(e) {
+    if (!msgPress) return;
+    if (Math.abs(e.clientX - msgPress.x) > 10 || Math.abs(e.clientY - msgPress.y) > 10) cancelMsgPress();
+  }
+
+  function ensureChatMenu() {
+    if (ui.chatMenu) return ui.chatMenu;
+    var menu = document.createElement('div');
+    menu.className = 'wp-msg-menu';
+    menu.hidden = true;
+    menu.innerHTML =
+      '<button type="button" data-act="copy">复制</button>' +
+      '<button type="button" data-act="quote">引用</button>' +
+      '<button type="button" data-act="recall" hidden>撤回</button>';
+    menu.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('button[data-act]') : null;
+      if (!btn) return;
+      var act = btn.getAttribute('data-act');
+      var it = ui.menuItem;
+      closeChatMenu();
+      if (!it) return;
+      if (act === 'copy') copyText(it.text);
+      else if (act === 'quote') setQuote(it);
+      else if (act === 'recall') doRecall(it);
+    });
+    document.body.appendChild(menu);
+    // 外部点击/滚动/缩放关闭（捕获阶段先于其它点击处理）
+    document.addEventListener('pointerdown', function (e) {
+      if (!ui.chatMenu || ui.chatMenu.hidden) return;
+      if (ui.chatMenu.contains(e.target)) return;
+      closeChatMenu();
+    }, true);
+    document.addEventListener('scroll', closeChatMenu, true);
+    window.addEventListener('resize', closeChatMenu);
+    ui.chatMenu = menu;
+    return menu;
+  }
+
+  function findMsgItem(el) {
+    var seq = el.getAttribute('data-seq');
+    var cid = el.getAttribute('data-cid');
+    for (var i = ui.chatLog.length - 1; i >= 0; i--) {
+      var it = ui.chatLog[i];
+      if (!it || it.recalled) continue;
+      if (seq != null && it.seq != null && String(it.seq) === String(seq)) return it;
+      if (cid && it.cid && it.cid === cid) return it;
+    }
+    return null;
+  }
+
+  function openMsgMenu(el, x, y) {
+    var it = findMsgItem(el);
+    if (!it || !it.text) return;
+    var w = wp();
+    var mine = !!(w && w.uid() != null && it.uid !== undefined && String(it.uid) === String(w.uid()));
+    ui.menuItem = { text: it.text, seq: it.seq, uid: it.uid, name: it.name, mine: mine };
+    var menu = ensureChatMenu();
+    var recallBtn = menu.querySelector('button[data-act="recall"]');
+    if (recallBtn) recallBtn.hidden = !(mine && it.seq != null);
+    menu.hidden = false;
+    menu.style.left = '0px';
+    menu.style.top = '0px';
+    var r = menu.getBoundingClientRect();
+    var pad = 8;
+    var left = Math.min(Math.max(pad, x - r.width / 2), Math.max(pad, window.innerWidth - r.width - pad));
+    var top = y + 12;
+    if (top + r.height > window.innerHeight - pad) top = y - r.height - 12;
+    top = Math.max(pad, top);
+    menu.style.left = Math.round(left) + 'px';
+    menu.style.top = Math.round(top) + 'px';
+  }
+
+  function closeChatMenu() {
+    if (ui.chatMenu && !ui.chatMenu.hidden) ui.chatMenu.hidden = true;
+  }
+
+  function setQuote(it) {
+    ui.quote = {
+      seq: it.seq != null ? it.seq : null,
+      uid: it.uid,
+      name: it.name || '对方',
+      text: String(it.text || '').slice(0, 120)
+    };
+    syncQuotePreview();
+    var input = $('#wpChatInput', ui.body);
+    if (input) { try { input.focus(); } catch (e) { } }
+  }
+
+  function doRecall(it) {
+    var w = wp();
+    if (!w || it.seq == null) return;
+    var ok = false;
+    try { ok = w.recallChat(it.seq); } catch (e) { }
+    if (!ok) toast('撤回失败，请检查网络后重试');
+  }
+
+  function copyText(text) {
+    var t = String(text == null ? '' : text);
+    var done = function () { toast('已复制'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(done, function () { fallbackCopy(t, done); });
+    } else {
+      fallbackCopy(t, done);
     }
   }
 
@@ -1480,6 +1816,51 @@
     } catch (e) {
       toast('复制失败，请手动复制：' + text);
     }
+  }
+
+  // 房间码双击 / 长按 600ms 复制：房间码 DOM 每次重渲染，事件委托到 document，
+  // 重进房间无需重绑；指针移动 >10px / 抬起 / 取消 / 滚动即放弃长按（不与消息长按冲突）
+  var codePress = null;
+
+  function findCodeEl(target) {
+    return target && target.closest ? target.closest('.wp-code') : null;
+  }
+
+  function cancelCodePress() {
+    if (codePress) {
+      if (codePress.timer) clearTimeout(codePress.timer);
+      codePress = null;
+    }
+  }
+
+  function bindRoomCodeCopy() {
+    document.addEventListener('pointerdown', function (e) {
+      var el = findCodeEl(e.target);
+      if (!el) return;
+      cancelCodePress();
+      codePress = {
+        x: e.clientX, y: e.clientY,
+        timer: setTimeout(function () {
+          var it = codePress;
+          codePress = null;
+          if (it) copyInvite(String(el.textContent || '').trim());
+        }, 600)
+      };
+    });
+    document.addEventListener('pointermove', function (e) {
+      if (!codePress) return;
+      if (Math.abs(e.clientX - codePress.x) > 10 || Math.abs(e.clientY - codePress.y) > 10) cancelCodePress();
+    }, true);
+    document.addEventListener('pointerup', cancelCodePress, true);
+    document.addEventListener('pointercancel', cancelCodePress, true);
+    document.addEventListener('scroll', cancelCodePress, true);
+    // 双击复制（桌面）：长按计时已在 pointerup 取消，不会重复触发
+    document.addEventListener('dblclick', function (e) {
+      var el = findCodeEl(e.target);
+      if (!el) return;
+      cancelCodePress();
+      copyInvite(String(el.textContent || '').trim());
+    }, true);
   }
 
   // ============================================================
@@ -1764,6 +2145,10 @@
       render();
     });
     w.on('chat', onChatMsg);
+    w.on('chatAck', onChatAck);
+    w.on('recall', function (p) {
+      if (p) applyRecall(p.seq, p.uid);
+    });
     w.on('ready', function () { ui.roomSig = ''; render(); });
     w.on('src', function (p) {
       if (p && p.video) ui.lastVideo = p.video;
@@ -1831,16 +2216,17 @@
       var m = /[?&]room=([A-Za-z0-9]+)/.exec(location.search);
       code = m ? m[1].toUpperCase() : '';
     } catch (e) { }
-    if (!/^[A-Z0-9]{6}$/.test(code)) return;
+    if (!/^[A-Z0-9]{6}$/.test(code)) { clearRestoring(); return; } // 无房间参数：不得残留恢复占位
     ui.prefillCode = code;
     var w = wp();
-    if (!w) return;
+    if (!w) { clearRestoring(); return; }
     var token = null;
     try { token = localStorage.getItem('wdtvWatchToken:' + code); } catch (e) { }
     if (token) {
       resetChat();
       w.setAutoSrc(true); // 房主 URL ?room= 选片归来：视频就绪后自动发起共看（guest 角色内部自动拦截）
       w.connect(code, token);
+      armRestoreGuard(); // 连接迟迟未成功时解除占位，避免页面被永久隐藏
       // 刷新/后台归来恢复：立刻进入观影模式布局，占位"恢复连接"提示——
       // 消除"先完整渲染普通界面 → 连上后剧集区/页脚/入口瞬间全部消失"的
       // 两段式闪变；连接成功后 renderRoom 会用真实房间 UI 覆盖占位，
@@ -1861,6 +2247,7 @@
             var cbtn = document.getElementById('wpRestoreCancel');
             if (cbtn) cbtn.addEventListener('click', function () {
               try { if (wp()) wp().leave(); } catch (e) { }
+              clearRestoring();
               render();
             });
           }
@@ -1871,7 +2258,10 @@
     // 嘉宾点击「加入」按钮会产生手势激活——这是浏览器 autoplay 放行的前提
     // （自动加入会让嘉宾全程无手势，播放被策略静默拒绝）。有 token 时不再展开：
     // 观影模式布局已占位，恢复成功直接呈现房间 UI，失败由错误视图自动展开抽屉
-    if (!token) openPanel();
+    if (!token) {
+      clearRestoring(); // 无本地凭证：不进恢复占位，普通界面必须可见
+      openPanel();
+    }
   }
 
   // ============================================================
@@ -1909,6 +2299,30 @@
   // 启动：订阅事件 + URL 恢复 + 入口按钮兜底挂载（player.js 未调用时保证可用）
   // ============================================================
   bindEvents();
+  bindRoomCodeCopy(); // 房间码双击/长按复制（document 委托，重渲染后仍生效）
+
+  // 移动端切回前台：若此前处于观影布局，先同步加回 wp-watch-mode 再渲染，
+  // 避免闪回普通界面；正在重连时保持观影布局与既有占位（连上/退出后由 apply 移除）
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    var w = wp();
+    var rs = w ? w.roomState() : null;
+    if (!rs || !rs.code) return;
+    var wasWatch = false;
+    try {
+      wasWatch = document.body.classList.contains('wp-watch-mode') ||
+        document.documentElement.classList.contains('wp-watch-mode');
+    } catch (e) { }
+    if (rs.state !== 'connected' && wasWatch) ui.restoreWatch = true;
+    if (wasWatch) {
+      try {
+        document.body.classList.add('wp-watch-mode');
+        document.documentElement.classList.add('wp-watch-mode');
+      } catch (e) { }
+    }
+    render();
+  });
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
       setupWatchPartyButton();

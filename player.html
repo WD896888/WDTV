@@ -41,7 +41,11 @@
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/player.css?v=101">
     <link rel="stylesheet" href="css/downloader.css?v=4">
-    <link rel="stylesheet" href="css/watch-party.css?v=50">
+    <link rel="stylesheet" href="css/watch-party.css?v=51">
+    <!-- 观影模式极早恢复：房号有效且本地存在座位令牌时，首帧前就进入占位/隐蔽状态，避免闪烁 -->
+    <script>
+    (function(){try{var m=/[?&]room=([A-Za-z0-9]{6})/.exec(location.search);if(!m)return;var c=m[1].toUpperCase();if(!localStorage.getItem('wdtvWatchToken:'+c))return;document.documentElement.classList.add('wp-watch-mode','wp-restoring');}catch(e){}})();
+    </script>
     <link rel="stylesheet" href="css/states.css?v=1">
     <!-- 批次4 A2：跳过标记色带 / 12s 撤销条 / 非模态面板（类名独立，不与内联样式冲突） -->
     <link rel="stylesheet" href="css/skip-marks.css?v=14">
@@ -144,10 +148,8 @@
     .gw-grade-c{mix-blend-mode:normal}
     .gw-grade-s{mix-blend-mode:normal}
 
-    /* === FX OFF（动态效果关闭模式：停用动画与背景水滴/水波特效） ===
-       注意：不改动任何窗口/控件的玻璃样式（backdrop-filter、阴影等全部保留） */
-    html.fx-off *{animation:none!important;transition:none!important}
-    html.fx-off #preloader,html.fx-off #rain-container,html.fx-off #gw-slot,html.fx-off #gw-ripple-bg{display:none!important}
+    /* === FX OFF（动态效果关闭模式：只关闭背景水滴/水波特效，保留界面过渡与玻璃质感） === */
+    html.fx-off #rain-container{display:none!important}
 
     /* Content layering above splash */
     main{position:relative;z-index:10;pointer-events:none}
@@ -429,27 +431,27 @@
     <script defer src="libs/artplayer.min.js" crossorigin="anonymous"></script>
     <script defer src="libs/artplayer-plugin-danmuku.min.js" crossorigin="anonymous"></script>
 
-    <script defer src="js/config.js?v=25"></script>
+    <script defer src="js/config.js?v=26"></script>
     <script defer src="js/states.js?v=1"></script>
     <script defer src="js/focus-trap.js?v=1"></script>
     <script defer src="js/customer_site.js?v=8"></script>
-    <script defer src="js/ui.js?v=16"></script>
+    <script defer src="js/ui.js?v=17"></script>
     <script defer src="js/source-health.js?v=3"></script>
-    <script defer src="js/api.js?v=16"></script>
+    <script defer src="js/api.js?v=17"></script>
     <script defer src="js/search.js?v=14"></script>
     <script defer src="js/ad-filter.js?v=3"></script>
     <script defer src="js/video-cache.js?v=96"></script>
     <script defer src="js/downloader.js?v=22"></script>
-    <script defer src="js/cinema.js?v=17"></script>
+    <script defer src="js/cinema.js?v=18"></script>
     <script defer src="js/danmu.js?v=27"></script>
-    <script defer src="js/watch-party.js?v=26"></script>
+    <script defer src="js/watch-party.js?v=27"></script>
     <script defer src="js/watch-party-local.js?v=7"></script>
-    <script defer src="js/watch-party-ui.js?v=47"></script>
+    <script defer src="js/watch-party-ui.js?v=48"></script>
     <!-- 批次4：A3 错误恢复纯决策 / 片头片尾跳过（含取数层），均须在 player.js 之前加载 -->
     <script defer src="js/playback-recovery.js?v=2"></script>
     <script defer src="js/skip-marks.js?v=4"></script>
     <script defer src="js/skip-source.js?v=4"></script>
-    <script defer src="js/player.js?v=172"></script>
+    <script defer src="js/player.js?v=174"></script>
     <script defer src="js/cloud-sync.js?v=9"></script>
 
     <!-- Preloader -->
@@ -471,7 +473,6 @@
     <!-- Rain -->
     <script>
     (function(){
-      if(document.documentElement.classList.contains('fx-off'))return;
       var box=document.getElementById('rain-container');
       if(!box)return;
       var cv=document.createElement('canvas');box.appendChild(cv);
@@ -491,11 +492,12 @@
         drops.length=0;
         for(var i=0;i<45;i++){var d={};reset(d);drops.push(d)}
       }
-      var last=0;
-      function loop(ts){
-        requestAnimationFrame(loop);
+      var last=0,rafId=null,tickId=null,touchStop=null;
+      function fxOff(){return document.documentElement.classList.contains('fx-off')}
+      function step(ts){
         var mo=document.getElementById('modal');
         if(mo&&!mo.classList.contains('hidden')){ctx.clearRect(0,0,W,H);last=ts;return}
+        if(last&&ts-last<8)return;
         var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
         ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);ctx.lineCap='round';
         for(var i=0;i<drops.length;i++){
@@ -516,7 +518,26 @@
           ctx.beginPath();ctx.arc(d.x,d.y,d.w*0.55,0,6.2832);ctx.fill();
         }
       }
-      addEventListener('resize',size);size();requestAnimationFrame(loop);
+      function loop(ts){
+        if(fxOff()){rafId=null;return}
+        rafId=requestAnimationFrame(loop);
+        step(ts);
+      }
+      function stopTick(){if(tickId!=null){clearInterval(tickId);tickId=null}}
+      function tick(){
+        if(fxOff()){stopTick();return}
+        step(performance.now());
+      }
+      function startTick(){if(tickId==null)tickId=setInterval(tick,33)}
+      function startRain(){if(fxOff())return;stopTick();if(rafId==null)rafId=requestAnimationFrame(loop)}
+      window.__fxRain=startRain;
+      addEventListener('resize',size);size();startRain();
+      /* 触摸兜底：部分移动端内核 rAF 在触摸/滚动期间被节流，用定时器补帧 */
+      addEventListener('touchstart',function(){if(fxOff())return;if(touchStop){clearTimeout(touchStop);touchStop=null}startTick()},{passive:true});
+      addEventListener('touchmove',function(){if(fxOff())return;if(touchStop){clearTimeout(touchStop);touchStop=null}startTick()},{passive:true});
+      function endTouch(){if(touchStop)clearTimeout(touchStop);touchStop=setTimeout(function(){touchStop=null;stopTick()},300)}
+      addEventListener('touchend',endTouch,{passive:true});
+      addEventListener('touchcancel',endTouch,{passive:true});
     })();
     </script>
 
@@ -584,7 +605,7 @@
     function computeMode(){return mqSmall.matches?'bg':'pane'}
     function idleNow(){if(document.hidden)return true;return false}
     var last=0,stepAcc=0;
-    function loop(ts){requestAnimationFrame(loop);var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}if(!tgtOk||idleNow()){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}
+    function loop(ts){requestAnimationFrame(loop);if(document.documentElement.classList.contains('fx-off')){last=ts;return}var m=computeMode();if(m!==mode){mode=m;tgtOk=retarget(m);if(m!=='bg'){bgcv.classList.remove('on');shownB=false}}if(!tgtOk||idleNow()){last=ts;return}var raw=(ts-last)/1000||0.016;last=ts;var dt=Math.min(0.05,raw);var tdt=Math.min(2,raw);rhythm(tdt);stepAcc+=dt;var n=0;while(stepAcc>=STEP&&n<2){stepWater();stepAcc-=STEP;n++}renderWater();updateDrops(dt,(mode==='bg')?bgctx:rctx);if(mode==='pane'){if(!shownP){shownP=true;slot.classList.add('gw-rippling')}}else if(!shownB){shownB=true;bgcv.classList.add('on')}}
     if(window.ResizeObserver)new ResizeObserver(function(){if(mode==='pane')tgtOk=retarget('pane')}).observe(pane);
     window.addEventListener('resize',function(){if(mode)tgtOk=retarget(mode)});
     (function probe(names){if(!names.length)return;var name=names.shift();var im=new Image();im.onload=function(){img=im;if(REDUCED){mode='pane';if(retarget('pane')){renderWater();slot.classList.add('gw-rippling')}return}if(mode==='pane')tgtOk=retarget('pane')};im.onerror=function(){probe(names)};im.src=name})(['bg-canvas.jpg','bg-canvas.png']);
