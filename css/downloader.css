@@ -105,15 +105,6 @@
   gap: 8px;
 }
 
-.wdtv-dl-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.wdtv-dl-list::-webkit-scrollbar-thumb {
-  background: rgba(200, 220, 245, 0.25);
-  border-radius: 3px;
-}
-
 .wdtv-dl-empty {
   padding: 42px 20px;
   text-align: center;
@@ -339,15 +330,6 @@
   padding: 12px 16px;
 }
 
-.wdtv-dl-batch-body::-webkit-scrollbar {
-  width: 6px;
-}
-
-.wdtv-dl-batch-body::-webkit-scrollbar-thumb {
-  background: rgba(200, 220, 245, 0.25);
-  border-radius: 3px;
-}
-
 .wdtv-dl-opt-row {
   display: flex;
   align-items: center;
@@ -497,101 +479,12 @@
   border-top: none;
 }
 
-/* ----- 播放器控制栏下载面板（复用 art-speed-panel 体系） ----- */
-.art-speed-panel.download-panel {
-  display: block;
-  min-width: 250px;
-  max-width: 320px;
-}
+/* ----- 下载管理入口 -----
+   入口两处：首页右上角账号菜单（#accountMenu，见 css/index.css）与播放页片名动作区
+   「下载管理」（无任务时隐藏，见 js/player.js:setupDownloadActions）。
+   旧 #downloads-btn 固定定位与 .wdtv-nav-badge 徽标样式、播放器控制栏下载面板
+   （.download-panel）均已移除；活跃任务数角标使用账号菜单内的 .wdtv-am-badge。 */
 
-.download-panel .wdtv-dl-panel-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 2px 0 8px;
-}
-
-.download-panel .wdtv-dl-panel-label {
-  font-size: 12px;
-  color: rgba(234, 240, 248, 0.72);
-  text-shadow: 0 1px 2px rgba(15, 25, 42, 0.4);
-  flex-shrink: 0;
-  width: 36px;
-}
-
-.download-panel .wdtv-dl-panel-chips {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.download-panel .wdtv-dl-pchip {
-  padding: 4px 11px;
-  font-size: 11.5px;
-  border-radius: 20px;
-  border: 1px solid rgba(200, 220, 245, 0.3);
-  background: rgba(200, 220, 245, 0.1);
-  color: rgba(234, 240, 248, 0.92);
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: background 0.15s ease, border-color 0.15s ease;
-  white-space: nowrap;
-}
-
-.download-panel .wdtv-dl-pchip:hover {
-  background: rgba(200, 220, 245, 0.2);
-}
-
-.download-panel .wdtv-dl-pchip.active {
-  border-color: rgba(143, 180, 232, 0.8);
-  background: rgba(117, 145, 189, 0.4);
-  color: #fff;
-  font-weight: 600;
-}
-
-.download-panel .wdtv-dl-panel-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.download-panel .wdtv-dl-panel-btn {
-  flex: 1;
-  padding: 7px 4px;
-  text-align: center;
-  font-size: 12px;
-  border-radius: 9px;
-  background: rgba(117, 145, 189, 0.28);
-  color: rgba(234, 240, 248, 0.95);
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: background 0.15s ease, transform 0.1s ease;
-  white-space: nowrap;
-}
-
-.download-panel .wdtv-dl-panel-btn:hover {
-  background: rgba(117, 145, 189, 0.45);
-}
-
-.download-panel .wdtv-dl-panel-btn:active {
-  transform: scale(0.95);
-}
-
-.download-panel .wdtv-dl-panel-btn.primary {
-  background: linear-gradient(135deg, rgba(74, 120, 189, 0.65), rgba(106, 154, 224, 0.65));
-}
-
-/* 控制栏下载按钮悬停态（与缓存按钮一致） */
-.art-control-downloadQuickButton:hover .dl-btn-text {
-  color: #8fb4e8;
-}
-
-/* ----- 下载管理入口徽标 -----
-   下载管理入口已重构进右上角账号菜单（#accountMenu，见 css/index.css），
-   旧 #downloads-btn 固定定位与 .wdtv-nav-badge 徽标样式随之移除；
-   活跃任务数角标现使用账号菜单内的 .wdtv-am-badge（样式在 css/index.css）。 */
 
 /* ----- 小屏适配 ----- */
 @media (max-width: 480px) {

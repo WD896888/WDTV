@@ -31,3 +31,13 @@ coverage
 .env
 data/
 .dev.vars
+
+# 本地工作数据与参考项目（不入库）
+.workbuddy/
+LibreTV-main/
+
+# 本地设计稿 / 字体方案预览（非站点资源）
+font-preview.html
+font-preview-2.html
+动态效果.md
+头像素描图.svg

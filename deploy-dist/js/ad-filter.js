@@ -18,7 +18,7 @@
 (function (g) {
   'use strict';
 
-  var RULES_VERSION = 2;
+  var RULES_VERSION = 3;
   var STORAGE_KEY = 'adFilteringEnabled';
   var MARKER_PREFIX = '#WDTV-ADF:';
 
@@ -431,7 +431,7 @@
       return d;
     }
     if (iv.kind === 'blacklist') {
-      d.action = 'delete'; d.reason = 'blacklist-host'; d.confidence = 0.9; d.score = DELETE_THRESHOLD + 1;
+      d.action = 'delete'; d.reason = iv.reason || 'blacklist-host'; d.confidence = 0.9; d.score = DELETE_THRESHOLD + 1;
     } else if (iv.kind === 'standard') {
       d.action = 'delete'; d.reason = 'scte35-cue'; d.confidence = 0.95; d.score = DELETE_THRESHOLD + 1;
     } else {
@@ -594,6 +594,20 @@
       }
 
       var intervals = detectIntervals(parsed);
+      // 外部证据强制删除区间（js/pts-ad-detector.js 的分片 PTS 重置检测结果）。
+      // 与黑名单同级：强制删，但仍走预算 / 剩余分片 / MAP·KEY 完整性闸门（下方统一校验）。
+      var forced = opts.forceDeleteRanges;
+      if (forced && forced.length) {
+        for (var fi = 0; fi < forced.length; fi++) {
+          var fr = forced[fi];
+          if (!fr || !(fr.to >= fr.from) || fr.from < 0 || fr.to >= parsed.segs.length) continue;
+          var fiv = makeDiscInterval(fr.from, fr.to, parsed.segs, fr.to === parsed.segs.length - 1);
+          // 标记成 blacklist：decide() 直接判 delete 并跳过 legalVeto（该层的区间恰好都同 host 同目录）
+          fiv.kind = 'blacklist';
+          fiv.reason = 'pts-reset';
+          intervals.push(fiv);
+        }
+      }
       var decisions = intervals.map(function (iv) { return decide(iv, parsed, ctx); });
 
       // 合并重叠的 delete 区间（黑名单段可能落在 DISCONTINUITY 区间内）

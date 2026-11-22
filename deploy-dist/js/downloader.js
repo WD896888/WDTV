@@ -29,7 +29,12 @@
   const STORE_SEGS = 'segs';
   const STORE_FILES = 'files';
 
-  const SEG_CONCURRENCY = 12;     // 同时下载的分片数（HTTP/2 源可打满带宽；HTTP/1.1 同域浏览器自动排队到 ~6 连接，无害）
+  // 分片并发。真正的瓶颈是「每片一次上游往返」（慢源单片 TTFB ~2s）与浏览器同源 6 连接上限，
+  // 24 路配合下面的批量取件可以把上游并发压到 6×N；HTTP/2 部署（Cloudflare/Vercel）可直接吃满。
+  const SEG_CONCURRENCY = 24;
+  // 批量取件：一次请求取回几片（服务端并发拉上游）。实现见 js/seg-batch.js；
+  // 接口不存在时 supported() 为 false，自动退回逐片。
+  const SEG_BATCH = 4;
   const SEG_RETRIES = 3;          // 单分片重试次数
   const FETCH_TIMEOUT = 20000;    // 连接/响应头超时（毫秒，收到响应头即解除；与整集缓存取件一致）
   const IDLE_TIMEOUT = 20000;     // body 空闲超时：连续 20s 无字节到达才中止（不掐慢速下载，只掐卡死）
@@ -100,11 +105,18 @@
     return '/proxy/';
   }
 
+  // 代理前缀的路径部分：PROXY_URL 既可能是 '/proxy/' 也可能是完整地址，
+  // 统一折算成 pathname 再比对，避免整段地址拿去 startsWith 路径。
+  function proxyPathBase() {
+    const p = getProxyBase();
+    try { return new URL(p, location.href).pathname || p; } catch (e) { return p; }
+  }
+
   // 解包同源代理 URL：/proxy/<encodeURIComponent(目标)> → 内层真实 URL（与 player.js 同逻辑）
   function unwrapProxiedUrl(rawUrl) {
     try {
       const u = new URL(rawUrl, location.href);
-      const proxyBase = getProxyBase();
+      const proxyBase = proxyPathBase();
       if (u.origin === location.origin && u.pathname.startsWith(proxyBase)) {
         const inner = decodeURIComponent(u.pathname.slice(proxyBase.length));
         if (/^https?:\/\//i.test(inner)) return inner;
@@ -348,7 +360,12 @@
     let allFatal = attempts.length > 0;
     for (const u of attempts) {
       try {
-        return await fetchWithTimeout(u, asText, signal, onData);
+        const body = await fetchWithTimeout(u, asText, signal, onData);
+        // 文本取件只服务 m3u8 清单：代理/源站可能以 200 返回网页（拦截页、路由 404 页、登录页）。
+        // 旧实现把这种"成功的错误页"当结果返回，后面的解析自然 0 分片 → 误报成源站缺片。
+        // 这里直接判为非清单，换下一条通道（直连 ↔ 代理）再试。
+        if (asText && !/^\s*#EXTM3U/.test(body)) throw new Error('返回内容不是 m3u8 清单');
+        return body;
       } catch (e) {
         if (signal && signal.aborted) throw e;
         if (u === inner) markDirectFail(inner); // 直连尝试失败记账（下一次该主机跳过直连）
@@ -386,8 +403,65 @@
     return iv;
   }
 
+  // ===== 清单地址解析基准 =====
+  // 清单可能有两种形态：原始直链，或同源代理 /proxy/<encodeURIComponent(真实地址)>。
+  // 相对地址（分片/子清单/KEY/MAP）必须解析到「内层真实地址」上：
+  //   1) /proxy/<encoded> 是普通路径，不是 URL 目录——把分片拼上去会变成 /proxy/seg.ts（404）；
+  //   2) 更要命的是它不以协议开头，new URL(相对, '/proxy/...') 会直接抛 TypeError，
+  //      于是整份清单解析出 0 个分片 → 报「清单中没有可下载的视频分片」。
+  // 这里把「取件地址」和「解析基准」分开：解析用内层真实地址，解析结果再按需套回代理形态
+  // （保留 wdtv_m3u8_rw=1，代理才会继续给出可用的下游地址）。
+  function makePlaylistBase(rawUrl) {
+    let abs = String(rawUrl || '');
+    try { abs = new URL(abs, location.href).toString(); } catch (e) { }
+    const inner = unwrapProxiedUrl(abs);
+    let viaProxy = false, flag = '';
+    try {
+      const u = new URL(abs, location.href);
+      viaProxy = u.origin === location.origin && u.pathname.startsWith(proxyPathBase());
+      // 仅当原地址自己带了重写标记才继续携带：普通源的代理行为保持原样
+      if (viaProxy && u.searchParams.get('wdtv_m3u8_rw') === '1') flag = 'wdtv_m3u8_rw=1';
+    } catch (e) { }
+    const base = /^https?:\/\//i.test(inner) ? inner : abs; // 内层真实地址（URL/主机/目录判定都用它）
+    return {
+      url: base,
+      viaProxy,
+      resolve(ref) {
+        const s = String(ref == null ? '' : ref).trim();
+        if (!s) return null;
+        // 清单已被代理改写过（URI 本身就是 /proxy/<encoded>）：原样使用。
+        // 不能拿它当相对地址去拼内层基准——那会拼成「源站域名/proxy/...」，必然 404。
+        if (isProxyFormUrl(s)) return s;
+        let out = null;
+        try { out = new URL(s, base).toString(); } catch (e) { return null; }
+        if (!viaProxy) return out;
+        return getProxyBase() + encodeURIComponent(out) + (flag ? '?' + flag : '');
+      }
+    };
+  }
+
+  // 判定一个地址是否为本站 /proxy/<encodeURIComponent(绝对地址)> 形态（内层必须是 http(s)）
+  function isProxyFormUrl(s) {
+    try {
+      const u = new URL(s, location.href);
+      if (u.origin !== location.origin) return false;
+      const pb = proxyPathBase();
+      if (!u.pathname.startsWith(pb)) return false;
+      return /^https?:\/\//i.test(decodeURIComponent(u.pathname.slice(pb.length)));
+    } catch (e) { return false; }
+  }
+
+  // 兼容「基准对象」与「纯地址字符串」两种入参（后者供未来复用/单测）
+  function makeResolver(base) {
+    if (base && typeof base.resolve === 'function') return base.resolve;
+    let abs = null;
+    try { abs = new URL(String(base || ''), location.href).toString(); } catch (e) { }
+    return (ref) => { try { return abs ? new URL(ref, abs).toString() : null; } catch (e) { return null; } };
+  }
+
   // 解析主列表变体
-  function parseMaster(text, baseUrl) {
+  function parseMaster(text, base) {
+    const resolve = makeResolver(base);
     const lines = text.split(/\r?\n/);
     const variants = [];
     for (let i = 0; i < lines.length; i++) {
@@ -397,15 +471,17 @@
       const res = /RESOLUTION=(\d+)x(\d+)/.exec(attrs);
       const bw = /BANDWIDTH=(\d+)/.exec(attrs);
       let uri = '';
-      for (let j = i + 1; j < lines.length; j++) {
+      // STREAM-INF 与 URI 之间允许夹注释行（#EXT-X-MEDIA / 自定义标签），
+      // 旧实现遇到第一行注释就 break，会把这类合规主清单解析成 0 个变体
+      for (let j = i + 1; j < lines.length && j <= i + 8; j++) {
         const t = lines[j].trim();
-        if (!t) continue;
-        if (!t.startsWith('#')) { uri = t; i = j; }
+        if (!t || t.startsWith('#')) continue;
+        uri = t; i = j;
         break;
       }
       if (!uri) continue;
-      let url = null;
-      try { url = new URL(uri, baseUrl).toString(); } catch (e) { continue; }
+      const url = resolve(uri);
+      if (!url) continue;
       variants.push({
         height: res ? parseInt(res[2], 10) : 0,
         bandwidth: bw ? parseInt(bw[1], 10) : 0,
@@ -431,8 +507,9 @@
     return variants.reduce((a, b) => (b.bandwidth > a.bandwidth ? b : a)); // 默认最高码率
   }
 
-  // 解析媒体列表
-  function parseMedia(text, baseUrl) {
+  // 解析媒体列表。base 可以是 makePlaylistBase() 产出的基准对象，也可以是地址字符串
+  function parseMedia(text, base) {
+    const resolve = makeResolver(base);
     const lines = text.split(/\r?\n/);
     const segs = [];
     const keyChanges = []; // { fromIdx, enc } — 支持逐段轮换密钥
@@ -455,13 +532,13 @@
           fromIdx: segs.length,
           enc: {
             method,
-            uri: uriM ? new URL(uriM[1], baseUrl).toString() : null,
+            uri: uriM ? resolve(uriM[1]) : null,
             iv: ivM ? hexToBytes(ivM[1]) : null
           }
         });
       } else if (line.startsWith('#EXT-X-MAP')) {
         const uriM = /URI="([^"]+)"/.exec(line);
-        if (uriM) { try { map = new URL(uriM[1], baseUrl).toString(); } catch (e) { } }
+        if (uriM) { const m2 = resolve(uriM[1]); if (m2) map = m2; }
       } else if (line.startsWith('#EXT-X-BYTERANGE:')) {
         const m = /#EXT-X-BYTERANGE:(\d+)(?:@(\d+))?/.exec(line);
         if (m) { bytLen = parseInt(m[1], 10) || 0; bytOff = m[2] != null ? parseInt(m[2], 10) : -1; }
@@ -469,8 +546,7 @@
         const d = parseFloat(line.slice(8));
         if (isFinite(d)) { duration += d; pendingDur = d; }
       } else if (!line.startsWith('#')) {
-        let url = null;
-        try { url = new URL(line, baseUrl).toString(); } catch (e) { }
+        const url = resolve(line);
         if (!url) continue;
         let range = null;
         if (bytLen > 0) {
@@ -486,8 +562,23 @@
     return { segs, keyChanges, map, mediaSeq, duration };
   }
 
+  // 0 分片的分型诊断：把「解析不出东西」拆成可指导用户的原因，
+  // 避免一律报「清单中没有可下载的视频分片」掩盖真实问题（子清单地址错/源站返回网页/只有加密占位）
+  function describeEmptyPlaylist(text) {
+    const t = String(text || '');
+    if (!/#EXTM3U/.test(t)) return '播放列表不是 m3u8 清单（源站可能返回了网页错误页），建议换源';
+    if (/#EXT-X-STREAM-INF/.test(t)) return '主播放列表里没有可用的画质子清单，建议换源';
+    if (/#EXT-X-PART:/.test(t)) return '该视频使用低延迟分片（LL-HLS），暂不支持下载，建议换源';
+    if (/#EXT-X-MAP/.test(t) && !/#EXTINF/.test(t)) return '清单里只有初始化段、没有视频分片，建议换源';
+    return '清单中没有可下载的视频分片，建议换源';
+  }
+
   // 解析下载地址：主列表自动选档（最多两层），返回媒体列表结构
   async function resolvePlaylist(url, hint, signal) {
+    // 解析基准：相对地址一律先落到「内层真实地址」，再按需套回代理形态。
+    // 这是「清单中没有可下载的视频分片」的根因修复点——代理形态地址（/proxy/<encoded>）
+    // 既不能当 URL 目录拼接，也不能直接当 new URL 的 base（非绝对地址会抛错）。
+    let base = makePlaylistBase(url);
     let text;
     try {
       text = await robustFetch(url, true, signal);
@@ -497,33 +588,55 @@
       throw new Error(DU ? DU.describePlaylistFailure(url, e && e.message) : ((e && e.message) || '清单拉取失败'));
     }
     if (!text || !text.trimStart().startsWith('#EXTM3U')) throw new Error('链接不是有效的 m3u8 清单');
-    let variants = parseMaster(text, url);
-    let listUrl = url; // 最终媒体清单的实际来源 URL（分片/密钥相对路径以此为基准）
+    let variants = parseMaster(text, base);
     if (variants.length) {
       const picked = pickVariant(variants, hint);
-      listUrl = picked.url;
-      text = await robustFetch(picked.url, true, signal);
-      variants = parseMaster(text, picked.url);
-      if (variants.length) throw new Error('嵌套主列表超出支持范围');
+      const subUrl = picked && picked.url;
+      if (!subUrl) throw new Error('主播放列表里的画质地址无法解析，建议换源');
+      let subText;
+      try {
+        subText = await robustFetch(subUrl, true, signal);
+      } catch (e) {
+        if (signal && signal.aborted) throw e;
+        throw new Error('画质子清单拉取失败（' + ((e && e.message) || '网络错误') + '），建议换源');
+      }
+      // 旧实现不校验子清单内容：代理/源站返回 200 的网页错误页时，解析出 0 个分片，
+      // 最终被误报成「清单中没有可下载的视频分片」——把真实原因（子清单地址失效）藏起来。
+      if (!subText || !subText.trimStart().startsWith('#EXTM3U')) {
+        throw new Error('画质子清单不是有效的 m3u8（源站返回了网页错误页或链接已失效），建议换源');
+      }
+      text = subText;
+      base = makePlaylistBase(subUrl); // 分片相对路径以「最终媒体清单」为基准（主/子清单常不同目录）
+      if (parseMaster(text, base).length) throw new Error('嵌套主列表超出支持范围');
     }
     // 注意：分片相对路径必须以"最终媒体清单"的 URL 为基准。
     // 旧实现错用最初传入的 url（主列表地址）：主列表与子清单不在同一目录时
     // （如 .../index.m3u8 → 2000k/hls/index.m3u8），所有分片都会拼到主列表目录下 → 全部 404。
     // 广告过滤（与播放链路共用 js/ad-filter.js 引擎）：对最终媒体清单做分片级移除，
     // 保证"看的"和"下的"一致；引擎缺失/异常/开关关闭时原样透传。
+    // 传入内层真实地址：黑名单规则按主机名/目录匹配，代理形态的主机是本站，匹配不到。
     let adSkip = null;
     try {
       if (typeof WDTVAdFilter !== 'undefined' && WDTVAdFilter.analyze) {
         const afKey = (typeof PLAYER_CONFIG !== 'undefined' && PLAYER_CONFIG.adFilteringStorage) || 'adFilteringEnabled';
         const afOn = localStorage.getItem(afKey) !== 'false';
+        // PTS 探测（与播放链路同款）：清单层无法区分的插入式广告，靠分片首帧 PTS 重置识别。
+        // 探测失败返回空 ranges，不改动同步过滤结果——保证下载与播放看到同一份清单。
+        let forceRanges = null;
+        if (afOn && typeof WDTVPtsAd !== 'undefined' && WDTVPtsAd.analyzePts) {
+          try {
+            const pr = await WDTVPtsAd.analyzePts(text, base.url, { enabled: true });
+            if (pr && pr.ranges && pr.ranges.length) forceRanges = pr.ranges;
+          } catch (e) { /* 探测失败退回同步过滤 */ }
+        }
         // storageKey 显式透传：签名与 video-cache 校验侧保持同源（都按主开关存储值生成）。
-        const r = WDTVAdFilter.analyze(text, listUrl, { enabled: afOn, storageKey: afKey });
+        const r = WDTVAdFilter.analyze(text, base.url, { enabled: afOn, storageKey: afKey, forceDeleteRanges: forceRanges });
         text = r.text;
         adSkip = r.stats;
       }
     } catch (e) { /* 引擎异常不影响下载 */ }
-    const media = parseMedia(text, listUrl);
-    if (!media.segs.length) throw new Error('清单中没有可下载的视频分片');
+    const media = parseMedia(text, base);
+    if (!media.segs.length) throw new Error(describeEmptyPlaylist(text));
     if (media.keyChanges.some(k => k.enc.method === 'SAMPLE-AES')) {
       throw new Error('该视频使用 SAMPLE-AES 加密，暂不支持下载');
     }
@@ -698,6 +811,9 @@
 
   function getPublicStats() {
     return {
+      // total：全部任务数（含失败）——播放页「下载管理」入口据此决定是否出现，
+      // 失败的下载同样需要入口去重试，不能只看 active/done
+      total: tasks.length,
       active: tasks.filter(t => ['pending', 'downloading', 'paused', 'merging'].includes(t.state)).length,
       done: tasks.filter(t => t.state === 'done').length
     };
@@ -766,11 +882,31 @@
 
   // ===== 下载执行 =====
 
-  async function hasSeg(taskId, idx) {
+  // 续传对账：一次 getAllKeys 建索引集合。
+  // 旧实现逐片 hasSeg —— 3290 片的长剧要 3290 次 IDB 事务（真实浏览器里 5~10s），
+  // 每个 worker 开工前还要再查一次，等于又一轮；这些空转会直接吃掉下载吞吐。
+  async function listDoneSegs(taskId) {
+    const set = new Set();
     try {
-      const cur = await idbGetKey(STORE_SEGS, segKey(taskId, idx));
-      return !!cur;
-    } catch (e) { return false; }
+      const keys = await wrapReq(STORE_SEGS, 'readonly', st => st.index('byId').getAllKeys(IDBKeyRange.only(taskId)));
+      (keys || []).forEach(k => {
+        const s = String(k);
+        const i = s.lastIndexOf('\u0000');
+        if (i >= 0) { const n = Number(s.slice(i + 1)); if (Number.isInteger(n) && n >= 0) set.add(n); }
+      });
+    } catch (e) { /* 读不到就当没下过，重新下 */ }
+    return set;
+  }
+
+  // ===== 批量取件（服务端多连接，一次性取回多片） =====
+  // 实现与协议统一放在 js/seg-batch.js（播放缓存预取也用同一套）；这里只做能力探测。
+  // 接口不存在（线上旧部署 / 未部署 Functions）时 supported() 变 false，永久退回逐片。
+  function batchReady() {
+    return SEG_BATCH > 1 && typeof WDTVSegBatch !== 'undefined' && WDTVSegBatch.supported();
+  }
+
+  async function fetchSegBatch(urls, signal, onData) {
+    return WDTVSegBatch.fetch(urls, { signal, onData });
   }
 
   async function runTask(task) {
@@ -851,74 +987,136 @@
         }
       }
 
-      // 已完成分片对账（续传）
+      // 已完成分片对账（续传）：一次性建集合，避免逐片 IDB 事务把吞吐吃掉
+      const doneSet = await listDoneSegs(task.id);
       let done = 0;
-      for (let i = 0; i < media.segs.length; i++) {
-        if (await hasSeg(task.id, i)) done++;
-      }
+      for (const i of doneSet) if (i < media.segs.length) done++;
       task.doneFrags = done;
       if (done >= media.segs.length) {
         await mergeTask(task, media);
         return;
       }
 
+      // ===== 取件通道 =====
+      // 单片取件（含重试与致命判定）。成功返回 true；失败置 segError 并返回 false（其余 worker 随即收工）。
+      const fetchOne = async (i, item) => {
+        let lastErr = null;
+        for (let attempt = 1; attempt <= SEG_RETRIES; attempt++) {
+          if (ctrl.signal.aborted) return false;
+          try {
+            let buf = await robustFetch(item.url, false, ctrl.signal, onNetData);
+            await storeSeg(i, item, buf);
+            return true;
+          } catch (e) {
+            if (ctrl.signal.aborted) return false;
+            if (e && e.fatal) {
+              // 4xx 确定性缺片 / 存储配额不足：不再退避重试，给出可行动的原因
+              const detail = (e.status && DU) ? DU.classifyHttpStatus(e.status, i + 1) : null;
+              lastErr = new Error(detail && detail.fatal ? detail.message : (e.message || '下载失败'));
+              lastErr.fatal = true;
+              break;
+            }
+            lastErr = e;
+            await new Promise(r => setTimeout(r, 800 * attempt));
+          }
+        }
+        segError = lastErr;
+        return false;
+      };
+
+      // 落库：区间截取 → 解密 → 写 IDB → 推进进度（单片与批量通道共用）
+      async function storeSeg(i, item, raw) {
+        let buf = raw;
+        if (item.range) {
+          // 服务器忽略 Range 返回 200 全量时按区间截取
+          buf = buf.slice(item.range.start, item.range.end + 1);
+        }
+        let enc = null;
+        for (const kc of media.keyChanges) {
+          if (i >= kc.fromIdx) enc = kc.enc; else break;
+        }
+        if (enc && enc.method === 'AES-128') {
+          const key = keyCache.get(enc.uri);
+          buf = await decryptAes(buf, key, enc.iv, media.mediaSeq + i);
+        }
+        try {
+          await idbPut(STORE_SEGS, { key: segKey(task.id, i), id: task.id, idx: i, data: buf, size: buf.byteLength });
+        } catch (e) {
+          const wrapped = new Error(DU ? DU.describeStorageError(e) : ('分片缓存写入失败：' + (e && e.message)));
+          wrapped.fatal = true; // 配额耗尽重试也不会成功
+          throw wrapped;
+        }
+        doneSet.add(i);
+        onProgress(buf.byteLength);
+      }
+
       // 并发下载分片
       let nextIdx = 0;
       let segError = null;
+      // 批量通道：本地/自建代理提供 /proxy-batch（一个请求取回多片，服务端并发拉上游）。
+      // 线上函数没有该接口 → 首个请求失败即永久降级为逐片，行为与旧版一致。
+      let useBatch = batchReady();
+
+      // 从队列里取一批（跳过已完成的，BYTERANGE 分片不能批量——服务端回的是整流）
+      const takeBatch = () => {
+        const idxs = [];
+        while (idxs.length < SEG_BATCH) {
+          const i = nextIdx++;
+          if (i >= media.segs.length) break;
+          if (doneSet.has(i)) continue;
+          if (media.segs[i].range) { idxs.push(i); break; } // 遇到 BYTERANGE：就地下完再继续
+          idxs.push(i);
+        }
+        return idxs;
+      };
 
       const worker = async () => {
         while (true) {
           if (ctrl.signal.aborted || segError) return;
+
+          if (useBatch) {
+            const idxs = takeBatch();
+            if (!idxs.length) return;
+            const items = idxs.map(i => media.segs[i]);
+            // 整批里只要有一片带区间（BYTERANGE），就退回逐片，避免语义分叉
+            if (!items.some(it => it.range)) {
+              let parts = null, permDown = false;
+              try { parts = await fetchSegBatch(items.map(it => it.url), ctrl.signal, onNetData); } catch (e) {
+                if (ctrl.signal.aborted) return;
+                parts = null;
+                permDown = !!(e && e.permanent);
+              }
+              if (parts) {
+                // 整批全失败：说明这条批量通道到这个源走不通（如 CDN 屏蔽了代理机房 IP），
+                // 本任务余下改回逐片直连，避免每批都白跑一遍。
+                if (!parts.some(p => p)) useBatch = false;
+                for (let k = 0; k < idxs.length; k++) {
+                  if (!parts[k]) { // 这一片服务端没取到：走逐片通道重试（含 4xx 判定/退避）
+                    if (!await fetchOne(idxs[k], items[k])) return;
+                    continue;
+                  }
+                  try { await storeSeg(idxs[k], items[k], parts[k].buf); }
+                  catch (e) { if (e && e.fatal) { segError = e; return; } if (!await fetchOne(idxs[k], items[k])) return; }
+                }
+                continue;
+              }
+              // 接口不存在（线上/旧服务）→ 本任务余下全部逐片；瞬时故障只降级本批
+              if (permDown) useBatch = false;
+              for (let k = 0; k < idxs.length; k++) {
+                if (!await fetchOne(idxs[k], items[k])) return;
+              }
+              continue;
+            }
+            for (let k = 0; k < idxs.length; k++) {
+              if (!await fetchOne(idxs[k], items[k])) return;
+            }
+            continue;
+          }
+
           const i = nextIdx++;
           if (i >= media.segs.length) return;
-          if (await hasSeg(task.id, i)) { continue; }
-
-          const item = media.segs[i];
-          let lastErr = null;
-          for (let attempt = 1; attempt <= SEG_RETRIES; attempt++) {
-            if (ctrl.signal.aborted) return;
-            try {
-              let buf = await robustFetch(item.url, false, ctrl.signal, onNetData);
-              if (item.range) {
-                // 服务器忽略 Range 返回 200 全量时按区间截取
-                buf = buf.slice(item.range.start, item.range.end + 1);
-              }
-              // 该分片适用的加密配置
-              let enc = null;
-              for (const kc of media.keyChanges) {
-                if (i >= kc.fromIdx) enc = kc.enc; else break;
-              }
-              if (enc && enc.method === 'AES-128') {
-                const key = keyCache.get(enc.uri);
-                buf = await decryptAes(buf, key, enc.iv, media.mediaSeq + i);
-              }
-              try {
-                await idbPut(STORE_SEGS, { key: segKey(task.id, i), id: task.id, idx: i, data: buf, size: buf.byteLength });
-              } catch (e) {
-                const wrapped = new Error(DU ? DU.describeStorageError(e) : ('分片缓存写入失败：' + (e && e.message)));
-                wrapped.fatal = true; // 配额耗尽重试也不会成功
-                throw wrapped;
-              }
-              onProgress(buf.byteLength);
-              lastErr = null;
-              break;
-            } catch (e) {
-              if (ctrl.signal.aborted) return;
-              if (e && e.fatal) {
-                // 4xx 确定性缺片 / 存储配额不足：不再退避重试，给出可行动的原因
-                const detail = (e.status && DU) ? DU.classifyHttpStatus(e.status, i + 1) : null;
-                lastErr = new Error(detail && detail.fatal ? detail.message : (e.message || '下载失败'));
-                lastErr.fatal = true;
-                break;
-              }
-              lastErr = e;
-              await new Promise(r => setTimeout(r, 800 * attempt));
-            }
-          }
-          if (lastErr) {
-            segError = lastErr;
-            return;
-          }
+          if (doneSet.has(i)) continue;
+          if (!await fetchOne(i, media.segs[i])) return;
         }
       };
 
@@ -1417,7 +1615,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             下载管理
           </div>
-          <button type="button" class="wdtv-dl-close" title="关闭">
+          <button type="button" class="wdtv-dl-close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
@@ -1514,7 +1712,7 @@
     const list = document.getElementById('wdtvDlList');
     if (!list) return;
     if (!tasks.length) {
-      list.innerHTML = '<div class="wdtv-dl-empty">暂无下载任务<br><span>在视频播放界面点击「下载」按钮即可下载本集或多集</span></div>';
+      list.innerHTML = '<div class="wdtv-dl-empty">暂无下载任务<br><span>在视频播放界面点击「批量下载」按钮即可下载本集或多集</span></div>';
       return;
     }
     const sorted = [...tasks].sort((a, b) => b.createdAt - a.createdAt); // 新任务在前
@@ -1524,7 +1722,7 @@
       return `
       <div class="wdtv-dl-task state-${t.state}" data-id="${t.id}">
         <div class="wdtv-dl-task-top">
-          <span class="wdtv-dl-task-name" title="${escapeHtml(t.title)} ${escapeHtml(t.episodeLabel)}">${escapeHtml(t.title)}${t.episodeLabel ? ' · ' + escapeHtml(t.episodeLabel) : ''}</span>
+          <span class="wdtv-dl-task-name">${escapeHtml(t.title)}${t.episodeLabel ? ' · ' + escapeHtml(t.episodeLabel) : ''}</span>
           <span class="wdtv-dl-task-tags">
             ${t.quality && t.quality !== '默认' ? `<em class="wdtv-dl-tag">${escapeHtml(t.quality)}</em>` : ''}
             <em class="wdtv-dl-tag">${t.format === 'webm' ? 'WEBM' : 'MP4'}</em>
@@ -1574,7 +1772,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             <span id="wdtvDlBatchTitle">批量下载</span>
           </div>
-          <button type="button" class="wdtv-dl-close" title="关闭">
+          <button type="button" class="wdtv-dl-close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>

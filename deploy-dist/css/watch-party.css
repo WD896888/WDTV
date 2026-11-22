@@ -108,9 +108,16 @@ body.wp-watch-mode .wp-entry-btn {
    放不下则退化为移动端竖向堆叠（见文件底部 ≤899px 媒体查询） */
 body.wp-watch-mode main.container {
   display: grid;
-  grid-template-columns: minmax(526px, 1fr) 384px;
+  grid-template-columns: minmax(526px, 1fr) clamp(320px, 24vw, 400px);
   column-gap: 22px;
   align-items: start;
+}
+/* 观影模式下片名/头部工具条/信息区与视频左边缘对齐：去掉左右内边距 */
+body.wp-watch-mode .player-title-row,
+body.wp-watch-mode #wpInline .wp-head,
+body.wp-watch-mode #wpInline .wp-main {
+  padding-left: 0;
+  padding-right: 0;
 }
 body.wp-watch-mode #playerContainer {
   grid-column: 1;
@@ -185,12 +192,15 @@ html.wp-restoring body::after {
     box-sizing: border-box;
   }
   /* 主容器占满整屏（100% 链基于 html/body，避免 vh 基准偏差）；
-     四行：播放器（自然高度）/ 片名 / 头部工具条 / 房态信息区（吃剩余高度） */
+     四行：播放器（自然高度）/ 片名 / 头部工具条 / 房态信息区（吃剩余高度）。
+     row-gap 统一四行间距——此前各行靠各区块自己的 padding/margin 制造间距，
+     彼此不等（0 / 10 / 6 / 16 …），视觉上松紧不一；此处收口为一处控制。 */
   body.wp-watch-mode main.container {
     height: 100%;
     margin-bottom: 0;
     overflow: hidden;
     grid-template-rows: auto auto auto minmax(0, 1fr);
+    row-gap: 14px;
   }
   /* 拆壳：#wpInline 与 .wp-body 仅作容器不生成盒子（display:contents），
      头部工具条 / 房态信息区 / 聊天区升格为 main.container 的直接栅格项：
@@ -227,6 +237,37 @@ html.wp-restoring body::after {
     overflow-y: auto;
     overscroll-behavior: contain;
   }
+  /* 观影模式下头部行不再自带下边距：与片名行、信息区的间距统一交给主容器 row-gap，
+     避免「头部贴紧信息区 / 片名行又离得很远」的松紧不一 */
+  body.wp-watch-mode #wpInline .wp-head {
+    padding: 0;
+  }
+  /* ── 播放器视觉轨道：JS 写入 --wp-player-w / --wp-player-ar ──
+     播放器容器固定为轨道宽并水平居中，片名行/头部工具条/信息区同宽对齐；
+     播放器高度改由视频比例决定（不再固定 60vh），特殊比例经 JS 收敛 */
+  body.wp-watch-mode #playerContainer {
+    width: var(--wp-player-w, 100%);
+    max-width: 1200px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  body.wp-watch-mode #player {
+    height: auto !important;
+    aspect-ratio: var(--wp-player-ar, 16 / 9);
+  }
+  body.wp-watch-mode .player-title-row,
+  body.wp-watch-mode #wpInline .wp-head,
+  body.wp-watch-mode #wpInline .wp-main {
+    width: var(--wp-player-w, 1200px);
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  body.wp-watch-mode .player-title-row {
+    padding: 0;
+  }
   /* 右栏：纯聊天，独占整列并撑满视口剩余高度 */
   body.wp-watch-mode #wpInline .wp-chat {
     grid-column: 2;
@@ -253,18 +294,38 @@ html.wp-restoring body::after {
   body.wp-watch-mode #wpInline .wp-chat {
     animation: wpFadeIn 0.35s ease;
   }
-  /* ── 信息区密度优化：组件不再横向拉伸整行 ──
-     左子列 = 房态（房间码/复制/成员/连接提示），右子列 = 影片信息与操作；
-     两个视图块各占一列，单块视图（错误/连接中）自动占满整行。
-     右子列保底 240px——「一排内容完整展示」的最低保障（双缓存进度条并排
-     230px、选片卡片横排 226px），防止被房态子列挤压成逐字换行/按钮一个一行；
-     三栏总宽不足时由外层断点（<900px）整体切竖向堆叠，不会走到挤压状态 */
+  /* ── 信息区：一行两区 ──
+     左区 = 文字与图标（成员 / 状态点 / 徽标 / 同步提示语），右区 = 控件按钮（换片等）。
+     两区同处一行、垂直居中对齐；宽度不够时整体换行，右区随行回落，不出现「左区一行、
+     右区另起一行却上下错位」的散乱观感。 */
   body.wp-watch-mode .wp-main {
-    display: grid;
-    grid-template-columns: minmax(250px, 320px) minmax(240px, 1fr);
-    column-gap: 36px;
-    align-items: start;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     align-content: start;
+    gap: 10px 18px;
+  }
+  /* 左区吃掉剩余宽度（flex-basis 0 → 不因自身内容宽度把右区挤到下一行），
+     右区按钮保持自身宽度不压缩；两区因此永远同处一行、垂直居中对齐。 */
+  body.wp-watch-mode .wp-top {
+    flex: 1 1 0;
+    min-width: 0;
+    margin: 0;
+  }
+  body.wp-watch-mode .wp-sec {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  body.wp-watch-mode main[data-wp-rail="narrow"] .wp-main {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  body.wp-watch-mode main[data-wp-rail="narrow"] .wp-top {
+    flex: 0 0 auto;
+  }
+  body.wp-watch-mode main[data-wp-rail="narrow"] .wp-sec {
+    margin-left: 0;
   }
   /* 信息折叠态必须在观影模式下仍然生效：上面 body.wp-watch-mode .wp-main 的
      display:grid 特异性 (0,2,1) 高于全局折叠规则 .wp-info-collapsed .wp-main (0,2,0)，
@@ -287,13 +348,17 @@ html.wp-restoring body::after {
   body.wp-watch-mode .wp-main > .wp-top {
     margin-bottom: 0;
   }
-  body.wp-watch-mode .wp-code {
-    font-size: 19px;
+  /* 房间码字号统一由 .wp-head .wp-code 控制（头部与「共同观影」同排，
+     需要与标题字号协调；此处旧的两列布局遗留值会覆盖它，故显式同步） */
+  body.wp-watch-mode .wp-head .wp-code {
+    font-size: 18px;
     letter-spacing: 4px;
+    font-weight: 500;
+    line-height: 1.1;
   }
-  /* 影片块：收紧纵向留白 */
+  /* 影片块：与左区同排，垂直居中对齐，纵向留白交给 flex gap */
   body.wp-watch-mode .wp-sec {
-    margin: 2px 0 8px;
+    margin: 0;
   }
   body.wp-watch-mode .wp-sec-title {
     margin-bottom: 4px;
@@ -357,8 +422,26 @@ html.wp-restoring body::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 13px 16px;
   border-bottom: 1px solid rgba(200, 220, 245, 0.16);
+}
+/* 头部左侧：房间码 + 「共同观影」标题同排（房间码在左，标题紧随其右，基线对齐） */
+.wp-head-id {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+/* 头部行里的房间码：与标题同排，字号必须与之协调——
+   房间码独立展示时用 22px 大字，但与 12px 的「共同观影」并排会一重一轻、极不协调；
+   此处收到 18px（等宽字体 + 略收字距），配合基线对齐让两者光学重心一致。
+   抽屉里单独展示房间码（.wp-code-row-center）不受影响，仍是 22px 大字。 */
+.wp-head .wp-code {
+  font-size: 18px;
+  letter-spacing: 4px;
+  font-weight: 500;
+  line-height: 1.1;
 }
 .wp-title {
   font-size: 15px;
@@ -463,6 +546,26 @@ html.wp-restoring body::after {
 }
 
 /* ============================================================
+   平板（900–1199px）：轨道不够宽，房间码再收一档、
+   信息区左右区间距收紧，成员/徽标/提示语仍争取同一行
+   ============================================================ */
+@media (min-width: 900px) and (max-width: 1199px) {
+  body.wp-watch-mode main.container {
+    row-gap: 10px;
+  }
+  body.wp-watch-mode .wp-main {
+    gap: 8px 16px;
+  }
+  .wp-head .wp-code {
+    font-size: 16px;
+    letter-spacing: 3px;
+  }
+  .wp-head-id {
+    gap: 10px;
+  }
+}
+
+/* ============================================================
    观影模式竖向堆叠（≤899px）：视口宽度不足以满足三栏最低尺寸
    （视频+信息区 526 + 缓存/操作子列 240 + 聊天 320 + 间距）时，
    放弃多栏排列，按手机竖向方式单列堆叠：视频在上，房态/操作与
@@ -473,8 +576,43 @@ html.wp-restoring body::after {
   body.wp-watch-mode main.container {
     display: block;
   }
+  /* 移动端：播放器同样按视频比例自适应高度，轨道内所有区宽度 100% 对齐 */
+  body.wp-watch-mode #player {
+    height: auto !important;
+    aspect-ratio: var(--wp-player-ar, 16 / 9);
+  }
+  body.wp-watch-mode #playerContainer,
+  body.wp-watch-mode .player-title-row,
+  body.wp-watch-mode #wpInline .wp-head,
+  body.wp-watch-mode #wpInline .wp-main {
+    width: 100%;
+  }
   body.wp-watch-mode #wpInline {
     margin-top: 10px;
+  }
+  /* 手机：信息区纵向堆叠——左区（成员/徽标/提示语）一行，右区控件另起一行，
+     两者左对齐、间距统一，不再出现左右错位的散乱观感 */
+  body.wp-watch-mode .wp-main {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  body.wp-watch-mode .wp-sec {
+    margin-left: 0;
+  }
+  /* 手机：房间码再收一档，保证与「共同观影」标题并排时不挤爆一行 */
+  .wp-head .wp-code {
+    font-size: 16px;
+    letter-spacing: 3px;
+  }
+  .wp-head-id {
+    gap: 9px;
+  }
+  /* 手机：成员行允许换行（窄屏放不下头像+徽标+提示语），但换行后仍左对齐成组 */
+  body.wp-watch-mode .wp-members {
+    row-gap: 6px;
   }
   /* 移动端观影模式：消息区独立滚动（约半屏），输入框常驻可见。
      flex-basis 回退 auto——外层 .wp-chat 高度不确定时 basis:0 会把消息区压成 0 高 */
@@ -681,13 +819,14 @@ html.wp-restoring body::after {
   padding: 6px 2px;
 }
 .wp-top {
-  margin-bottom: 4px;
+  margin: 0;
 }
 .wp-code-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 10px 12px;
 }
 .wp-code-row-center {
   justify-content: center;
@@ -713,7 +852,7 @@ html.wp-restoring body::after {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin: 6px 0 2px;
+  margin: 0;
 }
 .wp-member {
   display: flex;
@@ -723,30 +862,84 @@ html.wp-restoring body::after {
 }
 .wp-avatar {
   flex: none;
-  width: 30px;
-  height: 30px;
+  /* 头像直径 ≈ 2 × 昵称字号（2:1）：头像是一枚实心圆盘（默认素描图已铺满），
+     视觉重量远大于线性图标，字号不变就会显得头像压过昵称。
+     容器与昵称一起收到 26px，两种状态观感一致。 */
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: rgba(214, 231, 252, 0.9);
 }
-.wp-avatar svg {
-  width: 17px;
-  height: 17px;
-  stroke-width: 1.8;
+/* 真实头像与默认素描头像：铺满圆形，裁切居中 */
+.wp-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
 }
-/* 等待加入的对端：剪影淡显 */
+/* 默认头像：素描线稿（透明底 SVG），用 mask 取线条并以 currentColor 上色，
+   与昵称同色、直接平铺在面板上（无白底圆盘）。
+   成员头像只有 26px，原比例摆进去每根线不足 1 个像素，改用小尺寸专用版本
+   （线条按比例加粗）；自己补 border-radius 裁圆——.wp-avatar 只有圆角、
+   没有 overflow:hidden，方形遮罩会把线条漏到角上 */
+.wp-avatar-def {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: currentColor;
+  -webkit-mask: url('../image/avatar-default-sm.svg') center/contain no-repeat;
+  mask: url('../image/avatar-default-sm.svg') center/contain no-repeat;
+  -webkit-mask-size:124%;
+  mask-size:124%;
+  -webkit-mask-position: 50% 44%;
+  mask-position: 50% 44%;
+}
+/* 等待加入的对端：默认头像淡显，与「已入房」区分 */
 .wp-avatar.wp-avatar-ph {
   color: rgba(155, 180, 218, 0.4);
+  opacity: 0.45;
+}
+/* 头像/消息头像不再做自动摆动：改由 motion.js 的磁性效果跟随鼠标位移，
+   与站内其它控件同一手感。CSS 动画会占用 transform 通道，把磁力位移顶掉，
+   且「自己晃」与「跟着鼠标走」两套动效叠加会打架，故此处只留基准样式。 */
+.wp-avatar,
+.wp-mavatar {
+  transform-origin: 50% 55%;
 }
 .wp-name {
-  font-size: 12px;
+  /* 与头像直径（26px）保持 2:1 左右的和谐比例；
+     中文用「演示秋鸿楷」，拉丁字母/数字沿用 Sriracha */
+  font-family: 'Slideqiuhong', 'Sriracha', 'Noto Serif SC', 'Source Han Serif SC', serif;
+  font-size: 13px;
   max-width: 72px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary, rgba(236, 244, 255, 0.96));
+}
+/* 徽标组：角色/模式/共享控制 + M1 同步提示语绑成一体，
+   宽度够时与成员同一行，不够时整组换行、提示语不单独跑到行首 */
+.wp-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* M1 同步提示语：与成员行徽标同排（紧跟徽标右侧），不再浮到上一行或落到右侧操作区。
+   允许在极窄宽度下折行（此时仍紧贴徽标，不会像之前那样单独甩到行首）。 */
+.wp-peer-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, rgba(180, 200, 230, 0.7));
 }
 .wp-dot {
   flex: none;
@@ -767,6 +960,7 @@ html.wp-restoring body::after {
   background: #ff5a5a;
   box-shadow: 0 0 6px rgba(255, 90, 90, 0.8);
 }
+/* 在线状态点同样交给磁力效果跟随鼠标，取消此前的自动起伏动画 */
 .wp-chip {
   font-size: 11px;
   padding: 2px 8px;
@@ -806,15 +1000,17 @@ html.wp-restoring body::after {
   pointer-events: auto;
   background: transparent;
 }
+/* 对方缓冲提示：并入成员行末，空时零宽不占位（信息区保持单行） */
 .wp-peer-hint {
-  min-height: 16px;
+  flex: 0 0 auto;
   font-size: 12px;
+  line-height: 1.5;
   color: var(--text-muted, rgba(180, 200, 230, 0.5));
 }
 
 /* 功能分区：无卡片底板——仅以小标题引导，直接融入背景 */
 .wp-sec {
-  margin: 8px 0 12px;
+  margin: 0;
   padding: 0;
 }
 .wp-sec-title {
@@ -1316,6 +1512,10 @@ html.wp-restoring body::after {
   color: var(--text-muted, rgba(180, 200, 230, 0.5));
   margin: 6px 0;
 }
+/* 系统/撤回提示：flex 行内居中（.wp-msg 为 flex，需显式居中） */
+.wp-msg.wp-msg-sys {
+  justify-content: center;
+}
 /* 已撤回：系统行弱化（斜体区分普通系统提示） */
 .wp-msg-recalled span {
   font-style: italic;
@@ -1332,7 +1532,6 @@ html.wp-restoring body::after {
   margin: 0 0 4px;
   padding: 3px 8px 4px;
   max-width: 100%;
-  border-left: 2px solid rgba(122, 180, 255, 0.55);
   border-radius: 4px;
   background: rgba(10, 18, 36, 0.22);
   font-size: 11px;
@@ -1352,7 +1551,6 @@ html.wp-restoring body::after {
   white-space: nowrap;
 }
 .wp-msg.me .wp-quote {
-  border-left-color: rgba(255, 255, 255, 0.55);
   background: rgba(10, 18, 36, 0.16);
 }
 
@@ -1404,13 +1602,19 @@ html.wp-restoring body::after {
   color: #fff;
 }
 
-/* 长按/右键消息菜单：固定定位玻璃浮层 */
+/* 长按/右键消息菜单：固定定位玻璃浮层（默认显示于气泡上方，箭头指向气泡） */
+@keyframes wpMenuIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .wp-msg-menu {
   position: fixed;
   z-index: 9600;
   display: flex;
-  flex-direction: column;
-  min-width: 108px;
+  flex-direction: row;
+  gap: 2px;
+  align-items: center;
+  min-width: 0;
   padding: 4px;
   border-radius: 12px;
   background: rgba(20, 32, 52, 0.86);
@@ -1419,18 +1623,47 @@ html.wp-restoring body::after {
   border: 1px solid rgba(200, 220, 245, 0.28);
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4);
   font-family: 'Noto Sans SC', sans-serif;
+  animation: wpMenuIn 0.15s ease;
 }
 .wp-msg-menu[hidden] {
   display: none;
 }
+/* 指向气泡的小箭头：12px 方块旋转 45°，只留外侧两条边框 */
+.wp-msg-menu::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: rgba(20, 32, 52, 0.86);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+.wp-msg-menu[data-side="above"]::after {
+  bottom: -6px;
+  left: 18px;
+  border-right: 1px solid rgba(200, 220, 245, 0.28);
+  border-bottom: 1px solid rgba(200, 220, 245, 0.28);
+}
+.wp-msg-menu[data-side="below"]::after {
+  top: -6px;
+  left: 18px;
+  border-left: 1px solid rgba(200, 220, 245, 0.28);
+  border-top: 1px solid rgba(200, 220, 245, 0.28);
+}
+/* 本人消息（右对齐）箭头落在菜单右侧，靠近气泡 */
+.wp-msg-menu[data-mine="1"]::after {
+  left: auto;
+  right: 18px;
+}
 .wp-msg-menu button {
-  padding: 7px 14px;
+  padding: 7px 12px;
   border: none;
   border-radius: 8px;
   background: transparent;
   color: var(--text-primary, rgba(236, 244, 255, 0.96));
   font-size: 12.5px;
-  text-align: left;
+  white-space: nowrap;
+  text-align: center;
   cursor: pointer;
 }
 .wp-msg-menu button:hover {
@@ -1468,6 +1701,14 @@ html.wp-restoring body::after {
   font-size: 13px;
   font-family: 'Noto Sans SC', sans-serif;
   outline: none;
+}
+/* 覆盖 motion.css 的全局 :focus-visible 内描边（其选择器 html :is(...input...):focus-visible），
+   输入框自身不画任何焦点框，聚焦反馈由外层 .wp-chat-input-row:focus-within 胶囊变色承担 */
+.wp-chat .wp-chat-input:focus,
+.wp-chat .wp-chat-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background-color: transparent;
 }
 .wp-send {
   flex: none;
@@ -1747,6 +1988,14 @@ html.wp-restoring body::after {
   border-radius: 999px;
 }
 
+/* 全局关闭动效（html.fx-off）：头像摇摆 / 状态点 / 菜单入场静止 */
+html.fx-off .wp-avatar,
+html.fx-off .wp-mavatar,
+html.fx-off .wp-dot,
+html.fx-off .wp-msg-menu {
+  animation: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wp-panel,
   .wp-inline,
@@ -1765,5 +2014,11 @@ html.wp-restoring body::after {
   .wp-dots i {
     animation: none !important;
     opacity: 1 !important;
+  }
+  .wp-avatar,
+  .wp-mavatar,
+  .wp-dot,
+  .wp-msg-menu {
+    animation: none !important;
   }
 }

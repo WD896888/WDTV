@@ -91,7 +91,14 @@ function showNextToast() {
     toast.style.webkitBackdropFilter = 'blur(32px) saturate(1.5)';
     toast.style.border = '1px solid rgba(200,220,245,0.42)';
     toast.style.boxShadow = '0 12px 40px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1)';
-    toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+    // 入场走全站统一的弹簧档位；降级时（reduced-motion / fx-off）直接落位
+    const moStill = !!(window.WDTVMotion && window.WDTVMotion.still());
+    const moFine = !window.WDTVMotion || window.WDTVMotion.fine();
+    const enterMs = moStill ? 0 : (moFine ? 280 : 220);
+    const exitMs = moStill ? 0 : (moFine ? 200 : 160);
+    toast.style.transition = moStill
+        ? 'none'
+        : `opacity ${enterMs}ms cubic-bezier(0.3,1.2,0.35,1), transform ${enterMs}ms cubic-bezier(0.3,1.2,0.35,1)`;
     toastMessage.textContent = message;
 
     // 换条前清理上一条可能残留的撤销按钮（保证普通 toast 不出现按钮）
@@ -120,13 +127,16 @@ function showNextToast() {
     function hideAndAdvance() {
         if (advanced) return;
         advanced = true;
+        toast.style.transition = moStill
+            ? 'none'
+            : `opacity ${exitMs}ms cubic-bezier(0.4,0,1,1), transform ${exitMs}ms cubic-bezier(0.4,0,1,1)`;
         toast.style.opacity = '0';
         toast.style.transform = 'translateX(-50%) translateY(30px)';
         _removeToastAction();
         // 等待动画完成后显示下一个toast
         setTimeout(() => {
             showNextToast();
-        }, 300);
+        }, exitMs || 1);
     }
 
     // 撤销按钮：仅在带 actionLabel 时用 DOM API 追加到 #toast，不改动 #toastMessage 的文本更新逻辑
@@ -309,15 +319,180 @@ function saveSearchHistory(query) {
     renderSearchHistory();
 }
 
+// ===== 最近搜索横向拖动翻动 =====
+// #recentSearches 容器本身不会被 renderSearchHistory 重建（只替换内部标签），
+// 因此在容器上绑定一次即可。触摸端保留原生横向滚动，仅鼠标/触控笔走自定义拖动。
+let recentSearchResizeObserver = null;
+let recentSearchResizeBound = false;
+
+// 同步左右渐隐：仅实际横向溢出时挂 has-overflow（无溢出不加 mask）
+function syncRecentSearchOverflow(el) {
+    if (!el) return;
+    el.classList.toggle('has-overflow', el.scrollWidth > el.clientWidth + 1);
+}
+
+function bindRecentSearchDrag() {
+    const el = document.getElementById('recentSearches');
+    if (!el) return;
+
+    syncRecentSearchOverflow(el);
+    if (el.dataset && el.dataset.recentDragBound === '1') return;
+    if (el.dataset) el.dataset.recentDragBound = '1';
+
+    let dragging = false;
+    let startX = 0;
+    let startLeft = 0;
+    let lastX = 0;
+    let lastT = 0;
+    let velocity = 0;          // px / 帧（正方向与指针位移一致）
+    let draggingMoved = false; // 超过 4px：进入拖动视觉态
+    let dragDistance = 0;      // 本次拖动最大位移，超过 6px 才拦截 click
+    let suppressNextClick = false; // 超过 6px：拦截紧随其后的第一次 click
+    let suppressTimer = 0;
+    let inertiaRaf = 0;
+
+    const cancelInertia = () => {
+        if (inertiaRaf) {
+            cancelAnimationFrame(inertiaRaf);
+            inertiaRaf = 0;
+        }
+    };
+
+    const runInertia = () => {
+        const step = () => {
+            inertiaRaf = 0;
+            if (!el.isConnected) return;
+            el.scrollLeft -= velocity;
+            velocity *= 0.92;
+            const atStart = el.scrollLeft <= 0;
+            const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+            if (Math.abs(velocity) < 0.2 || atStart || atEnd) return;
+            inertiaRaf = requestAnimationFrame(step);
+        };
+        if (Math.abs(velocity) < 0.2) return;
+        inertiaRaf = requestAnimationFrame(step);
+    };
+
+    const onPointerMove = (e) => {
+        if (!dragging) return;
+        if (e.pointerType === 'touch') return;
+        const totalDx = e.clientX - startX;
+        dragDistance = Math.max(dragDistance, Math.abs(totalDx));
+        if (!draggingMoved && Math.abs(totalDx) > 4) {
+            draggingMoved = true;
+            el.classList.add('is-dragging');
+        }
+        if (!draggingMoved) return;
+        if (e.cancelable) e.preventDefault();
+        el.scrollLeft = startLeft - totalDx;
+
+        const now = (typeof performance !== 'undefined' && performance.now)
+            ? performance.now() : Date.now();
+        const dt = now - lastT;
+        if (dt > 0) {
+            const frameDelta = e.clientX - lastX;
+            velocity = Math.max(-60, Math.min(60, frameDelta / dt * 16));
+        }
+        lastX = e.clientX;
+        lastT = now;
+    };
+
+    const onPointerEnd = () => {
+        if (!dragging) return;
+        dragging = false;
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerEnd);
+        document.removeEventListener('pointercancel', onPointerEnd);
+
+        el.classList.remove('is-dragging');
+        if (draggingMoved) {
+            runInertia();
+        }
+        if (dragDistance > 6) {
+            // 拖动结束后的第一次 click 属于误触，容器捕获阶段拦掉，普通点击不受影响
+            suppressNextClick = true;
+            if (suppressTimer) clearTimeout(suppressTimer);
+            suppressTimer = setTimeout(() => { suppressNextClick = false; }, 350);
+        }
+        draggingMoved = false;
+        dragDistance = 0;
+        syncRecentSearchOverflow(el);
+    };
+
+    el.addEventListener('pointerdown', function (e) {
+        // 触摸不拦截：保留原生横向滚动与惯性
+        if (e.pointerType === 'touch') return;
+        if (e.button !== 0) return;
+        cancelInertia();
+        // 新手势开始：清掉上一次拖动遗留的 click 抑制（本次拖动结束会按需重新置位）
+        suppressNextClick = false;
+        if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = 0; }
+        dragging = true;
+        draggingMoved = false;
+        dragDistance = 0;
+        startX = e.clientX;
+        startLeft = el.scrollLeft;
+        lastX = e.clientX;
+        lastT = (typeof performance !== 'undefined' && performance.now)
+            ? performance.now() : Date.now();
+        velocity = 0;
+        document.addEventListener('pointermove', onPointerMove, { passive: false });
+        document.addEventListener('pointerup', onPointerEnd);
+        document.addEventListener('pointercancel', onPointerEnd);
+    });
+
+    // 鼠标滚轮纵向增量转横向翻动（仅横向溢出时接管）
+    el.addEventListener('wheel', function (e) {
+        if (el.scrollWidth <= el.clientWidth + 1) return;
+        if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+    }, { passive: false });
+
+    // 拖动后的首次 click 在捕获阶段拦截，避免误触历史标签的 onclick 搜索
+    el.addEventListener('click', function (e) {
+        if (!suppressNextClick) return;
+        suppressNextClick = false;
+        if (suppressTimer) clearTimeout(suppressTimer);
+        e.preventDefault();
+        e.stopPropagation();
+    }, true);
+
+    el.addEventListener('scroll', function () {
+        syncRecentSearchOverflow(el);
+    }, { passive: true });
+
+    if (!recentSearchResizeBound) {
+        recentSearchResizeBound = true;
+        window.addEventListener('resize', function () {
+            syncRecentSearchOverflow(document.getElementById('recentSearches'));
+        });
+    }
+    if (!recentSearchResizeObserver && typeof ResizeObserver === 'function') {
+        try {
+            recentSearchResizeObserver = new ResizeObserver(function () {
+                syncRecentSearchOverflow(el);
+            });
+            recentSearchResizeObserver.observe(el);
+        } catch (e) {
+            recentSearchResizeObserver = null;
+        }
+    }
+}
+
 // 渲染最近搜索历史的增强版本
 function renderSearchHistory() {
     const historyContainer = document.getElementById('recentSearches');
     if (!historyContainer) return;
 
+    // 容器只绑定一次；每次重建标签后同步溢出状态
+    bindRecentSearchDrag();
+
     const history = getSearchHistory();
 
     if (history.length === 0) {
         historyContainer.innerHTML = '';
+        syncRecentSearchOverflow(historyContainer);
         return;
     }
 
@@ -346,18 +521,15 @@ function renderSearchHistory() {
         };
         tag.appendChild(deleteButton);
 
-        // 添加时间提示（如果有时间戳）
-        if (item.timestamp) {
-            const date = new Date(item.timestamp);
-            tag.title = `搜索于: ${date.toLocaleString()}`;
-        }
-
         tag.onclick = function() {
             document.getElementById('searchInput').value = item.text;
             search();
         };
         historyContainer.appendChild(tag);
     });
+
+    // 标签重建后宽度变化：同步左右渐隐状态
+    syncRecentSearchOverflow(historyContainer);
 }
 
 // 删除单条搜索历史记录
@@ -591,8 +763,7 @@ function loadViewingHistory() {
                 <div class="wdtv-hc-header">
                     <div class="wdtv-hc-title">${safeTitle}</div>
                     <button onclick="event.stopPropagation(); deleteHistoryItem('${safeURL}')"
-                            class="wdtv-hc-delete-btn"
-                            title="删除记录">
+                            class="wdtv-hc-delete-btn">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                         </svg>
@@ -918,6 +1089,9 @@ function clearViewingHistory() {
 
 // 点击外部关闭历史面板
 document.addEventListener('DOMContentLoaded', function() {
+    // 兜底：即使初始化流程未调用 renderSearchHistory，也把横向拖动绑上
+    bindRecentSearchDrag();
+
     document.addEventListener('click', function(e) {
         const historyPanel = document.getElementById('historyPanel');
         const historyButton = document.querySelector('button[onclick="toggleHistory(event)"]');

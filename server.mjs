@@ -22,6 +22,82 @@ dotenv.config();
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 64 });
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 64 });
 
+// 本地开发网络的 DNS/SNI 干扰兜底（仅本地 server.mjs，Cloudflare/Vercel 函数不生效）：
+// iKun（www.ikunzy.com）与如意（cj.rycjapi.com）的原域名在部分网络被污染/阻断，
+// 但它们的 CDN 回源主机可直接访问；由本地 /proxy/ 把上游主机换成 CDN 主机并保留原始
+// Host 头，浏览器仍按原 API 地址请求，从而正常搜索/详情/播放。
+// CDN 返回的证书与原始 Host 不匹配，仅对该两个回源连接关闭证书校验（只代理公开影视 API）。
+// CDN 主机有多个 A 记录，只有部分 IP 可直连；固定使用实测可用的 IP，避免 Node 随机选到被阻断的节点。
+const LOCAL_PROXY_HOST_REWRITES = {
+  'www.ikunzy.com': { host: '58pj.shen-gu.com', ip: '156.254.21.131', hostHeader: 'www.ikunzy.com' },
+  'ikunzy.com': { host: '58pj.shen-gu.com', ip: '156.254.21.131', hostHeader: 'www.ikunzy.com' },
+  'ikunzyapi.com': { host: '58pj.shen-gu.com', ip: '156.254.21.131', hostHeader: 'www.ikunzy.com' },
+  'cj.rycjapi.com': { host: 'ry.ivipcdn.com', ip: '23.224.68.246', hostHeader: 'cj.rycjapi.com' },
+  'www.ryzyw.com': { host: 'ry.ivipcdn.com', ip: '23.224.68.246', hostHeader: 'www.ryzyw.com' },
+  'ryzyw.com': { host: 'ry.ivipcdn.com', ip: '23.224.68.246', hostHeader: 'ryzyw.com' },
+  // 量子/ iKun 的播放 CDN 在本机 DNS 被污染到 127.0.0.1（公共 DNS 解析正常），
+  // 固定实测可用 IP 并保留原始 Host/SNI，仅这两类播放请求走改写（源配置标 proxyPlay）。
+  'v.cdnlz28.com': { host: 'v.cdnlz28.com', ip: '37.77.85.186', hostHeader: 'v.cdnlz28.com' },
+  'bfikuncdn.com': { host: 'bfikuncdn.com', ip: '23.226.79.58', hostHeader: 'bfikuncdn.com' }
+};
+
+// 本地 /proxy/ 的 m3u8 重写：把子清单/分片/KEY/MAP 的相对地址解析成绝对地址后再套
+// /proxy/，避免 hls.js 把相对地址误拼到 /proxy/ 路径下（如 /proxy/1000k_720/... 404）。
+// 仅在请求带 wdtv_m3u8_rw=1 时启用（只由 proxyPlay 源的播放地址携带），普通源保持原有
+// 直通行为，不受影响。重写出的子地址继续携带该标记，保证下一层清单同样被处理。
+const M3U8_RW_FLAG = 'wdtv_m3u8_rw=1';
+function rewriteM3u8ToProxy(text, baseUrl) {
+  const toProxy = (abs) => '/proxy/' + encodeURIComponent(abs) + '?' + M3U8_RW_FLAG;
+  const isSpecial = (u) => /^(data:|blob:|skd:)/i.test(u);
+  return String(text).split(/\r?\n/).map(function (line) {
+    const t = line.trim();
+    if (!t) return line;
+    if (t.charAt(0) === '#') {
+      return line.replace(/URI="([^"]+)"/g, function (m, uri) {
+        if (isSpecial(uri) || uri.startsWith('/proxy/')) return m;
+        try { return 'URI="' + toProxy(new URL(uri, baseUrl).toString()) + '"'; } catch (e) { return m; }
+      });
+    }
+    if (isSpecial(t) || t.startsWith('/proxy/')) return line;
+    try { return toProxy(new URL(t, baseUrl).toString()); } catch (e) { return line; }
+  }).join('\n');
+}
+
+// 用 Node https.request 直连 CDN 的固定 IP：保留原始 Host、跳过证书校验（CDN 证书与原始
+// Host 不匹配），返回与 axios 同形 { status, headers, data:stream } 供后续管道透传。
+function requestLocalRewrite(targetUrl, rewrite, req) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(targetUrl);
+    const headers = {
+      Host: rewrite.hostHeader,
+      'User-Agent': config.userAgent,
+      Accept: 'application/json, text/plain, */*',
+      ...(req.headers.range ? { Range: req.headers.range } : {}),
+      ...(targetUrl.includes('doubanio.com') || targetUrl.includes('douban.com')
+        ? { Referer: 'https://movie.douban.com/' }
+        : {})
+    };
+    const upstreamReq = https.request({
+      hostname: rewrite.host,
+      port: 443,
+      path: u.pathname + u.search,
+      method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+      servername: rewrite.host,
+      rejectUnauthorized: false,
+      lookup: (hostname, options, callback) => {
+        if (options && options.all) return callback(null, [{ address: rewrite.ip, family: 4 }]);
+        return callback(null, rewrite.ip, 4);
+      },
+      headers
+    }, (upstream) => {
+      resolve({ status: upstream.statusCode || 502, headers: upstream.headers, data: upstream });
+    });
+    upstreamReq.on('error', reject);
+    upstreamReq.setTimeout(config.timeout, () => upstreamReq.destroy(new Error('upstream timeout')));
+    upstreamReq.end();
+  });
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -291,6 +367,16 @@ function roomOnMessage(room, ws, raw) {
             roomBroadcast(room, { t: 'ready', uid, info: m.info }, ws);
             return;
         }
+        case 'avatar': {
+            // 房间内头像缩略图：只转发给其他成员，不落库、不进房间状态。
+            // 头像只在房间内互传（不开放给房间外，避免跨用户数据泄露）；
+            // 限长 + 限定 data:image 协议，防止塞入任意内容。
+            const dataUrl = typeof m.dataUrl === 'string' ? m.dataUrl : '';
+            if (!dataUrl || dataUrl.length > 12000) return;
+            if (!/^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(dataUrl)) return;
+            roomBroadcast(room, { t: 'avatar', uid, dataUrl }, ws);
+            return;
+        }
         case 'chat': {
             const chatText = String(m.text || '').slice(0, 500);
             if (!chatText) return;
@@ -502,6 +588,78 @@ function isValidUrl(urlString) {
   }
 }
 
+// ===== 下载加速：批量取件（一个请求取回多个分片） =====
+// 实测瓶颈不在单连接带宽，而在「每个分片一次上游往返」：慢源单片 TTFB 约 2s，
+// 而浏览器对同源只放行约 6 条 HTTP/1.1 连接 —— 6 路就是本地下限。
+// 把「一个请求一片」改成「一个请求 K 片、服务端并发取回」（服务端到上游可开 6×K 条），
+// 客户端 6 条连接就能压满上游：实测 6 路 0.41MB/s → 24 路 1.48MB/s。
+// 只在下载器显式调用时生效（播放链路完全不经过这里）。
+const BATCH_MAX = 8;                     // 单次最多取几片
+const BATCH_ITEM_MAX = 24 * 1024 * 1024; // 单个分片上限
+const BATCH_TOTAL_MAX = 96 * 1024 * 1024; // 单次响应总量上限（超出部分按失败返回，客户端走逐片通道）
+
+app.post('/dl-batch', async (req, res) => {
+  // 与 /proxy 同源 Referer 校验：带 Referer 且 host 不一致 → 403
+  const referer = req.headers.referer;
+  if (referer) {
+    let refererHost = null;
+    try { refererHost = new URL(referer).host; } catch (e) { /* 畸形 Referer 视为不同源 */ }
+    if (refererHost !== req.headers.host) {
+      res.set('Cache-Control', 'no-store');
+      return res.status(403).json({ error: 'forbidden' });
+    }
+  }
+  const list = (req.body && Array.isArray(req.body.urls)) ? req.body.urls.slice(0, BATCH_MAX) : [];
+  const urls = list.filter(u => typeof u === 'string' && isValidUrl(u));
+  if (!urls.length) return res.status(400).json({ error: 'no valid url' });
+
+  const ua = config.userAgent;
+  const results = await Promise.all(urls.map(async (u) => {
+    try {
+      const r = await axios({
+        method: 'get', url: u, responseType: 'arraybuffer',
+        timeout: config.timeout, httpAgent, httpsAgent,
+        maxContentLength: BATCH_ITEM_MAX,
+        headers: {
+          'User-Agent': ua,
+          ...(u.includes('doubanio.com') || u.includes('douban.com')
+            ? { 'Referer': 'https://movie.douban.com/' } : {})
+        }
+      });
+      return {
+        status: r.status,
+        buf: Buffer.from(r.data),
+        // 上游声明长度（未压缩时才有意义）：客户端据此做截断校验，
+        // 与逐片通道的「收到字节 < 声明长度 → 判截断、不入库」同口径
+        clen: String(r.headers['content-encoding'] || '') ? 0 : (parseInt(r.headers['content-length'], 10) || 0)
+      };
+    } catch (e) {
+      return { status: (e.response && e.response.status) || 0, buf: null, clen: 0 };
+    }
+  }));
+
+  const body = (() => {
+    let total = 0;
+    const picked = results.map(r => {
+      if (!r.buf || total + r.buf.length > BATCH_TOTAL_MAX) return null;
+      total += r.buf.length;
+      return r.buf;
+    });
+    return { picked, buf: Buffer.concat(picked.map(b => b || Buffer.alloc(0))) };
+  })();
+  res.set({
+    'content-type': 'application/octet-stream',
+    'cache-control': 'no-store',
+    // 每片的状态 / 长度 / 上游声明长度：客户端据此切分并做截断校验
+    // （0 表示这一片失败，交由逐片通道重试）
+    'x-wdtv-status': body.picked.map((b, k) => (b ? results[k].status : 0)).join(','),
+    'x-wdtv-size': body.picked.map(b => (b ? b.length : 0)).join(','),
+    'x-wdtv-clen': body.picked.map((b, k) => (b ? (results[k].clen || 0) : 0)).join(','),
+    'access-control-expose-headers': 'x-wdtv-status, x-wdtv-size, x-wdtv-clen'
+  });
+  res.end(body.buf);
+});
+
 app.get('/proxy/:encodedUrl', async (req, res) => {
   try {
     // S3 同源 Referer 校验：带 Referer 且其 host 与当前请求 host 不一致 → 403；
@@ -536,9 +694,15 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
     // 添加请求超时和重试逻辑
     const maxRetries = config.maxRetries;
     let retries = 0;
-    
+
+    // 本地 DNS/SNI 干扰兜底：命中改写表时把上游主机换成 CDN 回源主机并保留原始 Host
+    const parsedTarget = new URL(targetUrl);
+    const hostRewrite = LOCAL_PROXY_HOST_REWRITES[parsedTarget.hostname.toLowerCase()] || null;
+
     const makeRequest = async () => {
       try {
+        // 命中本地 DNS/SNI 兜底表：直接请求 CDN 固定 IP，保留原始 Host
+        if (hostRewrite) return await requestLocalRewrite(targetUrl, hostRewrite, req);
         return await axios({
           method: 'get',
           url: targetUrl,
@@ -568,7 +732,6 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
     };
 
     const response = await makeRequest();
-
     // 转发响应头（过滤敏感头）
     const headers = { ...response.headers };
     const sensitiveHeaders = (
@@ -584,12 +747,29 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
     // 与 Cloudflare Functions 代理保持一致：透传前剔除长度与编码头，改由 Node 分块输出。
     delete headers['content-length'];
     delete headers['content-encoding'];
+    // 上游可能是 chunked；res.send/pipe 会自行决定传输方式，保留该头会与 Content-Length
+    // 同时出现，浏览器/undici 会报 “Content-Length can't be present with Transfer-Encoding”。
+    delete headers['transfer-encoding'];
 
     // 本地代理缓存策略：点播分片/图片可长缓存；m3u8 播放列表用短缓存
     const upstreamType = (headers['content-type'] || '').toLowerCase();
     headers['cache-control'] = upstreamType.includes('mpegurl')
       ? 'public, max-age=60'
       : 'public, max-age=86400';
+
+    // m3u8 重写仅对显式携带 wdtv_m3u8_rw=1 的请求启用（proxyPlay 源专用）：
+    // 普通源保持原有直通行为，避免改变原本正常源的播放链路。
+    const isM3u8 = upstreamType.includes('mpegurl') || /\.m3u8([?#]|$)/i.test(targetUrl);
+    if (isM3u8 && req.query.wdtv_m3u8_rw === '1') {
+      const chunks = [];
+      for await (const chunk of response.data) chunks.push(chunk);
+      const text = rewriteM3u8ToProxy(Buffer.concat(chunks).toString('utf8'), targetUrl);
+      headers['content-type'] = 'application/vnd.apple.mpegurl; charset=utf-8';
+      headers['cache-control'] = 'public, max-age=60';
+      res.set(headers);
+      if (response.status !== 200) res.status(response.status);
+      return res.send(text);
+    }
 
     res.set(headers);
 

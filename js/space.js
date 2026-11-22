@@ -143,7 +143,6 @@
       var titleEl = document.createElement('span');
       titleEl.className = 'wsp-recent-name';
       titleEl.textContent = item.title || '未命名影片';
-      titleEl.title = item.title || '未命名影片';
 
       var timeEl = document.createElement('span');
       timeEl.className = 'wsp-recent-time';
@@ -225,7 +224,7 @@
     });
   }
 
-  // 创建成功：存凭证 → 记最近 → 展示结果区（房间码 + 复制 + 倒计时）
+  // 创建成功：存凭证 → 记最近 → 展示结果区（房间码 + 倒计时；房间码可双击/长按复制）
   function onCreated(code, roomToken) {
     try {
       localStorage.setItem(ROOM_TOKEN_PREFIX + code, roomToken);
@@ -327,7 +326,7 @@
   function copyInvite() {
     var code = el.roomCode ? el.roomCode.textContent.trim() : '';
     if (!code) return;
-    // 点复制即取消倒计时
+    // 复制即取消倒计时（双击/长按同效）
     clearCountdown();
     copyText(code).then(function (ok) {
       if (ok) {
@@ -335,6 +334,54 @@
       } else {
         toast('复制失败，请手动复制：' + code, 'error');
       }
+    });
+  }
+
+  // 房间码双击 / 长按（600ms）复制
+  var LONG_PRESS_MS = 600;
+  var LONG_PRESS_MOVE_PX = 10;
+  var longPressTimer = null;
+  var longPressStart = null;
+  var suppressClickUntil = 0;
+
+  function cancelLongPress() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+    longPressStart = null;
+  }
+
+  function bindRoomCodeCopy() {
+    var node = el.roomCode;
+    if (!node) return;
+
+    node.addEventListener('dblclick', function () {
+      if (Date.now() < suppressClickUntil) return; // 长按已复制，抑制随后的双击
+      copyInvite();
+    });
+
+    node.addEventListener('pointerdown', function (ev) {
+      if (ev.button != null && ev.button !== 0) return; // 仅主键 / 触摸
+      cancelLongPress();
+      longPressStart = { x: ev.clientX, y: ev.clientY };
+      longPressTimer = setTimeout(function () {
+        longPressTimer = null;
+        suppressClickUntil = Date.now() + 400;
+        copyInvite();
+      }, LONG_PRESS_MS);
+    });
+
+    node.addEventListener('pointermove', function (ev) {
+      if (!longPressStart) return;
+      if (Math.abs(ev.clientX - longPressStart.x) > LONG_PRESS_MOVE_PX ||
+          Math.abs(ev.clientY - longPressStart.y) > LONG_PRESS_MOVE_PX) {
+        cancelLongPress(); // 移动超过阈值视为滚动/取消
+      }
+    });
+
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (type) {
+      node.addEventListener(type, cancelLongPress);
     });
   }
 
@@ -430,7 +477,7 @@
       seg.addEventListener('keydown', onSegKeyDown(i));
       seg.addEventListener('focus', onSegFocus(i));
     });
-    if (el.copyBtn) el.copyBtn.addEventListener('click', copyInvite);
+    if (el.roomCode) bindRoomCodeCopy();
     if (el.enterBtn) {
       el.enterBtn.addEventListener('click', function () {
         var code = el.roomCode ? el.roomCode.textContent.trim() : '';
@@ -461,7 +508,6 @@
       joinSegs: Array.prototype.slice.call(document.querySelectorAll('.wsp-code-seg')),
       createResult: $('wpCreateResult'),
       roomCode: $('wpRoomCode'),
-      copyBtn: $('wpCopyInvite'),
       enterBtn: $('wpEnterRoom'),
       countdown: $('wpCountdown'),
       recentWrap: $('wpRecentWrap'),

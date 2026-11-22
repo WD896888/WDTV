@@ -4,75 +4,188 @@ const enabledAPIKeys = () => Object.keys(API_SITES).filter(k => API_SITES[k] && 
 let selectedAPIs = (JSON.parse(localStorage.getItem('selectedAPIs') || 'null') || enabledAPIKeys())
     .filter(k => API_SITES[k] && !API_SITES[k].disabled);
 
-// ===== 前三源优先级（默认顺序与存储键由 config.js 提供）=====
-// 优先级用于：多源聚合卡片排序 / 组内来源排序 / 点击多源卡片直接播放优先源。
-const SOURCE_PRIORITY_LIMIT = 3;
-let sourcePriorityCache = null;
+// ===== 源等级（1 首选 / 2 常用 / 3 备用）=====
+// 所有源都可分到三级，不再限制固定的 3 个优先源。
+// 等级只用于组内来源排序（卡片主条目 / 换源顺序）。
+// 搜索结果列表本身只按「片名与搜索词的关联度」排序，等级不影响列表顺序。
+const SOURCE_TIER_MAX = (typeof window.SOURCE_TIER_LEVELS === 'number') ? window.SOURCE_TIER_LEVELS : 3;
+const SOURCE_TIER_STORAGE_KEY = (typeof SOURCE_TIER_STORAGE === 'string' && SOURCE_TIER_STORAGE)
+    ? SOURCE_TIER_STORAGE : 'wdtvSourceTiers';
+const LEGACY_SOURCE_PRIORITY_KEY = (typeof LEGACY_SOURCE_PRIORITY_STORAGE === 'string' && LEGACY_SOURCE_PRIORITY_STORAGE)
+    ? LEGACY_SOURCE_PRIORITY_STORAGE : 'wdtvSourcePriority';
+const TIER_TITLES = { 1: '一级源（首选）', 2: '二级源（常用）', 3: '三级源（备用）' };
+const TIER_LEVEL_LABELS = { 1: '一级', 2: '二级', 3: '三级' };
+let sourceTierCache = null;
 
-function getSourcePriorityStorageKey() {
-    if (typeof SOURCE_PRIORITY_STORAGE === 'string' && SOURCE_PRIORITY_STORAGE) return SOURCE_PRIORITY_STORAGE;
-    if (window.SOURCE_PRIORITY_STORAGE) return window.SOURCE_PRIORITY_STORAGE;
-    return 'wdtvSourcePriority';
+function normalizeSourceTier(value) {
+    const n = parseInt(value, 10);
+    return (n >= 1 && n <= SOURCE_TIER_MAX) ? n : SOURCE_TIER_MAX;
 }
 
-function getDefaultSourcePriorityList() {
-    const valid = enabledAPIKeys();
-    const defaults = Array.isArray(window.DEFAULT_SOURCE_PRIORITY) ? window.DEFAULT_SOURCE_PRIORITY : [];
-    const out = [];
-    defaults.concat(valid).concat(selectedAPIs).forEach(k => {
-        if (valid.indexOf(k) !== -1 && out.indexOf(k) === -1 && out.length < SOURCE_PRIORITY_LIMIT) out.push(k);
-    });
-    return out;
-}
-
-// 读取用户优先级：只保留 API_SITES 中存在且启用中的唯一 key，不足 3 个按默认顺序补齐
-function getSourcePriority() {
-    if (sourcePriorityCache) return sourcePriorityCache.slice();
-    const valid = enabledAPIKeys();
-    let stored = [];
-    try {
-        const parsed = JSON.parse(localStorage.getItem(getSourcePriorityStorageKey()) || '[]');
-        if (Array.isArray(parsed)) stored = parsed;
-    } catch (e) { /* 存储损坏按默认顺序处理 */ }
-    const out = [];
-    stored.forEach(k => {
-        if (typeof k === 'string' && valid.indexOf(k) !== -1 && out.indexOf(k) === -1
-            && out.length < SOURCE_PRIORITY_LIMIT) out.push(k);
-    });
-    getDefaultSourcePriorityList().forEach(k => {
-        if (out.indexOf(k) === -1 && out.length < SOURCE_PRIORITY_LIMIT) out.push(k);
-    });
-    if (out.length < SOURCE_PRIORITY_LIMIT) {
-        valid.forEach(k => { if (out.indexOf(k) === -1 && out.length < SOURCE_PRIORITY_LIMIT) out.push(k); });
+function defaultSourceTier(code) {
+    const defaults = window.DEFAULT_SOURCE_TIERS;
+    if (defaults && typeof defaults === 'object' && defaults[code] != null) {
+        return normalizeSourceTier(defaults[code]);
     }
-    sourcePriorityCache = out;
-    return out.slice();
+    return SOURCE_TIER_MAX;
 }
 
-// 写入合法唯一数组（最多 3 个）
-function setSourcePriority(list) {
+function readStoredSourceTiers() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(SOURCE_TIER_STORAGE_KEY) || 'null');
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+    } catch (e) { /* 存储损坏按默认分级处理 */ }
+    return null;
+}
+
+// 读取所有启用源的分级；没有新存储时先把老版「前三个优先源」迁移为一级源。
+function loadSourceTiers() {
+    if (sourceTierCache) return sourceTierCache;
     const valid = enabledAPIKeys();
-    const out = [];
-    (Array.isArray(list) ? list : []).forEach(k => {
-        if (typeof k === 'string' && valid.indexOf(k) !== -1 && out.indexOf(k) === -1
-            && out.length < SOURCE_PRIORITY_LIMIT) out.push(k);
+    const validSet = new Set(valid);
+    const stored = readStoredSourceTiers();
+    const map = Object.create(null);
+    let migrated = false;
+
+    if (stored) {
+        Object.keys(stored).forEach(k => {
+            if (validSet.has(k)) map[k] = normalizeSourceTier(stored[k]);
+        });
+    } else {
+        try {
+            const legacy = JSON.parse(localStorage.getItem(LEGACY_SOURCE_PRIORITY_KEY) || '[]');
+            if (Array.isArray(legacy) && legacy.length > 0) {
+                legacy.forEach(k => {
+                    if (typeof k === 'string' && validSet.has(k)) map[k] = 1;
+                });
+                migrated = true;
+            }
+        } catch (e) { /* 老存储损坏时直接走默认分级 */ }
+    }
+
+    let filled = false;
+    valid.forEach(k => {
+        if (map[k] == null) {
+            map[k] = defaultSourceTier(k);
+            filled = true;
+        }
     });
-    try { localStorage.setItem(getSourcePriorityStorageKey(), JSON.stringify(out)); } catch (e) { /* 写入失败仅影响下次恢复 */ }
-    sourcePriorityCache = out;
-    return out.slice();
+
+    sourceTierCache = map;
+    if (!stored || filled) {
+        try {
+            localStorage.setItem(SOURCE_TIER_STORAGE_KEY, JSON.stringify(map));
+            if (migrated) localStorage.removeItem(LEGACY_SOURCE_PRIORITY_KEY);
+        } catch (e) { /* 写入失败仅影响下次恢复 */ }
+    }
+    return map;
 }
 
-// 优先源排名：0/1/2；非优先源返回 99
-function priorityRank(code) {
-    if (!code) return 99;
-    const idx = getSourcePriority().indexOf(String(code));
-    return idx === -1 ? 99 : idx;
+// 源等级：1 最高，3 最低；未设置的源按默认分级。
+function getSourceTier(code) {
+    if (!code) return SOURCE_TIER_MAX;
+    const key = String(code);
+    const map = loadSourceTiers();
+    return map[key] != null ? normalizeSourceTier(map[key]) : defaultSourceTier(key);
+}
+
+// 四档优先级滑块：0 = 关闭，1-3 = 三/二/一级（滑块越满优先级越高）。
+// 内部 tier 1 最高，所以开启时显示值取反（tier1 → 最右满格，tier3 → 第一档）。
+function updateTierRange(range, tier) {
+    const normalized = (tier === 0 || tier == null) ? 0 : normalizeSourceTier(tier);
+    const value = normalized === 0 ? 0 : (SOURCE_TIER_MAX + 1 - normalized);
+    range.value = String(value);
+    const fill = SOURCE_TIER_MAX > 0 ? (value / SOURCE_TIER_MAX) * 100 : 0;
+    range.style.setProperty('--tier-fill', fill + '%');
+    range.setAttribute('aria-valuetext', normalized === 0 ? '已关闭' : (TIER_TITLES[normalized] || ''));
+}
+
+// 设置单个源的等级并持久化。
+function setSourceTier(code, tier) {
+    if (!code) return;
+    const key = String(code);
+    if (enabledAPIKeys().indexOf(key) === -1) return;
+    const map = loadSourceTiers();
+    map[key] = normalizeSourceTier(tier);
+    sourceTierCache = map;
+    try {
+        localStorage.setItem(SOURCE_TIER_STORAGE_KEY, JSON.stringify(map));
+    } catch (e) { /* 写入失败仅影响下次恢复 */ }
+}
+
+// 优先级视图滑块：0 = 关闭（移出选中集合），1-3 = 启用并对应三/二/一级。
+// 关闭时保留已存等级，重新向右拖动可直接恢复原优先级。
+function setSourceEnabled(code, enabled) {
+    const key = String(code);
+    const idx = selectedAPIs.indexOf(key);
+    if (enabled && idx === -1) selectedAPIs.push(key);
+    if (!enabled && idx !== -1) selectedAPIs.splice(idx, 1);
+    try {
+        localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+    } catch (e) { /* 写入失败仅影响下次恢复 */ }
+    updateSelectedApiCount();
+}
+
+// ===== 数据源视图：经典视图（默认）/ 优先级视图（仅本次打开设置内临时切换）=====
+let sourceView = 'classic';
+
+function getSourceView() {
+    return sourceView;
+}
+
+// 视图选择不写入 localStorage：下次打开设置固定回到经典视图。
+function setSourceView(view) {
+    sourceView = view === 'priority' ? 'priority' : 'classic';
+    return sourceView;
+}
+
+// 同步顶部视图按钮的激活状态与按钮组显隐（优先级视图没有复选框，不提供全选；
+// 重置按钮只在优先级视图出现，用于恢复默认分级与选中集合）。
+function syncSourceViewUI() {
+    const view = getSourceView();
+    document.querySelectorAll('.wdtv-view-btn').forEach(btn => {
+        const active = btn.getAttribute('data-view') === view;
+        btn.classList.toggle('is-active', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    const actions = document.querySelector('.wdtv-source-actions');
+    if (actions) actions.style.display = view === 'classic' ? '' : 'none';
+    const resetWrap = document.querySelector('.wdtv-source-reset');
+    if (resetWrap) resetWrap.style.display = view === 'priority' ? '' : 'none';
+}
+
+function initSourceViewToggle() {
+    const buttons = Array.from(document.querySelectorAll('.wdtv-view-btn'));
+    if (buttons.length === 0) return;
+    buttons.forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const view = btn.getAttribute('data-view') === 'classic' ? 'classic' : 'priority';
+            if (view === getSourceView()) return;
+            setSourceView(view);
+            syncSourceViewUI();
+            initAPICheckboxes();
+        });
+    });
+    syncSourceViewUI();
+}
+
+// 同等级源按「本次搜索实测首包耗时」排序；未测到的源使用静态兜底顺序。
+// 该耗时只存在内存：每次搜索重新测量，不写 localStorage、不影响源健康度。
+const FALLBACK_SPEED_ORDER = ['ffzy', 'zy360', 'mdzy', 'maoyan', 'hhzy', 'jyzy', 'jisu', 'lzi', 'bfzy', 'tyyszy', 'zuid', 'juliang', 'wujin', 'ikun', 'ruyi'];
+const sourceSearchLatency = Object.create(null);
+function sourceSpeedMs(code) {
+    const measured = sourceSearchLatency[String(code || '')];
+    if (typeof measured === 'number' && isFinite(measured) && measured > 0) return measured;
+    const i = FALLBACK_SPEED_ORDER.indexOf(String(code || ''));
+    return i >= 0 ? 500 + i * 250 : 9999;
 }
 
 // 2026-11-09 补充线路：老用户 localStorage 的选中集合里没有新增的 6 条独立线路，
 // 且可能残留早前误迁移写入的内置停用源 key。用一次性标记清理停用项并补齐新 key，
 // 不改动用户对其它源的选择；之后仍完全由用户自行勾选/取消。
-const EXTRA_SOURCE_KEYS = ['maoyan', 'lzi', 'jyzy', 'subo', 'hhzy', 'ikun'];
+const EXTRA_SOURCE_KEYS = ['maoyan', 'jyzy', 'hhzy'];
 const EXTRA_SOURCES_KEY = 'wdtvExtraSources_20261109';
 if (!localStorage.getItem(EXTRA_SOURCES_KEY)) {
     const cleaned = selectedAPIs.filter(k => API_SITES[k] && !API_SITES[k].disabled);
@@ -81,6 +194,56 @@ if (!localStorage.getItem(EXTRA_SOURCES_KEY)) {
     selectedAPIs = cleaned.concat(missing);
     localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
     localStorage.setItem(EXTRA_SOURCES_KEY, '1');
+}
+
+// 2026-11-21 新增可搜索源：老用户 selectedAPIs 中补齐，保留用户已取消勾选的既有源。
+const EXTRA_SOURCE_KEYS_20261121 = ['bfzy', 'lzi', 'ikun', 'ruyi', 'tyyszy', 'zuid', 'juliang', 'wujin'];
+const EXTRA_SOURCES_KEY_20261121 = 'wdtvExtraSources_20261121';
+if (!localStorage.getItem(EXTRA_SOURCES_KEY_20261121)) {
+    const cleaned = selectedAPIs.filter(k => API_SITES[k] && !API_SITES[k].disabled);
+    const missing = EXTRA_SOURCE_KEYS_20261121.filter(k =>
+        API_SITES[k] && !API_SITES[k].disabled && cleaned.indexOf(k) === -1);
+    selectedAPIs = cleaned.concat(missing);
+    localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+    localStorage.setItem(EXTRA_SOURCES_KEY_20261121, '1');
+}
+
+// 2026-11-22 源集合调整：移除黑木耳/速博，新增天涯。一次性清理已移除的 key 并补齐天涯，
+// 保留用户对其它源的勾选状态。
+const SOURCE_SET_20261122_KEY = 'wdtvSourceSet_20261122';
+if (!localStorage.getItem(SOURCE_SET_20261122_KEY)) {
+    const cleaned = selectedAPIs.filter(k => API_SITES[k] && !API_SITES[k].disabled);
+    if (API_SITES.tyyszy && !API_SITES.tyyszy.disabled && cleaned.indexOf('tyyszy') === -1) {
+        cleaned.push('tyyszy');
+    }
+    selectedAPIs = cleaned;
+    localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+    localStorage.setItem(SOURCE_SET_20261122_KEY, '1');
+}
+
+// 2026-11-21 新增最大资源：一次性补入老用户 selectedAPIs，保留其它源勾选状态。
+const SOURCE_SET_ZUID_KEY = 'wdtvSourceSet_zuid_20261121';
+if (!localStorage.getItem(SOURCE_SET_ZUID_KEY)) {
+    const cleaned = selectedAPIs.filter(k => API_SITES[k] && !API_SITES[k].disabled);
+    if (API_SITES.zuid && !API_SITES.zuid.disabled && cleaned.indexOf('zuid') === -1) {
+        cleaned.push('zuid');
+    }
+    selectedAPIs = cleaned;
+    localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+    localStorage.setItem(SOURCE_SET_ZUID_KEY, '1');
+}
+
+// 2026-11-21 新增巨量、无尽：一次性补入老用户 selectedAPIs，保留其它源勾选状态。
+// 茅台已被无尽替换，旧 key 会在 filter(API_SITES) 时自动移除。
+const SOURCE_SET_JM_KEY = 'wdtvSourceSet_juliang_wujin_20261121';
+if (!localStorage.getItem(SOURCE_SET_JM_KEY)) {
+    const cleaned = selectedAPIs.filter(k => API_SITES[k] && !API_SITES[k].disabled);
+    ['juliang', 'wujin'].forEach(k => {
+        if (API_SITES[k] && !API_SITES[k].disabled && cleaned.indexOf(k) === -1) cleaned.push(k);
+    });
+    selectedAPIs = cleaned;
+    localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+    localStorage.setItem(SOURCE_SET_JM_KEY, '1');
 }
 
 // 2026-11-10 数据源订阅下线：清理老用户本地残留的订阅条目与订阅导入的源 key。
@@ -97,6 +260,15 @@ if (!localStorage.getItem(SUBSCRIPTION_OFF_KEY)) {
         localStorage.setItem(SUBSCRIPTION_OFF_KEY, '1');
     } catch (e) { /* localStorage 不可写时静默跳过，不影响看片 */ }
 }
+
+// 豆瓣热门推荐默认关闭：旧版本曾默认开启，升级后一次性关闭，之后尊重用户手动开关。
+// 必须放在顶层（早于 DOMContentLoaded），确保 douban.js 初始化开关时读到 false。
+try {
+    if (!localStorage.getItem('wdtvDoubanDefaultOff_v1')) {
+        localStorage.setItem('doubanEnabled', 'false');
+        localStorage.setItem('wdtvDoubanDefaultOff_v1', '1');
+    }
+} catch (e) { /* 存储不可用时按默认关闭处理 */ }
 
 // 添加当前播放的集数索引
 let currentEpisodeIndex = 0;
@@ -125,7 +297,7 @@ let varietyThresholdMinutes = 60;
 // 页面初始化
 document.addEventListener('DOMContentLoaded', function () {
     // 设置默认API选择（v3 迁移：默认全选所有启用源，已停用源由 filter 自动排除）
-    if (!localStorage.getItem('hasInitializedDefaults_v3')) {
+    if (!localStorage.getItem('hasInitializedDefaults_v4')) {
         // 默认选中所有可用资源（已停用源不参与）
         selectedAPIs = enabledAPIKeys();
         localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
@@ -137,11 +309,13 @@ document.addEventListener('DOMContentLoaded', function () {
         localStorage.setItem('doubanEnabled', 'false');
 
         // 标记已初始化默认值
-        localStorage.setItem('hasInitializedDefaults_v3', 'true');
+        localStorage.setItem('hasInitializedDefaults_v4', 'true');
     }
 
     // 初始化API复选框
     initAPICheckboxes();
+    // 数据源视图切换：经典视图（默认）/ 优先级视图（临时调整）
+    initSourceViewToggle();
 
     // 初始化显示选中的API数量
     updateSelectedApiCount();
@@ -195,6 +369,12 @@ document.addEventListener('DOMContentLoaded', function () {
         raceHedgeToggle.checked = localStorage.getItem('wdtvRaceHedge') === 'true';
     }
 
+    // 备用线路切换开关初始状态（默认关闭：关闭时播放页不显示线路按钮）
+    const routeSwitchToggle = document.getElementById('routeSwitchToggle');
+    if (routeSwitchToggle) {
+        routeSwitchToggle.checked = localStorage.getItem('wdtvRouteSwitchEnabled') === 'true';
+    }
+
     // 设置自动删除缓存开关初始状态（默认开启，超过3个自动删除最早）
     const cacheEvictToggle = document.getElementById('cacheEvictToggle');
     if (cacheEvictToggle) {
@@ -213,110 +393,214 @@ document.addEventListener('DOMContentLoaded', function () {
         danmuCustomApiInput.value = localStorage.getItem('danmuCustomApi') || '';
     }
 
-    // 设置卡片画质探测开关初始状态（默认开启：无值时写入 'true'，仅显式 'false' 视为关闭）
-    if (localStorage.getItem(QUALITY_PROBE_STORAGE) === null) {
-        localStorage.setItem(QUALITY_PROBE_STORAGE, 'true');
-    }
-    const qualityProbeToggle = document.getElementById('wdtvQualityProbeToggle');
-    if (qualityProbeToggle) {
-        qualityProbeToggle.checked = localStorage.getItem(QUALITY_PROBE_STORAGE) !== 'false';
-    }
+    // 搜索列表画质探测已下线：真实分辨率探测迁移到播放页「换源」面板。
 
     // 设置事件监听器
     setupEventListeners();
-
-    // 初始化前三源优先级下拉（元素由 index.html 提供，不存在时静默返回）
-    initSourcePriorityControls();
 
     // 数据源订阅功能已下线（v97）：源集合完全由 config.js 内置维护，
     // 页面不再加载订阅模块，也不再提供任何用户自定义接入数据源的入口。
 });
 
-// 初始化API复选框
+// 源健康度徽章：优先级视图内联在源名右侧，经典视图放在勾选项右侧。
+function appendSourceHealthBadge(container, apiKey, inline) {
+    const healthStatus = (typeof window.getSourceHealthStatus === 'function')
+        ? window.getSourceHealthStatus(apiKey) : null;
+    if (!healthStatus) return;
+    let badgeText = '';
+    let canResume = false;
+    if (healthStatus.permanent) {
+        badgeText = '长期停用';
+        canResume = true;
+    } else if (healthStatus.disabled) {
+        const mins = Math.max(1, Math.ceil((healthStatus.remainingMs || 0) / 60000));
+        badgeText = `停用中 · 剩余 ${mins} 分钟`;
+        canResume = true;
+    } else if (healthStatus.failCount > 0) {
+        badgeText = `连续失败 ${healthStatus.failCount} 次`;
+    }
+    if (!badgeText) return;
+    const badge = document.createElement('span');
+    badge.style.cssText = 'display:inline-flex;align-items:center;gap:4px;'
+        + (inline ? 'flex-shrink:0;margin-left:6px;' : 'align-self:flex-start;margin-top:2px;')
+        + 'padding:1px 6px;border-radius:6px;'
+        + 'background:rgba(140,130,110,0.14);color:var(--text-muted,#9ca3af);'
+        + 'font-size:0.68rem;line-height:1.4;white-space:nowrap;';
+    const badgeLabel = document.createElement('span');
+    badgeLabel.textContent = badgeText;
+    badge.appendChild(badgeLabel);
+    if (canResume) {
+        const resumeBtn = document.createElement('button');
+        resumeBtn.type = 'button';
+        resumeBtn.textContent = '恢复';
+        resumeBtn.style.cssText = 'border:0;background:transparent;padding:0 2px;'
+            + 'color:inherit;font-size:inherit;text-decoration:underline;cursor:pointer;';
+        resumeBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof window.resumeSourceHealth === 'function') window.resumeSourceHealth(apiKey);
+            initAPICheckboxes();
+        });
+        badge.appendChild(resumeBtn);
+    }
+    container.appendChild(badge);
+}
+
+// 数据源列表：
+//   classic  —— 经典双列视图（默认）：一排两个源，无滑块，顺序同样按优先级（关闭沉底）；
+//   priority —— 临时优先级视图：每行一个源 + 0-3 四档滑块（0 关闭），按等级排序。
 function initAPICheckboxes() {
     const container = document.getElementById('apiCheckboxes');
+    if (!container) return;
     container.innerHTML = '';
 
-    // 创建所有API源的复选框（不区分数据源）
-    const apidiv = document.createElement('div');
-    apidiv.className = 'grid grid-cols-2 gap-2';
+    const keys = Object.keys(API_SITES).filter(k => API_SITES[k] && !API_SITES[k].disabled);
+    const view = getSourceView();
 
-    Object.keys(API_SITES).forEach(apiKey => {
-        const api = API_SITES[apiKey];
-        const disabled = api.disabled === true;
-        const checked = !disabled && selectedAPIs.includes(apiKey);
+    // 两种视图共用同一优先级顺序：启用的源按 1→3 级在前，关闭（滑块 0）的源沉底，
+    // 同等级保持 API_SITES 原始顺序。
+    const order = Object.create(null);
+    keys.forEach((k, i) => { order[k] = i; });
+    const sortedKeys = keys.slice().sort((a, b) =>
+        ((selectedAPIs.includes(a) ? 0 : 1) - (selectedAPIs.includes(b) ? 0 : 1)) ||
+        (getSourceTier(a) - getSourceTier(b)) || (order[a] - order[b]));
 
-        const checkbox = document.createElement('div');
-        checkbox.className = 'flex items-center';
-        checkbox.innerHTML = `
-            <input type="checkbox" id="api_${apiKey}"
-                   class="form-checkbox text-blue-600"
-                   ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}
-                   data-api="${apiKey}">
-            <label for="api_${apiKey}" class="ml-1 text-xs text-gray-600 truncate">${api.name}${disabled ? '（已停用）' : ''}</label>
-        `;
-        // 配置层停用：保留条目便于回溯，只给不可勾选的说明徽章
-        if (disabled) {
-            const offBadge = document.createElement('span');
-            offBadge.style.cssText = 'display:inline-flex;align-items:center;flex-shrink:0;'
-                + 'margin-left:6px;padding:1px 6px;border-radius:6px;'
-                + 'background:rgba(140,130,110,0.14);color:var(--text-muted,#9ca3af);'
-                + 'font-size:0.68rem;line-height:1.4;white-space:nowrap;';
-            offBadge.textContent = '已停用';
-            offBadge.title = api.disabledReason || '该源已停用';
-            checkbox.appendChild(offBadge);
-        }
-        // 源健康度徽章：停用剩余时间 / 长期停用 / 连续失败次数，停用时提供手动恢复
-        // 追加在既有 input + label 之后，不改变 checkbox 结构与 updateSelectedAPIs 逻辑
-        const healthStatus = !disabled && (typeof window.getSourceHealthStatus === 'function')
-            ? window.getSourceHealthStatus(apiKey) : null;
-        if (healthStatus) {
-            let badgeText = '';
-            let canResume = false;
-            if (healthStatus.permanent) {
-                badgeText = '长期停用';
-                canResume = true;
-            } else if (healthStatus.disabled) {
-                const mins = Math.max(1, Math.ceil((healthStatus.remainingMs || 0) / 60000));
-                badgeText = `停用中 · 剩余 ${mins} 分钟`;
-                canResume = true;
-            } else if (healthStatus.failCount > 0) {
-                badgeText = `连续失败 ${healthStatus.failCount} 次`;
-            }
-            if (badgeText) {
-                const badge = document.createElement('span');
-                badge.style.cssText = 'display:inline-flex;align-items:center;gap:4px;'
-                    + 'flex-shrink:0;margin-left:6px;padding:1px 6px;border-radius:6px;'
-                    + 'background:rgba(140,130,110,0.14);color:var(--text-muted,#9ca3af);'
-                    + 'font-size:0.68rem;line-height:1.4;white-space:nowrap;';
-                const badgeLabel = document.createElement('span');
-                badgeLabel.textContent = badgeText;
-                badge.appendChild(badgeLabel);
-                if (canResume) {
-                    const resumeBtn = document.createElement('button');
-                    resumeBtn.type = 'button';
-                    resumeBtn.textContent = '恢复';
-                    resumeBtn.style.cssText = 'border:0;background:transparent;padding:0 2px;'
-                        + 'color:inherit;font-size:inherit;text-decoration:underline;cursor:pointer;';
-                    resumeBtn.addEventListener('click', function (e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (typeof window.resumeSourceHealth === 'function') window.resumeSourceHealth(apiKey);
-                        initAPICheckboxes();
-                    });
-                    badge.appendChild(resumeBtn);
-                }
-                checkbox.appendChild(badge);
-            }
-        }
-        apidiv.appendChild(checkbox);
+    if (view === 'classic') {
+        const grid = document.createElement('div');
+        grid.className = 'grid grid-cols-2 gap-2';
+        sortedKeys.forEach(apiKey => {
+            const api = API_SITES[apiKey];
+            const item = document.createElement('div');
+            item.className = 'flex items-center wdtv-source-classic';
+            item.setAttribute('data-api-row', apiKey);
 
-        // 添加事件监听器
-        checkbox.querySelector('input').addEventListener('change', function () {
-            updateSelectedAPIs();
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.id = 'api_' + apiKey;
+            input.className = 'form-checkbox text-blue-600 wdtv-source-check';
+            input.checked = selectedAPIs.includes(apiKey);
+            input.setAttribute('data-api', apiKey);
+            input.addEventListener('change', updateSelectedAPIs);
+            item.appendChild(input);
+
+            const label = document.createElement('label');
+            label.className = 'ml-1 text-xs text-gray-600 truncate';
+            label.setAttribute('for', input.id);
+            label.textContent = api.name || apiKey;
+            item.appendChild(label);
+            appendSourceHealthBadge(item, apiKey, true);
+            grid.appendChild(item);
         });
+        container.appendChild(grid);
+        syncSourceViewUI();
+        return;
+    }
+
+    // 优先级视图：一级在前，同等级保持 API_SITES 原始顺序；关闭（滑块 0）的源沉底。
+    const list = document.createElement('div');
+    list.className = 'wdtv-source-list';
+    sortedKeys.forEach(apiKey => {
+        const api = API_SITES[apiKey];
+        const enabled = selectedAPIs.includes(apiKey);
+        const tier = enabled ? getSourceTier(apiKey) : 0;
+
+        const row = document.createElement('div');
+        row.className = 'wdtv-source-row' + (enabled ? '' : ' is-off');
+        row.setAttribute('data-tier', String(tier));
+        row.setAttribute('data-api-row', apiKey);
+
+        const head = document.createElement('div');
+        head.className = 'wdtv-source-head';
+        const name = document.createElement('span');
+        name.className = 'wdtv-source-name';
+        name.textContent = api.name || apiKey;
+        head.appendChild(name);
+        appendSourceHealthBadge(head, apiKey, true);
+
+        const level = document.createElement('span');
+        level.className = 'wdtv-source-level';
+        level.textContent = tier === 0 ? '关闭' : TIER_LEVEL_LABELS[tier];
+        head.appendChild(level);
+        row.appendChild(head);
+
+        // 四档滑块：0 = 关闭，1-3 = 三/二/一级优先级，滑块占满整行
+        const sliderBox = document.createElement('div');
+        sliderBox.className = 'wdtv-source-slider';
+
+        const range = document.createElement('input');
+        range.type = 'range';
+        range.className = 'wdtv-tier-range';
+        range.min = '0';
+        range.max = String(SOURCE_TIER_MAX);
+        range.step = '1';
+        range.setAttribute('data-api-tier', apiKey);
+        range.setAttribute('aria-label', (api.name || apiKey) + ' 启用与优先级');
+        updateTierRange(range, tier);
+        range.addEventListener('input', function () {
+            const value = parseInt(range.value, 10) || 0;
+            const isEnabled = value > 0;
+            const nextTier = isEnabled ? (SOURCE_TIER_MAX + 1 - value) : 0;
+            if (isEnabled) setSourceTier(apiKey, nextTier);
+            setSourceEnabled(apiKey, isEnabled);
+            row.setAttribute('data-tier', String(nextTier));
+            row.classList.toggle('is-off', !isEnabled);
+            level.textContent = nextTier === 0 ? '关闭' : TIER_LEVEL_LABELS[nextTier];
+            updateTierRange(range, nextTier);
+        });
+        range.addEventListener('change', function () {
+            // 松手后按新优先级重排列表，并重渲染当前搜索结果（组内主源可能变化）
+            if (getSourceView() === 'priority') {
+                const scrollTop = container.scrollTop;
+                const prevRects = new Map();
+                container.querySelectorAll('.wdtv-source-row').forEach(row => {
+                    prevRects.set(row.getAttribute('data-api-row'), row.getBoundingClientRect());
+                });
+                initAPICheckboxes();
+                container.scrollTop = scrollTop;
+                animateSourceReorder(container, prevRects);
+            }
+            if (lastSearchResults.length > 0) renderFilteredSearchResults();
+        });
+        sliderBox.appendChild(range);
+
+        // 0-3 刻度：小字号低对比，只作等级参照，不抢滑块视觉
+        const scale = document.createElement('div');
+        scale.className = 'wdtv-tier-scale';
+        scale.setAttribute('aria-hidden', 'true');
+        for (let i = 0; i <= SOURCE_TIER_MAX; i++) {
+            const tick = document.createElement('span');
+            tick.textContent = String(i);
+            scale.appendChild(tick);
+        }
+        sliderBox.appendChild(scale);
+
+        row.appendChild(sliderBox);
+        list.appendChild(row);
     });
-    container.appendChild(apidiv);
+    container.appendChild(list);
+    syncSourceViewUI();
+}
+
+// 优先级重排动画（FLIP）：重渲染前记录每行位置，渲染后让移动的行从旧位置
+// 平滑滑到新位置，避免等级变化时列表瞬间跳变。
+function animateSourceReorder(container, prevRects) {
+    if (!prevRects || prevRects.size === 0) return;
+    container.querySelectorAll('.wdtv-source-row').forEach(row => {
+        const prev = prevRects.get(row.getAttribute('data-api-row'));
+        if (!prev || typeof row.animate !== 'function') return;
+        const offsetY = prev.top - row.getBoundingClientRect().top;
+        if (Math.abs(offsetY) < 0.5) return;
+        row.animate(
+            [
+                { transform: 'translateY(' + offsetY + 'px)' },
+                { transform: 'translateY(0)' }
+            ],
+            {
+                duration: 380,
+                easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)'
+            }
+        );
+    });
 }
 
 // 更新选中的API列表
@@ -342,42 +626,7 @@ function updateSelectedApiCount() {
     }
 }
 
-// 前三源优先级下拉（index.html 提供 sourcePriority1/2/3；元素缺失时静默返回）
-function initSourcePriorityControls() {
-    const selects = [1, 2, 3].map(n => document.getElementById('sourcePriority' + n));
-    if (selects.every(s => !s)) return;
-    const keys = enabledAPIKeys();
-    const options = ['<option value="">不指定</option>'].concat(keys.map(k => {
-        const name = (API_SITES[k] && API_SITES[k].name) || k;
-        return `<option value="${escapeResultText(k)}">${escapeResultText(name)}</option>`;
-    })).join('');
-    selects.forEach(sel => { if (sel) sel.innerHTML = options; });
-
-    const applyValues = () => {
-        const current = getSourcePriority();
-        selects.forEach((sel, i) => { if (sel) sel.value = current[i] || ''; });
-    };
-    applyValues();
-
-    const onChange = () => {
-        const raw = selects.map(s => (s ? String(s.value || '') : ''));
-        const seen = new Set();
-        let dup = false;
-        raw.forEach(v => {
-            if (!v) return;
-            if (seen.has(v)) dup = true;
-            else seen.add(v);
-        });
-        // 重复选择时回退默认顺序；否则按当前选择写入（setSourcePriority 内部再去重/截断）
-        const list = dup ? getDefaultSourcePriorityList() : raw.filter(Boolean);
-        setSourcePriority(list);
-        applyValues();
-        if (lastSearchResults.length > 0) renderFilteredSearchResults();
-    };
-    selects.forEach(sel => { if (sel) sel.addEventListener('change', onChange); });
-}
-
-// 全选或取消全选API
+// 全选或取消全选 API（经典视图的复选框列表）
 function selectAllAPIs(selectAll = true) {
     const checkboxes = document.querySelectorAll('#apiCheckboxes input[type="checkbox"]');
 
@@ -393,6 +642,29 @@ function selectAllAPIs(selectAll = true) {
     updateSelectedAPIs();
 }
 
+// 优先级视图的「重置」：清空源分级与老版优先源存储，恢复默认分级与默认选中集合。
+function resetSourceSettings() {
+    sourceTierCache = null;
+    try {
+        localStorage.removeItem(SOURCE_TIER_STORAGE_KEY);
+        localStorage.removeItem(LEGACY_SOURCE_PRIORITY_KEY);
+    } catch (e) { /* 存储不可用时只影响持久化，不影响本次会话 */ }
+    selectedAPIs = enabledAPIKeys();
+    try {
+        localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+    } catch (e) { /* 写入失败仅影响下次恢复 */ }
+    const keys = enabledAPIKeys();
+    if (window.SourceHealth && typeof window.SourceHealth.clear === 'function') {
+        keys.forEach(k => {
+            try { window.SourceHealth.clear(k); } catch (e) { /* 单源清理失败不影响其它源 */ }
+        });
+    }
+    initAPICheckboxes();
+    updateSelectedApiCount();
+    if (lastSearchResults.length > 0) renderFilteredSearchResults();
+    if (typeof showToast === 'function') showToast('数据源已恢复默认状态', 'success');
+}
+
 function toggleSettings(e) {
     const settingsPanel = document.getElementById('settingsPanel');
     if (!settingsPanel) return;
@@ -400,6 +672,11 @@ function toggleSettings(e) {
     if (settingsPanel.classList.contains('show')) {
         settingsPanel.classList.remove('show');
     } else {
+        // 优先级视图只是临时调整：每次打开设置都恢复默认的经典视图
+        if (getSourceView() !== 'classic') {
+            setSourceView('classic');
+            initAPICheckboxes();
+        }
         settingsPanel.classList.add('show');
     }
 
@@ -491,6 +768,16 @@ function setupEventListeners() {
         });
     }
 
+    // 备用线路切换开关：写入 'true'/'false'，播放页按此决定是否显示「线路」按钮
+    const routeSwitchToggle = document.getElementById('routeSwitchToggle');
+    if (routeSwitchToggle) {
+        routeSwitchToggle.addEventListener('change', function (e) {
+            const on = !!e.target.checked;
+            localStorage.setItem('wdtvRouteSwitchEnabled', on ? 'true' : 'false');
+            showToast(on ? '已开启备用线路切换：播放页显示线路按钮' : '已关闭备用线路切换', 'success');
+        });
+    }
+
     // 自动删除缓存开关：开启 = 超过3个自动删除最早（lru），关闭 = 不自动删除（never）
     const cacheEvictToggle = document.getElementById('cacheEvictToggle');
     if (cacheEvictToggle) {
@@ -529,15 +816,6 @@ function setupEventListeners() {
         danmuCustomApiInput.addEventListener('blur', saveDanmuCustomApi);
     }
 
-    // 卡片画质探测开关（默认开启；关闭时立即断开观察器并取消在途探测，恢复零新增请求）
-    const qualityProbeToggle = document.getElementById('wdtvQualityProbeToggle');
-    if (qualityProbeToggle) {
-        qualityProbeToggle.addEventListener('change', function (e) {
-            localStorage.setItem('wdtvQualityProbeEnabled', e.target.checked ? 'true' : 'false');
-            if (!e.target.checked) cancelQualityProbes();          // 关闭：立即停
-            else armQualityProbeForVisibleCards();                 // 开启：对当前页已显示卡片补观察，无需重渲染
-        });
-    }
 }
 
 // 应用动态效果开关状态：关闭时停用一切动画与视觉特效以降低性能开销
@@ -563,6 +841,7 @@ function resetSearchArea() {
 
     // 重置同名筛选状态
     lastSearchResults = [];
+    resetSearchGroupOrder();
     currentNameFilter = '';
     // 重置翻页状态与当前页，收起分页栏
     searchPageState = {};
@@ -674,44 +953,6 @@ function getPrefetchedDetail(id, sourceCode) {
     return detailPrefetchCache.get(`${sourceCode}_${id}`) || null;
 }
 
-// 多源卡片直接播放：取该组第一条详情并跳到播放页（优先源组专用）。
-// 返回 true 表示已发起播放跳转；false 表示失败（调用方回退为展开面板）。
-async function directPlayPriorityGroup(item) {
-    if (!item) return false;
-    const vodId = String(item.vod_id || '');
-    const sourceCode = String(item.source_code || '');
-    const vodName = item.vod_name || '';
-    if (!vodId || !sourceCode) return false;
-    const seq = ++detailSeq;
-    showLoading();
-    try {
-        let data = getPrefetchedDetail(vodId, sourceCode);
-        if (!data) data = await fetchVideoDetailData({ id: vodId, source: sourceCode });
-        if (seq !== detailSeq) return false; // 已有更新的点击/播放，放弃本次
-        if (data && data.code === 200 && Array.isArray(data.episodes) && data.episodes.length > 0) {
-            currentEpisodes = data.episodes;
-            currentEpisodeNames = (Array.isArray(data.episodeNames) && data.episodeNames.length === data.episodes.length)
-                ? data.episodeNames : [];
-            currentEpisodeIndex = 0;
-            currentDetailSource = sourceCode;
-            currentDetailId = vodId;
-            currentDetailVideoInfo = data.videoInfo || null;
-            currentVideoTitle = vodName || '未知视频';
-            hideLoading();
-            playVideo(data.episodes[0], vodName, sourceCode, 0, vodId);
-            return true;
-        }
-        hideLoading();
-        showToast('该来源暂无可用播放集数', 'error');
-        return false;
-    } catch (e) {
-        if (seq !== detailSeq) return false;
-        hideLoading();
-        showToast('获取播放资源失败，请稍后重试', 'error');
-        return false;
-    }
-}
-
 // 搜索序号：连续搜索时丢弃旧搜索的迟到的渲染/结果，防止遮罩与内容错位
 let searchSeq = 0;
 // 当前搜索会话的请求控制器：新搜索发起时 abort 旧搜索的全部在途请求
@@ -807,7 +1048,8 @@ async function search() {
             if (raw) {
                 const parsed = JSON.parse(raw);
                 if (parsed && Array.isArray(parsed.results) && Date.now() - parsed.ts < SEARCH_CACHE_TTL && parsed.results.length > 0) {
-                    lastSearchResults = parsed.results;
+                    lastSearchResults = (typeof filterAdultSearchItems === 'function')
+                        ? filterAdultSearchItems(parsed.results) : parsed.results;
                     currentNameFilter = '';
                     // 恢复翻页状态：缓存命中时若源还有后续页，仍可“加载更多”补抓
                     searchPageState = {};
@@ -831,6 +1073,7 @@ async function search() {
                         progressEl.style.display = 'none';
                     }
                     populateNameFilter(lastSearchResults);
+                    resetSearchGroupOrder();
                     renderFilteredSearchResults();
                     try {
                         window.history.pushState({ search: query }, `搜索: ${query} - WDTV`, `/s=${encodeURIComponent(query)}`);
@@ -844,6 +1087,13 @@ async function search() {
 
         // 2) 渐进渲染：每个源返回即追加显示，不等最慢的源
         lastSearchResults = [];
+        // 新搜索开始：丢弃上一轮尚未执行的 silent 补页重排
+        if (silentReorderTimer) {
+            clearTimeout(silentReorderTimer);
+            silentReorderTimer = null;
+        }
+        resetSearchGroupOrder();
+        Object.keys(sourceSearchLatency).forEach(k => { delete sourceSearchLatency[k]; });
         currentNameFilter = '';
         // 重置本次搜索的翻页状态与去重集合，回到第 1 页，并收起上一次搜索残留的分页栏
         searchPageState = {};
@@ -857,6 +1107,7 @@ async function search() {
         durationQueue = [];
         const resultsDiv = document.getElementById('results');
         resetSearchCardMount(resultsDiv); // 清空并作废上一次搜索的渲染回调
+        renderedGroupsByKey.clear(); // 丢弃上一次搜索的组缓存，避免旧组 key 被误命中
         showSearchSkeleton(resultsDiv, 8); // 真正等待首批结果时填充骨架屏，首张真卡入网格即移除
         const searchResultsCount = document.getElementById('searchResultsCount');
         if (searchResultsCount) searchResultsCount.textContent = 0;
@@ -865,7 +1116,8 @@ async function search() {
         let settled = 0;
         let renderTimer = null;
         let urlUpdated = false;
-        let renderedCount = 0;               // 渐进渲染已追加的卡片数（增量追加，不重建已渲染部分）
+        let renderedCount = 0;               // 渐进渲染已追加的卡片（组）数（增量追加，不重建已渲染部分）
+        const progressiveShownGroups = [];   // 首屏已显示的组，用于逐条匹配去重
         let finalRendered = false;           // 最终排序渲染是否已完成（决定迟到结果的渲染方式）
         // 去重集合用模块级 searchResultKeys（“加载更多”补抓时跨页继续复用）
         const blockedKeywords = getBlockedTypeRuleKeywords(); // 本次搜索期间屏蔽规则不变，一次读入
@@ -894,20 +1146,44 @@ async function search() {
         };
         updateProgressHint('正在搜索各资源站…');
 
-        // 节流渲染：250ms 合并一次；只追加新增卡片，已渲染的图片不闪烁、不重复请求
+        // 节流渲染：250ms 合并一次；新增结果先与已显示组做「片名 + 年份 + 集数」匹配，
+        // 匹配上只更新组数据、不再插入重复卡片，已渲染的图片不闪烁、不重复请求。
         const renderProgressive = () => {
             renderTimer = null;
             if (seq !== searchSeq) return; // 已被更新的搜索取代，丢弃本次渲染
             const div = document.getElementById('results');
             if (!div) return;
             const filtered = lastSearchResults.filter(item => !isBlockedByTypeFilter(item, blockedKeywords));
+            // 渐进阶段同样先聚合再展示：同一视频的后续源直接并入已显示卡片，
+            // 不再出现「先显示重复卡、全部加载完才合并」的视觉跳变
+            const groups = getOrderedSearchGroups(filtered);
             // 渐进渲染期间只展示第 1 页（分页栏在最终渲染时生成），超出的部分留给翻页
-            const visible = Math.min(filtered.length, RESULTS_PER_PAGE);
-            if (visible > renderedCount) {
-                // 首批：清掉"正在搜索/无结果"占位并重置渲染；后续批次增量接续
-                if (renderedCount === 0) {
-                    resetSearchCardMount(div);
-                    // 第一张卡插入后立即收起遮罩并移除骨架屏；整批插入完成后再兜底触发一次
+            const pageGroups = groups.slice(0, RESULTS_PER_PAGE);
+            pageGroups.forEach(g => {
+                if (!g) return;
+                const key = String(g.key);
+                // 按「片名 + 年份 + 集数」匹配已显示卡片。不单纯比 group.key：
+                // 集数从无到有时 key 会变化，但仍是同一张卡，不能再出现第二张
+                const hit = progressiveShownGroups.find(shown => isSameDisplayedGroup(shown, g));
+                if (hit) {
+                    // 已显示组集数原先未知时用新结果补全，后续不同集数才能继续拆开
+                    if (!hit.episodes && g.episodes) hit.episodes = g.episodes;
+                    // 只刷新点击取源数据：旧卡片 key 也指向合并后的组
+                    renderedGroupsByKey.set(String(hit.key), g);
+                    renderedGroupsByKey.set(key, g);
+                    return;
+                }
+                if (progressiveShownGroups.length >= RESULTS_PER_PAGE) return; // 首页已满，留给最终渲染
+                progressiveShownGroups.push(g);
+                renderedGroupsByKey.set(key, g);
+            });
+            // 展示组 = 当前页中已进入已显示集合的组（稳定 key 判断，兼容 isSameDisplayedGroup）
+            const shownKeys = new Set(progressiveShownGroups.map(g => String(g.key)));
+            const displayGroups = pageGroups.filter(g => g && shownKeys.has(String(g.key)));
+            if (renderedCount === 0) {
+                // 首批：清掉"正在搜索/无结果"占位并重置渲染
+                resetSearchCardMount(div);
+                // 第一张卡插入后立即收起遮罩并移除骨架屏；整批插入完成后再兜底触发一次
                 if (loadingOwnerSeq === searchLoadingOwner) {
                     const closeLoading = () => {
                         clearSearchSkeleton(div); // 首张真卡入网格 / 整批完成时移除骨架屏
@@ -916,10 +1192,10 @@ async function search() {
                     searchCardMount.onFirstMount = closeLoading;
                     searchCardMount.onIdle = closeLoading;
                 }
-                }
-                queueSearchCards(div, filtered.slice(renderedCount, visible), renderedCount);
-                renderedCount = visible;
             }
+            // 关联度顺序同步：复用已渲染卡片，新卡先追加到末尾，再以单卡位移动画上移
+            syncSearchResultCards(div, displayGroups, { prune: false });
+            renderedCount = div.querySelectorAll('.douban-card[data-group-key]').length;
             updateProgressHint(settled < total ? `已搜索 ${settled}/${total} 个源，正在加载其余结果…` : '');
             // 提示条右侧「已就绪 N/M 个源」进度文案（与渐进渲染同步刷新）
             const sourceHealthReady = document.getElementById('sourceHealthReady');
@@ -932,8 +1208,10 @@ async function search() {
             renderTimer = setTimeout(renderProgressive, 250);
         };
 
-        // 追加结果（同源 source_code+vod_id 去重）；最终渲染完成后改为全量重渲染以正确应用筛选
-        const appendResults = (results) => {
+        // 追加结果（同源 source_code+vod_id 去重）；最终渲染完成后可按 silent 选择
+        // 只刷新计数/分页（源补页）或整页重渲染（需要重新排序/筛选时）。
+        const appendResults = (results, opts) => {
+            const silent = !!(opts && opts.silent);
             const fresh = results.filter(item => {
                 const key = `${item.source_code}_${item.vod_id}`;
                 if (searchResultKeys.has(key)) return false;
@@ -944,11 +1222,36 @@ async function search() {
             lastSearchResults = lastSearchResults.concat(fresh);
             updateUrlOnce();
             if (finalRendered) {
-                // 最终渲染后到达的补页结果：按到达顺序追加到结果池末尾并重渲染当前页。
-                // 不做任何重排序——已展示的视频排列保持不动，新视频只出现在后面
-                renderFilteredSearchResults();
+                // 最终渲染后到达的补页结果：并入结果池后按需刷新。
+                if (silent) {
+                    // 第 1 页、无同名/时长筛选时，补页可能带来更高关联度的结果：
+                    // 防抖做一次增量重排（保留已渲染卡片），让新卡上移并同步计数/分页；
+                    // 其余筛选状态只刷新摘要，避免打断用户当前筛选。
+                    if (currentResultPage === 1 && !currentNameFilter && !isDurationFilterActive()) {
+                        if (silentReorderTimer) clearTimeout(silentReorderTimer);
+                        silentReorderTimer = setTimeout(() => {
+                            silentReorderTimer = null;
+                            if (seq !== searchSeq) return; // 已被更新的搜索取代
+                            renderFilteredSearchResults({ appendOnly: true });
+                        }, 280);
+                    } else {
+                        updateSearchSummaryOnly();
+                    }
+                } else {
+                    renderFilteredSearchResults();
+                }
             }
             else scheduleProgressiveRender();
+        };
+
+        // 只刷新结果计数与分页栏（不重建卡片）：源补页追加后使用
+        const updateSearchSummaryOnly = () => {
+            const filtered = getFilteredSearchResults();
+            const groups = getOrderedSearchGroups(filtered);
+            const totalPages = Math.max(1, Math.ceil(groups.length / RESULTS_PER_PAGE));
+            const countEl = document.getElementById('searchResultsCount');
+            if (countEl) countEl.textContent = filtered.length;
+            renderResultsPagination(totalPages);
         };
 
         searchInProgress = true;
@@ -997,9 +1300,10 @@ async function search() {
                 settled++; // 停用源无需请求，计入已处理，进度照常收敛
                 return Promise.resolve([]);
             }
+            const sourceStartedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
             return searchByAPIAndKeyWord(apiId, query, (additional, meta) => {
                 if (seq !== searchSeq) return; // 已被更新的搜索取代
-                if (Array.isArray(additional) && additional.length > 0) appendResults(additional);
+                if (Array.isArray(additional) && additional.length > 0) appendResults(additional, { silent: true });
                 // 记录该源翻页状态（补页完成才可知总页数）；无 meta 按“无更多页”处理。
                 // 分页栏随渲染更新，这里只需维护状态
                 searchPageState[apiId] = (meta && typeof meta.pageCount === 'number')
@@ -1008,6 +1312,8 @@ async function search() {
             }, searchSignal)
                 .then(results => {
                     if (seq !== searchSeq) return []; // 已被更新的搜索取代
+                    const endedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                    sourceSearchLatency[apiId] = Math.max(1, Math.round(endedAt - sourceStartedAt));
                     settled++;
                     if (Array.isArray(results) && results.length > 0) {
                         appendResults(results);
@@ -1040,8 +1346,7 @@ async function search() {
         if (finalSourceHealthReady) finalSourceHealthReady.textContent = `已就绪 ${settled}/${total} 个源`;
 
         // 3) 全部完成：最终渲染（一次全量重建）。
-        // 结果按到达顺序排列（不按名称重排）：后续补页只追加到池尾，
-        // 已展示视频的顺序与所在页位置都不会变动
+        // 结果池保持到达顺序，展示顺序按「搜索词关联度 → 到达顺序」派生
         let allResults = [...lastSearchResults];
 
         // 批次4 B1：URL 更新提到零结果 return 之前。app.js 是唯一 pushState 入口，
@@ -1072,9 +1377,10 @@ async function search() {
         lastSearchResults = allResults;
         currentNameFilter = '';
         populateNameFilter(allResults);
-        renderFilteredSearchResults();
+        renderFilteredSearchResults({
+            appendOnly: progressiveShownGroups.length > 0 && currentResultPage === 1
+        });
         finalRendered = true;
-        renderedCount = Math.min(allResults.length, RESULTS_PER_PAGE);
 
         // 会话缓存写入（大结果集同步 stringify 会阻塞渲染）移出关键路径；
         // pageState 一并写入，5 分钟内缓存命中后仍可继续翻页补抓后续页
@@ -1102,6 +1408,25 @@ async function search() {
 // 同名影视筛选：保存最近一次搜索结果与当前筛选的名称
 let lastSearchResults = [];
 let currentNameFilter = '';
+// 最终渲染后 silent 补页的重排防抖计时器（见 appendResults）
+let silentReorderTimer = null;
+
+// ===== 搜索会话的展示顺序 =====
+// 直接使用关联度排序结果：后台补页/新源到达后，高关联度的新组可以上移，
+// 已渲染卡片由 syncSearchResultCards 以单卡位移动画过渡，不整页重建。
+// searchGroupOrder / searchGroupOrderSet 同步为本次关联度顺序，供点击回查等场景复用。
+let searchGroupOrder = [];
+let searchGroupOrderSet = new Set();
+function resetSearchGroupOrder() {
+    searchGroupOrder = [];
+    searchGroupOrderSet = new Set();
+}
+function getOrderedSearchGroups(flatItems) {
+    const groups = deriveOrderedGroupedResults(flatItems);
+    searchGroupOrder = groups.map(g => String(g && g.key));
+    searchGroupOrderSet = new Set(searchGroupOrder);
+    return groups;
+}
 
 // 转义结果卡片中使用的HTML特殊字符（文本节点 / 双引号属性上下文）。
 // & 必须最先替换：否则后续生成的 &lt; / &quot; / &#39; 会被二次转义成 &amp;lt; 等；
@@ -1296,7 +1621,6 @@ function queueSearchCards(container, items, startIndex) {
         if (seq !== searchCardMount.seq) return; // 已被新的渲染取代，丢弃
         const el = createResultCardElement(item);
         container.appendChild(el);
-        observeQualityProbeCard(el); // 仅「开关开启 + 最终渲染」时挂视口观察
         if (i === 0) {
             const firstCb = searchCardMount.onFirstMount;
             searchCardMount.onFirstMount = null;
@@ -1307,6 +1631,232 @@ function queueSearchCards(container, items, startIndex) {
     const idleCb = searchCardMount.onIdle;
     searchCardMount.onIdle = null;
     if (typeof idleCb === 'function') idleCb();
+}
+
+// ===== 关联度增量重排：复用已渲染卡片 + 单卡多段位移动画 =====
+// 动画使用 CSS 独立属性 translate（不是 transform）：motion.js 的磁性效果会写
+// style.transform，两者叠加互不覆盖。所有动画对象挂在 el.__wdtvReorderAnim 上，
+// 下一轮重排前统一 cancel，使 translate 立即归零后再测量基准位置。
+function cancelSearchCardMove(el) {
+    if (!el) return;
+    const anim = el.__wdtvReorderAnim;
+    if (anim) {
+        el.__wdtvReorderAnim = null;
+        try { anim.cancel(); } catch (e) { /* 已结束或不可取消 */ }
+    }
+    el.classList.remove('wdtv-card-moving', 'wdtv-card-moving-primary');
+    el.style.zIndex = '';
+}
+
+function animateSearchCardMoves(container, firstRects, lastRects, newKeys, targetKeys) {
+    if (!container || !firstRects || !lastRects) return;
+    // 减少动效 / 动态效果关闭：直接落位（节点顺序已更新）
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (typeof document !== 'undefined' && document.documentElement &&
+        document.documentElement.classList.contains('fx-off')) return;
+
+    const targetIndex = new Map();
+    (Array.isArray(targetKeys) ? targetKeys : []).forEach((k, i) => {
+        targetIndex.set(String(k), i);
+    });
+    const newKeySet = new Set((Array.isArray(newKeys) ? newKeys : []).map(k => String(k)));
+
+    const cards = container.querySelectorAll('.douban-card[data-group-key]');
+    const moves = [];
+    cards.forEach(card => {
+        const key = card.getAttribute('data-group-key');
+        if (key == null) return;
+        const k = String(key);
+        const first = firstRects.get(k);
+        const last = lastRects.get(k);
+        if (!first || !last) return;
+        const dx = first.left - last.left;
+        const dy = first.top - last.top;
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+        moves.push({
+            el: card,
+            key: k,
+            dx: dx,
+            dy: dy,
+            rank: targetIndex.has(k) ? targetIndex.get(k) : 9999
+        });
+    });
+    if (moves.length === 0) return;
+
+    // 主移动卡片：优先新卡中目标名次最靠前者；没有新卡时选向上位移最大的一张
+    let primary = null;
+    moves.forEach(m => {
+        if (!newKeySet.has(m.key) || !targetIndex.has(m.key)) return;
+        if (!primary || m.rank < primary.rank) primary = m;
+    });
+    if (!primary) {
+        moves.forEach(m => {
+            // dy = 旧 top - 新 top：> 0 表示卡片向上移动
+            if (m.dy > 1 && (!primary || m.dy > primary.dy)) primary = m;
+        });
+    }
+
+    moves.forEach(m => {
+        const isPrimary = m === primary;
+        const isNew = newKeySet.has(m.key);
+        const movedUp = m.dy > 1;
+        // 只让「真正上移的主角卡/新卡」播放位移动画；其余被挤开的卡片直接落位，
+        // 避免整页卡片一起滑动造成“全量重排”的观感。
+        if (!isPrimary && !isNew && !movedUp) return;
+        if (typeof m.el.animate !== 'function') return;
+        cancelSearchCardMove(m.el);
+        m.el.classList.add('wdtv-card-moving');
+        if (isPrimary) m.el.classList.add('wdtv-card-moving-primary');
+        m.el.style.zIndex = isPrimary ? '3' : '2';
+
+        // 主卡 4 段 waypoint 缓入缓出；其余卡片 2 段短促让位
+        const frames = isPrimary
+            ? [
+                { translate: m.dx + 'px ' + m.dy + 'px', offset: 0 },
+                { translate: (m.dx * 0.45) + 'px ' + (m.dy * 0.38) + 'px', offset: 0.42 },
+                { translate: (m.dx * 0.10) + 'px ' + (m.dy * 0.05) + 'px', offset: 0.76 },
+                { translate: '0px 0px', offset: 1 }
+            ]
+            : [
+                { translate: m.dx + 'px ' + m.dy + 'px', offset: 0 },
+                { translate: '0px 0px', offset: 1 }
+            ];
+        const timing = {
+            duration: isPrimary ? 520 : 240,
+            // 让位卡片按目标名次错开，最多 100ms
+            delay: isPrimary ? 0 : Math.min(100, Math.max(0, m.rank * 8)),
+            easing: isPrimary ? 'cubic-bezier(.22,.68,.16,1)' : 'cubic-bezier(.32,.72,.24,1)',
+            fill: 'backwards'
+        };
+
+        let anim;
+        try {
+            anim = m.el.animate(frames, timing);
+        } catch (e) {
+            cancelSearchCardMove(m.el);
+            return;
+        }
+        m.el.__wdtvReorderAnim = anim;
+        const cleanup = () => {
+            // 旧动画迟到的 cancel 事件不得清掉新一轮动画的类与 z-index
+            if (m.el.__wdtvReorderAnim && m.el.__wdtvReorderAnim !== anim) return;
+            m.el.__wdtvReorderAnim = null;
+            m.el.classList.remove('wdtv-card-moving', 'wdtv-card-moving-primary');
+            m.el.style.zIndex = '';
+        };
+        anim.onfinish = cleanup;
+        anim.oncancel = cleanup;
+    });
+}
+
+// 按目标组顺序同步卡片：已有卡按 data-group-key 复用，缺失卡追加到末尾后再整体排序，
+// 以 first/last rect 差播放单卡位移动画。prune=false 时旧卡保留在目标卡之后
+// （渐进阶段维持「已显示 + 末尾追加」），prune=true 时移除不在目标中的旧卡。
+function syncSearchResultCards(container, groups, opts) {
+    if (!container || !Array.isArray(groups) || groups.length === 0) return { added: 0 };
+    const prune = !!(opts && opts.prune);
+    const seq = searchCardMount.seq;
+    searchCardMount.container = container;
+
+    const targetGroups = new Map();
+    const targetKeys = [];
+    groups.forEach(g => {
+        if (!g) return;
+        const key = String(g.key);
+        if (targetGroups.has(key)) return;
+        targetGroups.set(key, g);
+        targetKeys.push(key);
+        renderedGroupsByKey.set(key, g);
+    });
+    if (targetKeys.length === 0) return { added: 0 };
+
+    // 追加前先记录旧卡（含不在目标里的卡），用于 prune=false 时保持末尾顺序
+    const oldCards = Array.prototype.slice.call(container.querySelectorAll('.douban-card[data-group-key]'));
+    const cardByKey = new Map();
+    oldCards.forEach(card => {
+        const key = card.getAttribute('data-group-key');
+        if (key == null) return;
+        const k = String(key);
+        if (!cardByKey.has(k)) cardByKey.set(k, card);
+    });
+
+    let added = 0;
+    let firstMountDone = false;
+    const newKeys = [];
+    for (let i = 0; i < targetKeys.length; i++) {
+        if (seq !== searchCardMount.seq) return { added: added }; // 已被新的渲染取代
+        const key = targetKeys[i];
+        if (cardByKey.has(key)) continue;
+        const g = targetGroups.get(key);
+        if (!g) continue;
+        const card = createResultCardElement(g);
+        if (!card) continue;
+        container.appendChild(card);
+        if (seq !== searchCardMount.seq) return { added: added };
+        cardByKey.set(key, card);
+        newKeys.push(key);
+        added++;
+        if (!firstMountDone) {
+            firstMountDone = true;
+            const firstCb = searchCardMount.onFirstMount;
+            searchCardMount.onFirstMount = null;
+            if (typeof firstCb === 'function') firstCb();
+        }
+    }
+
+    const idleCb = searchCardMount.onIdle;
+    searchCardMount.onIdle = null;
+    if (typeof idleCb === 'function') idleCb();
+
+    // 取消上一轮重排动画，确保 measure 时 translate 已归零
+    const currentCards = Array.prototype.slice.call(container.querySelectorAll('.douban-card[data-group-key]'));
+    currentCards.forEach(card => cancelSearchCardMove(card));
+
+    // first：追加后、排序前的布局位置
+    const firstRects = new Map();
+    currentCards.forEach(card => {
+        const key = card.getAttribute('data-group-key');
+        if (key == null) return;
+        const k = String(key);
+        if (!firstRects.has(k)) firstRects.set(k, card.getBoundingClientRect());
+    });
+
+    const targetSet = new Set();
+    const targetCards = [];
+    targetKeys.forEach(key => {
+        const card = cardByKey.get(key);
+        if (card && card.parentNode === container) {
+            targetCards.push(card);
+            targetSet.add(card);
+        }
+    });
+    const leftover = [];
+    oldCards.forEach(card => {
+        if (!targetSet.has(card) && card.parentNode === container) leftover.push(card);
+    });
+
+    if (prune) {
+        leftover.forEach(card => {
+            if (card.parentNode === container) container.removeChild(card);
+        });
+    }
+    // 目标卡按关联度顺序重排；prune=false 时旧卡保持原 DOM 顺序跟在目标卡之后
+    targetCards.forEach(card => container.appendChild(card));
+    if (!prune) leftover.forEach(card => container.appendChild(card));
+
+    // last：排序后的布局位置（含保留在末尾的旧卡，让位动画一并播放）
+    const lastRects = new Map();
+    const finalCards = container.querySelectorAll('.douban-card[data-group-key]');
+    finalCards.forEach(card => {
+        const key = card.getAttribute('data-group-key');
+        if (key == null) return;
+        const k = String(key);
+        if (!lastRects.has(k)) lastRects.set(k, card.getBoundingClientRect());
+    });
+
+    animateSearchCardMoves(container, firstRects, lastRects, newKeys, targetKeys);
+    return { added: added };
 }
 
 // ===== 批次 2 · A1 跨源同名聚合：渲染层派生视图 =====
@@ -1325,7 +1875,6 @@ function deriveGroupedResults(flatItems) {
     return flatItems.map(item => ({
         key: `${(item && item.source_code) || ''}_${item && item.vod_id}`,
         name: item && item.vod_name,
-        year: undefined,
         items: [item],
         remarks: undefined,
         pic: item && item.vod_pic,
@@ -1333,58 +1882,57 @@ function deriveGroupedResults(flatItems) {
     }));
 }
 
-// 派生分组后按「前三源优先级」稳定排序：组内含优先源则按最小 rank 升序，
-// 非优先组排在后面且保持原相对顺序。
+// 派生分组后按「搜索词关联度」排序（WDTVGroup.rankGroupsByRelevance）：
+// 各源搜索接口大多按更新时间返回，且可能混入大量只沾边的条目，若直接按到达顺序
+// 或源等级排列，真正要搜的片名会被挤到后面。列表排序只看关联度，
+// 同分时按进入结果池的先后保持稳定；源等级只用于组内选源。
 function deriveOrderedGroupedResults(flatItems) {
     const groups = deriveGroupedResults(flatItems);
-    return groups.map((g, idx) => {
-        let minRank = 99;
-        (g && Array.isArray(g.items) ? g.items : []).forEach(it => {
-            const r = priorityRank(it && it.source_code);
-            if (r < minRank) minRank = r;
-        });
-        return { g, idx, minRank };
-    }).sort((a, b) => (a.minRank - b.minRank) || (a.idx - b.idx))
-        .map(x => {
-            // 组内条目也按优先源排序：卡片主条目（封面/来源徽章）与直接播放都取 items[0]
-            if (x.g && Array.isArray(x.g.items)) x.g.items = sortGroupItems(x.g.items);
-            return x.g;
-        });
+    const Group = window.WDTVGroup;
+    let ordered = null;
+    if (Group && typeof Group.rankGroupsByRelevance === 'function') {
+        try {
+            ordered = Group.rankGroupsByRelevance(groups, currentSearchQuery);
+        } catch (e) { /* 排序模块异常时退回原顺序，不影响结果展示 */ }
+    }
+    if (!Array.isArray(ordered)) {
+        // 聚合模块缺失时保持结果池到达顺序，保证渲染链不中断
+        ordered = groups;
+    }
+    ordered.forEach(g => {
+        // 组内条目仍按源等级排序：卡片主条目（封面/来源徽章）取 items[0]
+        if (g && Array.isArray(g.items)) g.items = sortGroupItems(g.items);
+    });
+    return ordered;
 }
 
-// 当前页已渲染的分组（group.key -> group），供多源卡片点击直接播放优先源使用
+// 当前页已渲染的分组（group.key -> group），供卡片点击回查聚合组使用
 let renderedGroupsByKey = new Map();
 
-// 展开面板排序：先按前三源优先级升序，再按画质高度降序；无数据保持原相对顺序。
+// 渐进渲染去重：判断新聚合组与已显示卡片是否同一个视频。
+// 优先比较稳定聚合键（titleGroupKey：片名 + 季数 + 内容标签），集数不参与；
+// key 缺失时退回比较片名，避免旧调用方（只传片名的扁平项）失效。
+function isSameDisplayedGroup(a, b) {
+    if (!a || !b) return false;
+    if (a.key && b.key) return String(a.key) === String(b.key);
+    const Group = window.WDTVGroup;
+    if (Group && typeof Group.titleGroupKey === 'function') {
+        return Group.titleGroupKey(a.name) === Group.titleGroupKey(b.name);
+    }
+    const norm = (Group && typeof Group.normalizeTitle === 'function')
+        ? Group.normalizeTitle
+        : (s => String(s == null ? '' : s).toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, ''));
+    return norm(a.name) === norm(b.name);
+}
+
+// 组内选源排序：先按源等级（1 首选 → 3 备用），同等级再按本次搜索实测速度。
+// 卡的第一个条目即组内主源（封面/来源徽章与换源面板的首选）。
 function sortGroupItems(items) {
-    const Q = window.WDTVQuality;
-    const probeHeightOf = (it) => {
-        if (!Q || typeof Q.qualityKey !== 'function') return undefined;
-        const entry = qualityProbeEntries[Q.qualityKey((it && it.source_code) || '', (it && it.vod_id) || '')];
-        if (!entry) return undefined;
-        if (typeof Q.isQualityEntryFresh === 'function' && !Q.isQualityEntryFresh(entry)) return undefined;
-        if (typeof Q.heightOf === 'function') {
-            const h = Q.heightOf(entry);
-            if (typeof h === 'number' && h > 0) return h;
-        }
-        return undefined;
-    };
-    const heightOfItem = (it) => {
-        const m = getMeasuredQualityHeight(it && it.source_code, it && it.vod_id);
-        if (typeof m === 'number' && m > 0) return m;
-        if (Q && typeof Q.heightOf === 'function') {
-            const h = Q.heightOf(it);
-            if (typeof h === 'number' && h > 0) return h;
-        }
-        return probeHeightOf(it);
-    };
     return (Array.isArray(items) ? items.slice() : []).sort((a, b) => {
-        const ra = priorityRank(a && a.source_code);
-        const rb = priorityRank(b && b.source_code);
+        const ra = getSourceTier(a && a.source_code);
+        const rb = getSourceTier(b && b.source_code);
         if (ra !== rb) return ra - rb;
-        const ha = heightOfItem(a);
-        const hb = heightOfItem(b);
-        return (typeof hb === 'number' ? hb : -1) - (typeof ha === 'number' ? ha : -1);
+        return sourceSpeedMs(a && a.source_code) - sourceSpeedMs(b && b.source_code);
     });
 }
 
@@ -1437,7 +1985,6 @@ function buildResultCard(entry) {
     const group = (entry && Array.isArray(entry.items)) ? entry : {
         key: `${(entry && entry.source_code) || ''}_${entry && entry.vod_id}`,
         name: entry && entry.vod_name,
-        year: undefined,
         items: [entry],
         remarks: undefined,
         pic: entry && entry.vod_pic,
@@ -1478,96 +2025,17 @@ function buildResultCard(entry) {
     // 原始封面地址存入 data 属性（encodeURIComponent 后无特殊字符，可安全内插），
     // 直连加载失败时由 handleCoverLoadError 取用并走降级链
     const coverOriginalAttr = hasCover ? ` data-original="${encodeURIComponent(normalizedPic)}"` : '';
-    const safeTypeName = escapeResultText(primary.type_name || group.typeName);
-    const safeSourceName = escapeResultText(primary.source_name);
-    // 备注归一：多源用组内统一结论，单源用本条文案；模块缺失回退原文（仅转义）
+    // 卡片不再显示来源/画质/源数量/时长角标；多源与单源卡点击统一打开详情窗口。
     const remarksRaw = group.remarks || (primary && primary.vod_remarks) || '';
     const safeRemarks = escapeResultText(formatCardRemarks(remarksRaw));
-    // 画质徽章：最高优先为实测高度（播放器解码分辨率，按 source_vod 落库）；
-    // 其次用已探明的探测缓存；都没有则不输出画质，不再用备注/标题兜底猜标签。
-    const Q = window.WDTVQuality;
-    let badgeState = '', badgeLabel = '', badgeTip = '';
-    const measuredHeight = getMeasuredQualityHeight(primary.source_code || '', primary.vod_id || '');
-    if (typeof measuredHeight === 'number' && measuredHeight > 0) {
-        const measuredLabel = (Q && typeof Q.qualityLabel === 'function')
-            ? Q.qualityLabel(measuredHeight) : (measuredHeight + 'P');
-        if (measuredLabel) {
-            badgeState = 'measured';
-            badgeLabel = measuredLabel;
-            badgeTip = '实测画质';
-        }
-    }
-    if (!badgeState && Q && qualityProbeEntries && typeof Q.qualityKey === 'function' &&
-        typeof Q.isQualityEntryFresh === 'function' && typeof Q.describeQualityBadge === 'function') {
-        const cacheKey = Q.qualityKey(primary.source_code || '', primary.vod_id || '');
-        const probeEntry = qualityProbeEntries[cacheKey];
-        if (probeEntry && Q.isQualityEntryFresh(probeEntry)) {
-            // 第二参按条目「正在探测」状态传：探测中为 loading 态
-            const probing = isQualityProbeProbing(primary.source_code || '', primary.vod_id || '');
-            const desc = Q.describeQualityBadge(probeEntry, probing);
-            if (desc) {
-                badgeState = desc.state || desc.kind || '';
-                badgeLabel = desc.label || '';
-                badgeTip = desc.title || '';
-            }
-        }
-    }
-    // 失败 / 未知态：徽章可点「重试」（清 seen 后重新入队探测）；实测态不可重试
-    const retryable = (badgeState === 'failed' || badgeState === 'unknown');
-    const retryAttr = retryable ? ' data-quality-retry="1"' : '';
-    let qualityBadgeHtml = '';
-    if (badgeLabel && badgeState) {
-        const tip = badgeTip ? ` title="${escapeResultText(badgeTip)}"` : '';
-        qualityBadgeHtml = `<div class="wdtv-quality-badge wdtv-quality-probed" data-quality-state="${escapeResultText(badgeState)}"${retryAttr}${tip}>${escapeResultText(badgeLabel)}</div>`;
-    } else if (badgeState === 'loading' || retryable) {
-        qualityBadgeHtml = `<div class="wdtv-quality-badge wdtv-quality-probed" data-quality-state="${escapeResultText(badgeState)}"${retryAttr}>${badgeState === 'loading' ? '探测中…' : '未测到'}</div>`;
-    }
-    // 时长徽章：仅探测过的视频有值；未探测时元素保留但隐藏，探测完成后定向填充
-    const durSec = getCachedDuration(primary);
-
-    // 多源展开面板：每行一个来源，点击打开该源详情（复用 showDetails / hover 预取缓存），
-    // 行点击 stopPropagation 防止连带触发整卡的展开/收起。
-    // 画质：实测 > 探测缓存 > 不输出（不再用备注/标题猜标签）。
-    const panelRows = isMulti ? sortGroupItems(items).map(it => {
-        const sid = it.vod_id ? it.vod_id.toString().replace(/[^\w-]/g, '') : '';
-        const rid = escapeResultText(sid);
-        const rname = escapeResultText(it.vod_name || group.name);
-        const rcode = escapeResultText(it.source_code || '');
-        const rsource = escapeResultText(it.source_name || it.source_code || '未知来源');
-        const rremarks = escapeResultText(compactCardRemarks(it.vod_remarks));
-        let rqHeight = getMeasuredQualityHeight(it.source_code || '', it.vod_id || '');
-        if (typeof rqHeight !== 'number' && Q && typeof Q.qualityKey === 'function') {
-            const pe = qualityProbeEntries[Q.qualityKey(it.source_code || '', it.vod_id || '')];
-            if (pe && (typeof Q.isQualityEntryFresh !== 'function' || Q.isQualityEntryFresh(pe))
-                && typeof Q.heightOf === 'function') {
-                const h = Q.heightOf(pe);
-                if (typeof h === 'number' && h > 0) rqHeight = h;
-            }
-        }
-        const rquality = (typeof rqHeight === 'number' && rqHeight > 0)
-            ? ((Q && typeof Q.qualityLabel === 'function') ? Q.qualityLabel(rqHeight) : (rqHeight + 'P'))
-            : '';
-        return `
-            <div class="wdtv-group-source" role="button" tabindex="0"
-                 data-vod-id="${rid}" data-source-code="${rcode}" data-vod-name="${rname}"
-                 title="${rsource}${rremarks ? ' · ' + rremarks : ''}">
-                <span class="wdtv-group-source-name">${rsource}</span>
-                ${rremarks ? `<span class="wdtv-group-source-remarks">${rremarks}</span>` : ''}
-                ${rquality ? `<span class="wdtv-quality-badge">${escapeResultText(rquality)}</span>` : ''}
-            </div>`;
-    }).join('') : '';
-
-    // 多源不输出 inline onclick（展开/收起走 document 事件委托）；单源保留原有直接开详情。
-    // 片名 / 来源码统一用 jsName / jsSourceCode（JS 字符串层已转义），杜绝单引号注入。
-    // 点「重试」徽章时不要连带触发整卡 inline onclick 打开详情弹窗（重试逻辑走 document 委托）。
-    const retryClickGuard = `if(event.target.closest&&event.target.closest('.wdtv-quality-badge[data-quality-retry]'))return;`;
-    const clickAttr = isMulti ? '' : ` onclick="${retryClickGuard}showDetails('${safeId}','${jsName}','${jsSourceCode}')"`;
-    const titleBtnClick = isMulti ? '' : ` onclick="event.stopPropagation(); showDetails('${safeId}','${jsName}','${jsSourceCode}')"`;
+    const jsGroupKey = jsStringAttr(group.key || itemKey);
+    const openClick = ` onclick="openResultCard('${jsGroupKey}')"`;
+    const openTitleClick = ` onclick="event.stopPropagation(); openResultCard('${jsGroupKey}')"`;
 
     return `
         <div class="douban-card flex flex-col cursor-pointer" data-key="${escapeResultText(itemKey)}"
              data-group-card="1" data-group-key="${escapeResultText(group.key)}"
-             role="button" tabindex="0"${isMulti ? ' data-group-multi="1" aria-expanded="false"' : ''}${clickAttr}
+             role="button" tabindex="0"${openClick}
              onmouseenter="prefetchDetail('${safeId}','${jsSourceCode}')">
             <div class="douban-card-image">
                 <img src="${coverUrl}" alt="${safeName}"${coverOriginalAttr}
@@ -1575,36 +2043,50 @@ function buildResultCard(entry) {
                      onerror="handleCoverLoadError(this)"
                      referrerpolicy="no-referrer">
                 <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(0,0,0,0.6), transparent 50%); pointer-events: none;"></div>
-                ${qualityBadgeHtml}
-                ${isMulti ? `<div class="wdtv-group-badge">${items.length} 源</div>` : ''}
-                <div class="wdtv-duration-badge"${durSec ? '' : ' style="display:none"'}>${durSec ? formatDuration(durSec) : ''}</div>
-                <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-1.5">
-                    ${safeSourceName ? `
-                    <div class="douban-rate-badge truncate min-w-0" title="${safeSourceName}">
-                        ${safeSourceName}
-                    </div>
-                    ` : ''}
-                    ${safeTypeName ? `
-                    <div class="douban-rate-badge truncate shrink-0" style="padding: 0.25rem 0.5rem; margin-left: auto;">
-                        ${safeTypeName}
-                    </div>
-                    ` : ''}
-                </div>
             </div>
             <div class="douban-card-title-area">
-                <button${titleBtnClick}
+                <button${openTitleClick}
                         class="text-sm font-medium truncate w-full transition"
-                        style="color: #1d1d1f; background: transparent; border: none; cursor: pointer; padding: 0; font-size: 0.8rem; line-height: 1.25;"
-                        title="${safeName}">
+                        style="color: #1d1d1f; background: transparent; border: none; cursor: pointer; padding: 0; font-size: 0.8rem; line-height: 1.25;">
                     ${safeName}
                 </button>
                 ${safeRemarks ? `
-                <div class="wdtv-remarks-badge" title="${safeRemarks}">${safeRemarks}</div>
+                <div class="wdtv-remarks-badge">${safeRemarks}</div>
                 ` : ''}
             </div>
-            ${isMulti ? `<div class="wdtv-group-panel" style="display:none">${panelRows}</div>` : ''}
         </div>
     `;
+}
+
+// 点击搜索结果卡片：单源/多源统一打开详情窗口，由用户选集数。
+// 点击前先把整个聚合组写入 wdtvCurrentSources，播放页换源面板可直接复用。
+function openResultCard(groupKey) {
+    const group = renderedGroupsByKey.get(String(groupKey || ''));
+    if (!group || !Array.isArray(group.items) || group.items.length === 0) return;
+    const item = group.items[0] || {};
+    try {
+        const payload = {
+            title: item.vod_name || group.name || '',
+            ts: Date.now(),
+            savedAt: Date.now(),
+            items: group.items.map(it => ({
+                vod_id: it.vod_id,
+                source_code: it.source_code,
+                source_name: it.source_name || it.source_code,
+                vod_name: it.vod_name || group.name,
+                vod_pic: it.vod_pic || '',
+                vod_remarks: it.vod_remarks || '',
+                // 播放列表原样带上：播放页换源面板据此做「真实集数」匹配
+                vod_play_url: it.vod_play_url || ''
+            })),
+            current: { source_code: item.source_code, vod_id: item.vod_id }
+        };
+        localStorage.setItem('wdtvCurrentSources', JSON.stringify(payload));
+    } catch (e) { /* 存储不可用时播放页会回退到全源搜索 */ }
+    if (!item.vod_id || !item.source_code) return;
+    if (typeof showDetails === 'function') {
+        showDetails(item.vod_id, item.vod_name || group.name || '', item.source_code);
+    }
 }
 
 // 屏蔽过滤规则：localStorage键名 -> 匹配影视类型的关键词
@@ -1633,7 +2115,10 @@ function isBlockedByTypeFilter(item, cachedKeywords) {
 // 当前筛选（同名筛选 + 屏蔽规则 + 时长区间）后的结果列表（分页与计数共用）
 function getFilteredSearchResults() {
     const blockedKeywords = getBlockedTypeRuleKeywords();
-    return lastSearchResults.filter(item => {
+    // 成人过滤已写死在 search.js 的数据入口；这里再兜一层，确保任何结果都不过界面开关
+    const sourceResults = (typeof filterAdultSearchItems === 'function')
+        ? filterAdultSearchItems(lastSearchResults) : lastSearchResults;
+    return sourceResults.filter(item => {
         if (currentNameFilter && (item.vod_name || '').trim() !== currentNameFilter) return false;
         if (isBlockedByTypeFilter(item, blockedKeywords)) return false;
         if (!isDurationMatch(item)) return false; // 已探明且不在时长区间内
@@ -1641,8 +2126,12 @@ function getFilteredSearchResults() {
     });
 }
 
-// 根据当前名称筛选与屏蔽规则渲染「当前页」搜索结果，并刷新分页栏
-function renderFilteredSearchResults() {
+// 根据当前名称筛选与屏蔽规则渲染「当前页」搜索结果，并刷新分页栏。
+// options.appendOnly：用于渐进渲染后的收尾/补页——保留已渲染卡片，
+// 按当前页关联度顺序复用并重排（新卡先追加再位移到目标名次），
+// 避免整页重建导致已加载封面闪烁，同时让合并后的组数据生效。
+function renderFilteredSearchResults(options) {
+    const appendOnly = !!(options && options.appendOnly);
     const resultsDiv = document.getElementById('results');
     if (!resultsDiv) return;
 
@@ -1650,12 +2139,12 @@ function renderFilteredSearchResults() {
     // 批次 2 / 必修 A1：先在「全部筛选结果」上派生分组，再按「组数」切页展示。
     // 这样跨分页边界的同名条目合并进同一张卡（5 源而非 2 源/3 源），屏幕按组计数；
     // 扁平池 lastSearchResults / searchResultKeys 去重 / appendResults / 补抓仍按条推进。
-    const groups = deriveOrderedGroupedResults(filtered);
+    const groups = getOrderedSearchGroups(filtered);
     const totalPages = Math.max(1, Math.ceil(groups.length / RESULTS_PER_PAGE));
     if (currentResultPage > totalPages) currentResultPage = totalPages;
     const start = (currentResultPage - 1) * RESULTS_PER_PAGE;
     const pageGroups = groups.slice(start, start + RESULTS_PER_PAGE);
-    // 当前页分组索引：多源卡片点击「直接播放优先源」时按 data-group-key 回查
+    // 当前页分组索引：卡片点击时按 data-group-key 回查聚合组
     renderedGroupsByKey.clear();
     pageGroups.forEach(g => {
         if (g) renderedGroupsByKey.set(String(g.key), g);
@@ -1666,8 +2155,6 @@ function renderFilteredSearchResults() {
     pageGroups.forEach(g => {
         if (g && Array.isArray(g.items)) g.items.forEach(it => { if (it) pageItems.push(it); });
     });
-    armQualityProbeRender(pageGroups); // 稳定的整页渲染入口：开关开启时建立 group.key -> items 映射
-
     if (pageItems.length === 0 && lastSearchResults.length > 0) {
         resetSearchCardMount(resultsDiv); // 同时作废上一页的渲染回调
         resultsDiv.innerHTML = `
@@ -1675,18 +2162,20 @@ function renderFilteredSearchResults() {
                 当前筛选条件下没有可显示的结果
             </div>
         `;
+    } else if (appendOnly && resultsDiv.querySelector('.douban-card[data-group-key]')) {
+        // 增量收尾：不清空、不重建；按关联度顺序复用已渲染卡片并重排，
+        // 缺失组追加后由单卡位移动画落到目标名次（prune 移除已不在当前页的旧卡）。
+        syncSearchResultCards(resultsDiv, pageGroups, { prune: true });
     } else {
         // 整页重建：卡片构建后立即入网格（见 queueSearchCards）
         resetSearchCardMount(resultsDiv);
         queueSearchCards(resultsDiv, pageGroups, 0);
     }
 
-    // 更新计数显示（筛选后的总条数，非组数 / 当前页条数）；标题补充「共 N 条」消歧，
-    // 不改 HTML 结构，仅设置 title 属性。
+    // 更新计数显示（筛选后的总条数，非组数 / 当前页条数）
     const searchResultsCount = document.getElementById('searchResultsCount');
     if (searchResultsCount) {
         searchResultsCount.textContent = filtered.length;
-        searchResultsCount.title = `共 ${filtered.length} 条结果`;
     }
 
     renderResultsPagination(totalPages);
@@ -1771,7 +2260,7 @@ async function goToResultPage(pageNum) {
     // 补抓/loadMore 仍按扁平结果推进：ensureResultsForPage 的 needed = 目标页 * RESULTS_PER_PAGE
     // 用的是扁平条数，翻页只是展示层按组切，两者互不干扰。目标展示页超出当前组页数且源还有
     // 后续页时，换算成「下一扁平页」补抓，补抓可能带来新组从而扩展展示页。
-    const displayPages = Math.max(1, Math.ceil(deriveOrderedGroupedResults(getFilteredSearchResults()).length / RESULTS_PER_PAGE));
+    const displayPages = Math.max(1, Math.ceil(getOrderedSearchGroups(getFilteredSearchResults()).length / RESULTS_PER_PAGE));
 
     if (target > displayPages && hasMoreSourcePages()) {
         const flatNextPage = Math.ceil(getFilteredSearchResults().length / RESULTS_PER_PAGE) + 1;
@@ -1780,7 +2269,7 @@ async function goToResultPage(pageNum) {
     }
 
     // 抓取后组页数可能已增长；目标仍超界时收敛到最后一页
-    const totalPages = Math.max(1, Math.ceil(deriveOrderedGroupedResults(getFilteredSearchResults()).length / RESULTS_PER_PAGE));
+    const totalPages = Math.max(1, Math.ceil(getOrderedSearchGroups(getFilteredSearchResults()).length / RESULTS_PER_PAGE));
     currentResultPage = Math.min(target, totalPages);
     renderFilteredSearchResults();
     scrollToResultsTop();
@@ -2105,7 +2594,9 @@ function armQualityProbeForVisibleCards() {
     qualityProbePageItems.clear();
     // 与 renderFilteredSearchResults 相同的「先派生分组、再按组切页」逻辑，
     // 保证 group.key -> items 映射与卡片 data-group-key 一致。
-    const groups = deriveOrderedGroupedResults(getFilteredSearchResults());
+    const groups = (typeof getOrderedSearchGroups === 'function')
+        ? getOrderedSearchGroups(getFilteredSearchResults())
+        : deriveOrderedGroupedResults(getFilteredSearchResults());
     const start = (currentResultPage - 1) * RESULTS_PER_PAGE;
     groups.slice(start, start + RESULTS_PER_PAGE).forEach(g => {
         if (g && Array.isArray(g.items)) qualityProbePageItems.set(String(g.key), g.items);
@@ -2326,7 +2817,10 @@ async function fetchPlaylistPrefix(url, signal) {
             }
             text += decoder.decode(); // flush 多字节字符
         } finally {
-            try { reader.cancel(); } catch (e) { /* noop */ }
+            try {
+                const p = reader.cancel();
+                if (p && typeof p.catch === 'function') p.catch(function () { });
+            } catch (e) { /* noop */ }
         }
         return text;
     }
@@ -2395,7 +2889,6 @@ function updateQualityProbeBadge(sourceKey, vodId, entry, probing) {
     // 失败 / 未知态：标记可点「重试」；其余态清掉标记
     if (state === 'failed' || state === 'unknown') badge.setAttribute('data-quality-retry', '1');
     else if (typeof badge.removeAttribute === 'function') badge.removeAttribute('data-quality-retry');
-    if (desc.title) badge.title = desc.title;
 }
 
 // 探测进度提示（复用搜索进度条位置）
@@ -2587,10 +3080,10 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ===== 批次 2 · A1/A7-a 分组卡片交互（document 事件委托，不新增 inline onclick）=====
-// 多源卡片：整卡/角标/标题点击展开或收起来源面板；面板行点击打开对应源详情
-// （复用 showDetails 既有 hover 预取缓存，不触发额外批量请求）。
-// 单源卡片保留原有 inline onclick 直接开详情，这里不干预，避免重复触发。
+// ===== 分组卡片交互 =====
+// 整卡点击统一由 buildResultCard 的 inline onclick → openResultCard 处理：
+// 单源/多源卡都打开详情窗口。这里只处理卡片内动态徽章
+// （画质探测重试）等局部交互，避免与整卡点击重复触发。
 document.addEventListener('click', (e) => {
     const target = e.target;
     if (!target || !target.closest) return;
@@ -2603,46 +3096,6 @@ document.addEventListener('click', (e) => {
         e.preventDefault();
         retryQualityProbeFromCard(card);
         return;
-    }
-    const row = target.closest('.wdtv-group-source');
-    if (row && card.contains(row)) {
-        e.stopPropagation(); // 防止连带触发整卡的展开/收起
-        const id = row.getAttribute('data-vod-id') || '';
-        const name = row.getAttribute('data-vod-name') || '';
-        const code = row.getAttribute('data-source-code') || '';
-        if (id && code && typeof showDetails === 'function') showDetails(id, name, code);
-        return;
-    }
-    // 单源卡片由 inline onclick 处理，不在此重复；多源卡片：
-    // 组内含优先源时直接播放优先源，否则切换展开面板
-    if (card.getAttribute('data-group-multi') === '1') {
-        const groupKey = card.getAttribute('data-group-key') || '';
-        const group = renderedGroupsByKey.get(groupKey);
-        const hasPriority = !!(group && Array.isArray(group.items) &&
-            group.items.some(it => priorityRank(it && it.source_code) < 99));
-        if (hasPriority) {
-            e.preventDefault();
-            e.stopPropagation();
-            // items 已在 deriveOrderedGroupedResults 内按优先级排序，取最高优先源
-            const bestItem = group.items.slice().sort((a, b) =>
-                priorityRank(a && a.source_code) - priorityRank(b && b.source_code))[0] || group.items[0];
-            directPlayPriorityGroup(bestItem).then(ok => {
-                if (ok) return;
-                // 直接播放失败：手动展开该卡来源面板，让用户改用其它源
-                const panel = card.querySelector('.wdtv-group-panel');
-                if (panel) {
-                    panel.style.display = '';
-                    card.setAttribute('aria-expanded', 'true');
-                }
-            });
-            return;
-        }
-        const panel = card.querySelector('.wdtv-group-panel');
-        if (panel) {
-            const open = panel.style.display !== 'none';
-            panel.style.display = open ? 'none' : '';
-            card.setAttribute('aria-expanded', open ? 'false' : 'true');
-        }
     }
 });
 
@@ -2760,6 +3213,60 @@ const DETAIL_MIN_LOADING_MS = 420;
 // 详情请求序列号：快速连点不同卡片时，仅最新一次点击允许渲染弹窗/关闭 loading
 let detailSeq = 0;
 
+// 详情展示增强：按「封面优先、文本长度优先」从同聚合组其它源中挑最丰富的一份
+// videoInfo 用于详情弹窗展示（集数/播放仍使用当前点击源的 episodes）。
+function detailInfoScore(vi) {
+    if (!vi || typeof vi !== 'object') return -1;
+    const desc = String(vi.desc || '').replace(/<[^>]+>/g, '').trim();
+    const meta = [vi.director, vi.actor, vi.year, vi.area, vi.remarks, vi.type]
+        .map(v => String(v || '')).join('');
+    const cover = /^https?:\/\//i.test(String(vi.cover || '').trim()) ? 1000 : 0;
+    return cover + desc.length + meta.length * 0.5;
+}
+
+async function enrichDetailVideoInfo(data, currentId, currentSource, title) {
+    if (!data) return data;
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('wdtvCurrentSources') || 'null'); } catch (e) { saved = null; }
+    const items = (saved && Array.isArray(saved.items)) ? saved.items : [];
+    const others = items.filter(it => it && it.vod_id && it.source_code
+        && !(String(it.vod_id) === String(currentId) && String(it.source_code) === String(currentSource)))
+        .slice(0, 5);
+    if (others.length === 0) return data;
+    const currentVi = data.videoInfo || null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2800);
+    try {
+        const candidates = await Promise.all(others.map(async (it) => {
+            try {
+                const d = await fetchVideoDetailData({
+                    id: String(it.vod_id),
+                    source: it.source_code,
+                    signal: controller.signal,
+                    trackHealth: false
+                });
+                return d && d.videoInfo ? d.videoInfo : null;
+            } catch (e) {
+                return null;
+            }
+        }));
+        let best = currentVi;
+        let bestScore = detailInfoScore(currentVi);
+        candidates.forEach(vi => {
+            const s = detailInfoScore(vi);
+            if (s > bestScore) { best = vi; bestScore = s; }
+        });
+        if (best && best !== currentVi) {
+            data.videoInfo = Object.assign({}, currentVi || {}, best, {
+                source_name: (currentVi && currentVi.source_name) || best.source_name || ''
+            });
+        }
+    } finally {
+        clearTimeout(timer);
+    }
+    return data;
+}
+
 async function showDetails(id, vod_name, sourceCode) {
     if (!id) {
         showToast('视频ID无效', 'error');
@@ -2787,6 +3294,22 @@ async function showDetails(id, vod_name, sourceCode) {
             data = await fetchVideoDetailData(detailOpts);
         }
         if (seq !== detailSeq) return; // 已有更新的点击，放弃本次渲染
+
+        // 详情展示内容增强：同一聚合组的其它源若有更完整封面/简介，则优先展示最丰富的那份。
+        try { data = await enrichDetailVideoInfo(data, id, sourceCode, vod_name); } catch (e) { /* 增强失败不影响原详情 */ }
+        if (seq !== detailSeq) return;
+
+        // 详情接口偶尔不返回 vod_pic：回退到搜索结果已保存的同源条目封面，
+        // 避免列表有封面、点开详情却只剩文字占位。
+        try {
+            if (data && data.videoInfo && !String(data.videoInfo.cover || '').trim()) {
+                const saved = JSON.parse(localStorage.getItem('wdtvCurrentSources') || 'null');
+                const items = (saved && Array.isArray(saved.items)) ? saved.items : [];
+                const hit = items.find(it => it && String(it.vod_id) === String(id)
+                    && String(it.source_code) === String(sourceCode) && it.vod_pic);
+                if (hit && hit.vod_pic) data.videoInfo.cover = normalizeRuyiPicUrl(hit.vod_pic);
+            }
+        } catch (e) { /* 封面回退失败不影响详情展示 */ }
 
         const modal = document.getElementById('modal');
         const modalTitle = document.getElementById('modalTitle');
@@ -2822,7 +3345,8 @@ async function showDetails(id, vod_name, sourceCode) {
 
                 const coverHtml = vi.cover ? `
                     <div class="wdtv-detail-cover">
-                        <img src="${vi.cover}" alt="" loading="lazy" decoding="async"
+                        <img src="${escapeResultText(vi.cover)}" alt="${escapeResultText(vod_name || '')}"
+                             loading="lazy" decoding="async" referrerpolicy="no-referrer"
                              data-original="${encodeURIComponent(vi.cover)}"
                              onerror="handleCoverLoadError(this)">
                     </div>` : '';
@@ -2868,8 +3392,7 @@ async function showDetails(id, vod_name, sourceCode) {
                 <div class="wdtv-episodes-bar">
                     <div class="wdtv-episodes-bar-left">
                         <span id="cinemaFavBtnWrap" style="display:inline-flex">${getCinemaModalBtnHtml(id, sourceCode)}</span>
-                        <button type="button" onclick="openDetailBatchDownload(event)" class="wdtv-modal-mini-btn"
-                                title="多选集数批量下载到本地">
+                        <button type="button" onclick="openDetailBatchDownload(event)" class="wdtv-modal-mini-btn">
                             <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16"></path>
                             </svg>
@@ -2901,13 +3424,12 @@ async function showDetails(id, vod_name, sourceCode) {
                                     class="wdtv-modal-mini-btn num-mode${numModeBtnCls('original')}">原集数</button>
                             <button data-nummode="both" onclick="setVarietyNumberMode('both')"
                                     class="wdtv-modal-mini-btn num-mode${numModeBtnCls('both')}">双显</button>
-                            <span class="wdtv-threshold-label" title="按时长划分两组的分界线">分组线
+                            <span class="wdtv-threshold-label">分组线
                                 <span id="thresholdDropdown" class="wdtv-name-dropdown wdtv-inline-dropdown">
                                     <span class="wdtv-name-dropdown-toggle wdtv-threshold-toggle" onclick="toggleThresholdDropdown(event)">
                                         <input id="varietyThresholdInput" type="number" min="1" step="1"
                                                value="${varietyThresholdMinutes}" onchange="setVarietyThreshold(this.value)"
-                                               onclick="event.stopPropagation()" class="wdtv-threshold-input"
-                                               title="输入自定义分组线（分钟），回车生效">分钟
+                                               onclick="event.stopPropagation()" class="wdtv-threshold-input">分钟
                                         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                                     </span>
                                     <div id="thresholdDropdownMenu" class="wdtv-name-dropdown-menu hidden"></div>
@@ -2920,8 +3442,7 @@ async function showDetails(id, vod_name, sourceCode) {
                             </svg>
                             <span id="detectDurationLabel">检测时长</span>
                         </button>
-                        <button id="episodeViewBtn" onclick="toggleEpisodeView()" class="wdtv-modal-mini-btn${episodeViewMode === 'list' ? ' active' : ''}"
-                                title="切换剧集布局：数字方块 / 详细列表（显示完整集名）">
+                        <button id="episodeViewBtn" onclick="toggleEpisodeView()" class="wdtv-modal-mini-btn${episodeViewMode === 'list' ? ' active' : ''}">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
                             </svg>
@@ -3204,7 +3725,6 @@ function renderEpisodeRow(vodName, sourceCode, vodId, realIndex, groupNum) {
 
     return `
         <div id="episode-${realIndex}" role="button" tabindex="0"
-             title="${escapeHtml(rawName ? `第 ${originalNum} 集 · ${rawName}` : `第 ${originalNum} 集`)}"
              onclick="playVideo('${episode}','${vodName.replace(/"/g, '&quot;')}', '${sourceCode}', ${realIndex}, '${vodId}')"
              class="wdtv-ep-row">
             <span class="ep-row-num">${originalNum}</span>
@@ -3224,12 +3744,12 @@ function renderEpisodeButton(vodName, sourceCode, vodId, realIndex, groupNum) {
     let numHtml;
     if (sortMode === 'variety') {
         if (varietyNumberMode === 'group') {
-            numHtml = `<span class="ep-num" title="组内第 ${groupNum} 集 · 原第 ${originalNum} 集">${groupNum}</span>`;
+            numHtml = `<span class="ep-num">${groupNum}</span>`;
         } else if (varietyNumberMode === 'both') {
             // 大数字为新排序序号，括号内小数字为原序号
-            numHtml = `<span class="ep-num" title="组内第 ${groupNum} 集 · 原第 ${originalNum} 集">${groupNum}<em class="ep-num-g">(${originalNum})</em></span>`;
+            numHtml = `<span class="ep-num">${groupNum}<em class="ep-num-g">(${originalNum})</em></span>`;
         } else {
-            numHtml = `<span class="ep-num" title="原第 ${originalNum} 集 · 组内第 ${groupNum} 集">${originalNum}</span>`;
+            numHtml = `<span class="ep-num">${originalNum}</span>`;
         }
     } else {
         numHtml = `<span class="ep-num">${originalNum}</span>`;

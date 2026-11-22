@@ -117,6 +117,13 @@ body, html {
     .player-title-actions {
         gap: 6px;
     }
+    /* 下载管理为条件出现的次级入口：小屏收成纯图标，避免标题行动作区溢出 */
+    #downloadManagerBtn {
+        padding: 5px 8px;
+    }
+    #downloadManagerBtn span {
+        display: none;
+    }
 }
 
 /* ===== 剧集信息/工具区（爱奇艺式精简工具栏） ===== */
@@ -292,7 +299,7 @@ body, html {
     left: 0 !important;
     right: 0 !important;
     bottom: 0 !important;
-    display: none !important;
+    display: none;
     align-items: center !important;
     justify-content: center !important;
     background-color: rgba(200,220,245,0.13) !important;
@@ -1124,9 +1131,8 @@ input:checked + .slider:before {
         min-width: 0;
     }
 
-    /* 顶部下挂面板（缓存/下载/弹幕）：顶部偏移更大，max-height 相应多留 */
+    /* 顶部下挂面板（缓存/弹幕）：顶部偏移更大，max-height 相应多留 */
     .art-speed-panel.cache-panel,
-    .art-speed-panel.download-panel,
     .art-speed-panel.wdtv-danmu-panel {
         max-height: calc(100% - 110px);
     }
@@ -1489,11 +1495,12 @@ html .art-video-player.art-backdrop .art-info{
   -webkit-user-select:none;
   user-select:none;
 }
+/* 垂直居中用 margin 而非 transform：transform 留给 motion.js 的磁性位移 */
 .wdtv-lock-btn{
   position:absolute;
   left:14px;
   top:50%;
-  transform:translateY(-50%);
+  margin-top:-17px;
   z-index:310;
   width:34px;
   height:34px;
@@ -1512,7 +1519,7 @@ html .art-video-player.art-backdrop .art-info{
   position:absolute;
   left:14px;
   top:50%;
-  transform:translateY(-50%);
+  margin-top:-17px;
   z-index:310;
   width:34px;
   height:34px;
@@ -1534,8 +1541,8 @@ html .art-video-player.art-backdrop .art-info{
 .wdtv-unlock-btn svg{width:22px!important;height:22px!important}
 .wdtv-unlock-btn.pulse{animation:wdtvUnlockPulse 0.6s ease}
 @keyframes wdtvUnlockPulse{
-  0%,100%{transform:translateY(-50%) scale(1);color:rgba(236,244,255,0.88)}
-  50%{transform:translateY(-50%) scale(1.4);color:#cfe2f8}
+  0%,100%{transform:scale(1);color:rgba(236,244,255,0.88)}
+  50%{transform:scale(1.4);color:#cfe2f8}
 }
 
 /* 锁定态视觉保险：即使控制栏被意外唤起也保持隐藏（遮罩已挡交互） */
@@ -1547,7 +1554,7 @@ html .art-video-player.art-backdrop .art-info{
   position:absolute;
   right:14px;
   top:50%;
-  transform:translateY(-50%);
+  margin-top:-17px;
   z-index:310;
   width:34px;
   height:34px;
@@ -1656,7 +1663,11 @@ html .art-video-player.art-backdrop .art-info{
 }
 .wdtv-danmu-item:hover{border-color:rgba(143,180,232,0.75);background:rgba(255,255,255,0.12);transform:translateY(-1px)}
 .wdtv-danmu-item-title{font-size:14px;font-weight:500;color:rgba(236,244,255,0.96);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wdtv-danmu-item-sub{margin-top:2px;font-size:11px;color:rgba(222,234,250,0.55);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wdtv-danmu-item-sub{margin-top:3px;font-size:11px;color:rgba(222,234,250,0.55);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wdtv-danmu-src-tag{
+  display:inline-block;padding:1px 7px;margin-right:6px;border-radius:6px;
+  background:rgba(143,180,232,0.16);color:rgba(203,224,255,0.92);font-weight:500;
+}
 .wdtv-danmu-back{grid-column:1/-1;font-size:12px;color:#8fb4e8;cursor:pointer;user-select:none;padding:2px 0}
 .wdtv-danmu-back:hover{color:#aecbf2}
 
@@ -1759,6 +1770,9 @@ html .art-video-player.art-backdrop .art-info{
     gap: 5px;
     width: 248px;
     padding: 10px 11px 9px;
+    /* 信息块加高后内容可能超出小播放器：允许浮层自身滚动（全局已隐藏滚动条） */
+    max-height: calc(100% - 76px);
+    overflow-y: auto;
     /* 贴右上角「详情」按钮下沿下拉（JS alignDanmuPanel 打开时精确定位，此处为兜底默认值） */
     top: 56px;
     right: 10px;
@@ -1781,6 +1795,13 @@ html .art-video-player.art-backdrop .art-info{
     padding-bottom: 8px;
     border-bottom: 1px solid rgba(151, 173, 208, 0.18);
 }
+
+/* 弹幕信息块：最近一次匹配的状态/作品/剧集/来源/条数（紧凑五行，过长文本省略） */
+.wdtv-dm-info{display:flex;flex-direction:column;gap:2px;padding:6px 8px;border-radius:8px;background:rgba(74,96,132,0.18);border:1px solid rgba(151,173,208,0.16)}
+.wdtv-dm-info-row{display:flex;align-items:center;gap:8px;font-size:11px;line-height:1.5;min-width:0}
+.wdtv-dm-info-row span{flex:none;color:rgba(180,200,230,0.55)}
+.wdtv-dm-info-row b{flex:1;min-width:0;font-weight:500;color:rgba(226,236,250,0.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.wdtv-dm-info-row b.is-off{color:#ffb4a8}
 
 .wdtv-dm-brand {
     display: flex;
@@ -1864,7 +1885,8 @@ html .art-video-player.art-backdrop .art-info{
     background: rgba(151, 173, 208, 0.28);
 }
 
-/* 显示区域：三块迷你屏 */
+/* 显示区域：三块迷你屏。浅色块代表弹幕可用范围，必须从顶部往下画
+   （插件 margin = [上边距, 下边距]，调大下边距是把范围压到上半屏）。 */
 .wdtv-dm-areas {
     flex: 1;
     display: flex;
@@ -1888,7 +1910,7 @@ html .art-video-player.art-backdrop .art-info{
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
+    top: 0;
     background: linear-gradient(180deg, rgba(117, 145, 189, 0.5), rgba(90, 120, 165, 0.65));
 }
 
@@ -2206,6 +2228,7 @@ html .art-video-player.art-backdrop .art-info{
     .wdtv-unlock-btn {
         width: 30px;
         height: 30px;
+        margin-top: -15px;
     }
 
     .wdtv-photo-btn svg {

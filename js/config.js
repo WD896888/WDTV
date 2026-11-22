@@ -20,179 +20,243 @@ const SITE_CONFIG = {
 //   'auto' —— 标准接口优先，失败自动回退详情页解析
 // 配置依据为实测结果；源站行为变化时请以实测为准调整
 //
-// 2026-11-09 更正（重要）：下方 14 个内置源全部保持 2026-11-08 上游原配置，一个都不替换。
-//   此前用临时探测脚本判定「暴风资源不能播」并改接其它线路，属误判：暴风的播放地址路径
-//   含中文（…/HD国语/index.m3u8），脚本未做百分号编码导致裸请求 404；浏览器会自动编码，
-//   编码后直连即返回有效 m3u8 播放清单。「最大资源」等源的单次失败也只是链接/CDN 波动。
-//   结论：服务端探测的单次结果不能作为停用或替换用户原有源的依据。
-//   原 6 个停用源（黑木耳/卧龙/新华为/华为吧/豆瓣/魔爪）按上游配置保留 disabled 状态与
-//   失效原因，便于日后站点恢复时直接启用；它们的域名级复核结果见 .workbuddy/memory/2026-11-09.md。
-//   文件末尾 7 个源是「补充线路」，使用独立 key，不占用任何内置源槽位；如不需要，
-//   整体删除末尾 7 项即可，内置 14 个源完全不受影响。
-// 2026-11-10 更正：数据源订阅与自定义接入入口全线下线，此表即系统全部内置源。
-//   原由 js/customer_site.js 运行时合并的「七七资源」已并入表尾（key 不变、源集合不变）；
-//   页面不再加载任何外部源配置，也不再暴露运行时注入源的全局钩子。
+// 2026-11-21：接入 15 个源；主线路默认使用大陆优先 / m3u8 专用 JSON，
+//   备用线路写在 routes（详情请求可按 routeId 切换），playFrom 为可播放的播放源标识。
+// 天涯（tyyszy）官方 API 关闭了关键词搜索，改用站点搜索页（HTML 分页）+ 标准 API 取详情。
+// 最大资源（zuid）官方 API 忽略 wd，改用站点 suggest 接口（limit=2000）+ 标准 API 取详情。
+// 无尽（wujin）标准 JSON 搜索/详情；播放地址强制走 /proxy/，规避播放域名 DNS 污染与换域名。
+// 黑木耳（heimuer）与速博（subo）域名当前不可达/被停放，已移除。
+// XML / SeaCMS / 海洋CMS 接口不作为线路接入，只接 JSON 可播线路。
 const API_SITES = {
-    heimuer: {
-        api: 'https://json.heimuer.xyz',
-        name: '黑木耳',
-        detail: 'https://heimuer.tv',
-        detailMode: 'api',  // 实测：详情页被反爬验证页拦截（无法提取 m3u8），标准接口可用
-        // 2026-11-08 体检：json.heimuer.xyz 已跳转域名停放页（urldance.com，返回 HTML），
-        // detail 域 heimuer.tv TLS 证书链无效；官方渠道未能确认新址，标注停用但保留配置便于回溯。
-        disabled: true,
-        disabledReason: '域名已跳转停放页，未获官方确认的新地址'
-    },
-    ffzy: {
-        api: 'http://ffzy5.tv',
-        name: '非凡影视',
-        detail: 'http://ffzy5.tv',
-        detailMode: 'api'   // 实测：详情页返回 5xx，标准接口可用；若详情页恢复可改回 'html'（历史集数更全）
-    },
     tyyszy: {
-        api: 'https://tyyszy.com',
+        api: 'https://ty.tyyszy5.com/api.php/provide/vod/',
         name: '天涯资源',
-        detailMode: 'api',  // 2026-11-08 实测：详情接口正常（plays=7）
-        // 该源不认标准 wd= 参数（返回"暂不支持搜索"），只认 keywords=；实测可返回 20 条。
-        searchParam: 'keywords'
-    },
-    zy360: {
-        api: 'https://360zy.com',
-        name: '360资源',
-        detailMode: 'api'
-    },
-    wolong: {
-        api: 'https://wolongzyw.com',
-        name: '卧龙资源',
         detailMode: 'api',
-        // 2026-11-08 体检：站点返回 Angie WAF 的 JS 挑战页（HTML），代理与直连都无法拿到 JSON。
-        disabled: true,
-        disabledReason: '接口被 WAF JS 挑战拦截，未获官方确认的新地址'
-    },
-    cjhw: {
-        api: 'https://cjhwba.com',
-        name: '新华为',
-        detailMode: 'api',
-        // 2026-11-08 体检：DNS 解析失败（ENOENT），域名已不存在。
-        disabled: true,
-        disabledReason: 'DNS 解析失败（ENOENT），域名失效'
-    },
-    hwba: {
-        api: 'https://cjwba.com',
-        name: '华为吧资源',
-        detailMode: 'api',
-        // 2026-11-08 体检：DNS 解析失败（ENOTFOUND），域名已不存在。
-        disabled: true,
-        disabledReason: 'DNS 解析失败（ENOTFOUND），域名失效'
-    },
-    jisu: {
-        api: 'https://jszyapi.com',
-        name: '极速资源',
-        detail: 'https://jszyapi.com',
-        detailMode: 'auto'  // 实测：接口与详情页稳定性均一般，双路径互为兜底
-    },
-    dbzy: {
-        api: 'https://dbzy.com',
-        name: '豆瓣资源',
-        detailMode: 'api',
-        // 2026-11-08 体检：http 返回「dbzy.com is For Sale」域名出售页，https 连接超时。
-        disabled: true,
-        disabledReason: '域名已挂牌出售，服务停止'
-    },
-    bfzy: {
-        api: 'https://bfzyapi.com',
-        name: '暴风资源',
-        detailMode: 'api'   // 实测：搜索与标准接口详情均正常（46集）
-    },
-    mozhua: {
-        api: 'https://mozhuazy.com',
-        name: '魔爪资源',
-        detailMode: 'api',
-        // 2026-11-08 体检：DNS 可解析，但 TCP 连接超时（20s），服务不可达。
-        disabled: true,
-        disabledReason: '连接超时，服务不可达'
-    },
-    mdzy: {
-        api: 'https://www.mdzyapi.com',
-        name: '魔都资源',
-        detailMode: 'api'   // 实测：搜索与标准接口详情均正常（74集）
-    },
-    ruyi: {
-        api: 'https://www.ryzyw.com',
-        name: '如意资源',
-        detailMode: 'api',  // 实测：搜索与详情接口均正常（20 条，含播放地址）
-        // 2026-11-08 复检：原地址 cj.rycjapi.com 在本机直连与本地 /proxy/ 均被域名级重置
-        // （直连 ECONNRESET 约 130ms，代理回 500 UPSTREAM_FAILED），并非源站停服：
-        // 同源官方站 www.ryzyw.com（CNAME 同为 ry.ivipcdn.com、封面图床同为 pic.ry-pic.com）
-        // 直连与代理都能返回完整 JSON。故切换到该域名并恢复启用，原址保留便于回溯。
-        previousUrl: 'https://cj.rycjapi.com'
+        playFrom: ['tym3u8'],
+        primaryLabel: '大陆优先 JSON',
+        // 官方 API 已关闭关键词搜索：?ac=videolist&wd= 返回「暂不支持搜索」。
+        // 改用站点搜索页（HTML，30 条/页，支持分页），详情仍走标准 API ?ac=videolist&ids=。
+        searchMode: 'html',
+        searchUrl: 'https://tyyszyapi.com/index.php/vod/search/page/{page}/wd/{query}.html',
+        routes: [
+            { id: 'json-general', label: '通用 JSON', api: 'https://tyyszyapi.com/api.php/provide/vod/' }
+        ]
     },
     zuid: {
-        api: 'https://api.zuidapi.com',
+        api: 'https://api.zuidapi.com/api.php/provide/vod/from/zuidam3u8/',
         name: '最大资源',
-        detailMode: 'api'
+        detailMode: 'api',
+        playFrom: ['zuidam3u8'],
+        primaryLabel: '切片 JSON',
+        // 官方 API 忽略 wd 搜索参数，改用站点 suggest 接口；limit=2000 一次取回全部匹配。
+        searchMode: 'suggest',
+        searchUrl: 'https://api.zuidapi.com/index.php/ajax/suggest?mid=1&wd={query}&limit=2000',
+        routes: [
+            { id: 'full-main', label: '全量 JSON', api: 'https://api.zuidapi.com/api.php/provide/vod/' }
+        ]
     },
-
-    // ↓ 2026-11-09 新增补充线路：独立 key，不占用上方任何内置源的槽位。
-    //   来源为公开采集源清单（ZxxXinI/tvbox 线路表、LunaTV-config 每日健康报告等），
-    //   均经「搜索 list>0 + 详情含播放地址 + 播放清单可取」实测。删除以下 6 项即可完整还原内置配置。
-    maoyan: {
-        api: 'https://api.maoyanapi.top',
-        name: '猫眼资源',
-        detailMode: 'api'   // 线路表 myzy；搜索 30 条，播放清单双路径有效
+    juliang: {
+        api: 'https://api.juliang.live/api/provide/vod/from/jlm3u8/at/json/',
+        name: '巨量资源',
+        detailMode: 'api',
+        playFrom: ['jlm3u8', 'jlplayer'],
+        primaryLabel: '智能线路切片 JSON',
+        // 分片 CDN（c1.ddbbffcdn.com 等）直连会被 DNS/网络拦截，播放地址统一走 /proxy/；
+        // 本地代理会把清单里的相对/绝对分片地址一并改写为代理地址。
+        proxyPlay: true,
+        routes: [
+            { id: 'full-main', label: '综合全量 JSON', api: 'https://api.juliang.live/api/provide/vod/' }
+        ]
+    },
+    wujin: {
+        api: 'https://api.wujinapi.com/api.php/provide/vod/from/wjm3u8/',
+        name: '无尽资源',
+        detailMode: 'api',
+        playFrom: ['wjm3u8'],
+        primaryLabel: '切片 JSON',
+        // 无尽播放域名会换；强制走本地/服务端 /proxy/，避免直连域名 DNS 污染或换域名后播不了。
+        proxyPlay: true,
+        routes: [
+            { id: 'full-main', label: '主站全量 JSON', api: 'https://api.wujinapi.com/api.php/provide/vod/' },
+            { id: 'full-domestic', label: '国内备用全量 JSON（低频）', api: 'https://wjzyapi.com/api.php/provide/vod/' }
+        ]
+    },
+    bfzy: {
+        api: 'https://apibfzy.com/api.php/provide/vod/from/bfzym3u8/',
+        name: '暴风资源',
+        detailMode: 'api',
+        playFrom: ['bfzym3u8'],
+        primaryLabel: '主站切片 JSON',
+        routes: [
+            { id: 'full-main', label: '主站全量 JSON', api: 'https://apibfzy.com/api.php/provide/vod/' },
+            { id: 'm3u8-backup', label: '备用主机切片 JSON', api: 'https://bfzyapi.com/api.php/provide/vod/from/bfzym3u8/' },
+            { id: 'full-backup', label: '备用主机全量 JSON', api: 'https://bfzyapi.com/api.php/provide/vod/' }
+        ]
     },
     lzi: {
-        api: 'https://cj.lziapi.com',
+        api: 'https://lzzyapi.com/api.php/provide/vod/from/lzm3u8/',
         name: '量子资源',
-        detailMode: 'api'   // 线路表 lzi；搜索 20 条，播放清单有效
-    },
-    jyzy: {
-        api: 'https://jyzyapi.com',
-        name: '金鹰资源',
-        detailMode: 'api'   // 公开播放器源列表；搜索 20 条，播放清单双路径有效
-    },
-    subo: {
-        api: 'https://subocaiji.com',
-        name: '速博资源',
-        detailMode: 'api'   // 线路表 subocaiji；搜索 20 条，播放清单双路径有效
-    },
-    hhzy: {
-        api: 'https://hhzyapi.com',
-        name: '豪华资源',
-        detailMode: 'api'   // 线路表 hhzyapi；搜索 20 条，播放清单双路径有效
+        detailMode: 'api',
+        playFrom: ['lzm3u8', 'liangzi'],
+        primaryLabel: '主站切片 JSON',
+        // 播放 CDN（v.cdnlz28.com）在本机 DNS 被污染到 127.0.0.1；播放地址统一走 /proxy/，
+        // 由本地代理用固定 IP + 原始 Host 回源（见 server.mjs 的 LOCAL_PROXY_HOST_REWRITES）。
+        proxyPlay: true,
+        routes: [
+            { id: 'full-main', label: '主站全量 JSON', api: 'https://lzzyapi.com/api.php/provide/vod/' },
+            { id: 'cloud-main', label: '主站云播 JSON', api: 'https://lzzyapi.com/api.php/provide/vod/from/liangzi/' },
+            { id: 'm3u8-backup', label: '备用主机切片 JSON', api: 'https://cj.lziapi.com/api.php/provide/vod/from/lzm3u8/' },
+            { id: 'full-backup', label: '备用主机全量 JSON', api: 'https://cj.lziapi.com/api.php/provide/vod/' }
+        ]
     },
     ikun: {
-        api: 'https://www.ikunzy.com',
+        api: 'https://ikunzyapi.com/api.php/provide/vod/from/ikm3u8/',
         name: 'iKun资源',
-        detailMode: 'api'   // 线路表 ikun；库约 6.7 万条，播放清单双路径有效
+        detailMode: 'api',
+        playFrom: ['ikm3u8'],
+        primaryLabel: '采集主站切片 JSON',
+        // 播放 CDN（bfikuncdn.com）在本机 DNS 被污染到 127.0.0.1；播放地址统一走 /proxy/，
+        // 由本地代理用固定 IP + 原始 Host 回源（与 API 主机的 CDN 兜底同一机制）。
+        proxyPlay: true,
+        routes: [
+            { id: 'full-main', label: '采集主站全量 JSON', api: 'https://ikunzyapi.com/api.php/provide/vod/' },
+            { id: 'full-official', label: '官网同结构全量 JSON', api: 'https://www.ikunzy.com/api.php/provide/vod/' }
+        ]
     },
-    // 原 js/customer_site.js 的七七资源：v97 起并入内置（key 与源集合均不变）
-    qiqi: {
-        api: 'https://www.qiqidys.com/api.php/provide/vod',
-        name: '七七资源'
+    ruyi: {
+        api: 'https://cj.rycjapi.com/api.php/provide/vod/from/rym3u8/',
+        name: '如意资源',
+        detailMode: 'api',
+        playFrom: ['rym3u8', 'ruyi'],
+        primaryLabel: '采集站切片 JSON',
+        routes: [
+            { id: 'full-main', label: '采集站全量 JSON', api: 'https://cj.rycjapi.com/api.php/provide/vod/' },
+            { id: 'cloud-main', label: '采集站云播 JSON', api: 'https://cj.rycjapi.com/api.php/provide/vod/from/ruyi/at/json/' }
+        ]
+    },
+    ffzy: {
+        api: 'https://api.ffzyapi.com/api.php/provide/vod/from/ffm3u8/',
+        name: '非凡影视',
+        detailMode: 'api',
+        playFrom: ['ffm3u8', 'feifan'],
+        primaryLabel: '主采集站切片 JSON',
+        routes: [
+            { id: 'full-main', label: '主采集站全量 JSON', api: 'https://api.ffzyapi.com/api.php/provide/vod/' },
+            { id: 'm3u8-cj', label: '备用采集站切片 JSON', api: 'https://cj.ffzyapi.com/api.php/provide/vod/from/ffm3u8/' },
+            { id: 'full-cj', label: '备用采集站全量 JSON', api: 'https://cj.ffzyapi.com/api.php/provide/vod/' },
+            { id: 'm3u8-mirror', label: '站点镜像切片 JSON', api: 'https://ffzy5.tv/api.php/provide/vod/from/ffm3u8/' },
+            { id: 'full-mirror', label: '站点镜像全量 JSON', api: 'https://ffzy5.tv/api.php/provide/vod/' }
+        ]
+    },
+    zy360: {
+        api: 'https://360zyzz.com/api.php/provide/vod',
+        name: '360资源',
+        detailMode: 'api',
+        playFrom: ['360zy'],
+        primaryLabel: '帮助页主接口 JSON（全量）',
+        routes: [
+            { id: 'full-official', label: '官网 JSON', api: 'https://360zy.com/api.php/provide/vod' }
+        ]
+    },
+    jisu: {
+        api: 'https://jszyapi.com/api.php/provide/vod/from/jsm3u8/at/json/',
+        name: '极速资源',
+        detailMode: 'api',
+        playFrom: ['jsm3u8', 'jsyun'],
+        primaryLabel: '主站切片 JSON',
+        routes: [
+            { id: 'full-main', label: '主站全量 JSON', api: 'https://jszyapi.com/api.php/provide/vod/' },
+            { id: 'cloud-main', label: '主站云播 JSON', api: 'https://jszyapi.com/api.php/provide/vod/from/jsyun/at/json/' }
+        ]
+    },
+    mdzy: {
+        api: 'https://www.mdzyapi.com/api.php/provide/vod/from/modum3u8/',
+        name: '魔都资源',
+        detailMode: 'api',
+        playFrom: ['modum3u8'],
+        primaryLabel: '主站切片 JSON',
+        routes: [
+            { id: 'full-main', label: '主站全量 JSON', api: 'https://www.mdzyapi.com/api.php/provide/vod/' },
+            { id: 'm3u8-mirror', label: '镜像采集切片 JSON', api: 'https://caiji.moduapi.cc/api.php/provide/vod/from/modum3u8/' },
+            { id: 'full-mirror', label: '镜像采集全量 JSON', api: 'https://caiji.moduapi.cc/api.php/provide/vod/' }
+        ]
+    },
+    maoyan: {
+        api: 'https://api.maoyanapi.top/api.php/provide/vod/from/mym3u8/at/json/',
+        name: '猫眼资源',
+        detailMode: 'api',
+        playFrom: ['mym3u8'],
+        primaryLabel: '主接口切片 JSON',
+        routes: [
+            { id: 'full-main', label: '主接口全量 JSON', api: 'https://api.maoyanapi.top/api.php/provide/vod' }
+        ]
+    },
+    jyzy: {
+        api: 'https://jyzyapi.com/api.php/provide/vod/from/jinyingm3u8/at/json/',
+        name: '金鹰资源',
+        detailMode: 'api',
+        playFrom: ['jinyingm3u8', 'jinyingyun'],
+        primaryLabel: '标准切片 JSON',
+        routes: [
+            { id: 'full-main', label: '标准全量 JSON', api: 'https://jyzyapi.com/api.php/provide/vod/' },
+            { id: 'full-old', label: '旧路径全量 JSON', api: 'https://jyzyapi.com/provide/vod/' },
+            { id: 'm3u8-old', label: '旧路径切片 JSON', api: 'https://jyzyapi.com/provide/vod/from/jinyingm3u8/' },
+            { id: 'cloud-main', label: '标准云播 JSON', api: 'https://jyzyapi.com/api.php/provide/vod/from/jinyingyun/at/json/' }
+        ]
+    },
+    hhzy: {
+        api: 'https://hhzyapi.com/api.php/provide/vod/from/hhm3u8/at/json/',
+        name: '豪华资源',
+        detailMode: 'api',
+        playFrom: ['hhm3u8', 'hhyun'],
+        primaryLabel: '主站切片 JSON',
+        routes: [
+            { id: 'full-main', label: '主站全量 JSON', api: 'https://hhzyapi.com/api.php/provide/vod' },
+            { id: 'cloud-main', label: '主站云播 JSON', api: 'https://hhzyapi.com/api.php/provide/vod/from/hhyun/at/json' }
+        ]
     }
 };
 
-// 默认内置源优先级：搜索结果排序与「点击直接播放」按此顺序优先，未列出的源排在后面。
-// 用户可在设置面板调整前三个优先源（本地存储键见 SOURCE_PRIORITY_STORAGE）。
-const DEFAULT_SOURCE_PRIORITY = ['ffzy', 'jisu', 'mdzy'];
-const SOURCE_PRIORITY_STORAGE = 'wdtvSourcePriority';
+// 源等级（1 首选 / 2 常用 / 3 备用）：所有源都可分级，不再是固定 3 个优先源。
+// 等级只用于组内来源排序与「点击多源聚合卡片直接播放」；搜索结果列表仍按片名关联度排序。
+const SOURCE_TIER_LEVELS = 3;
+const SOURCE_TIER_STORAGE = 'wdtvSourceTiers';
+// 老版本「前三个优先源」存储键：仅用于一次性迁移，迁移后删除。
+const LEGACY_SOURCE_PRIORITY_STORAGE = 'wdtvSourcePriority';
+// 默认分级：一级为天涯、暴风；二级为巨量、如意、非凡、量子；未列出的源默认三级。
+const DEFAULT_SOURCE_TIERS = {
+    tyyszy: 1, bfzy: 1,
+    juliang: 2, ruyi: 2, ffzy: 2, lzi: 2
+};
 
 // 拼接资源站接口 URL：
-//   多数源 api 字段是纯域名（https://json.heimuer.xyz），直接拼接 API_CONFIG 的 path；
-//   七七资源等源把完整接口地址填进 api 字段（…/api.php/provide/vod），
-//   此时再拼 path 会出现 …/provide/vod/api.php/provide/vod/?ac=… 双重路径（ERR_ABORTED）。
-//   检测到 base 已包含接口路径时只补查询串。
+//   多数源 api 字段是完整采集地址（https://tyyszyapi.com/api.php/provide/vod/），
+//   直接拼接 API_CONFIG 的 path 会出现双重路径；
+//   另一些源把完整接口地址填进 api 字段（…/api.php/provide/vod、
+//   …/from/jsm3u8/at/json/、旧路径 …/provide/vod/ 等），此时再拼 path 会出现
+//   …/provide/vod/api.php/provide/vod/?ac=… 双重路径（ERR_ABORTED）。
+//   检测到 base 已包含 /provide/vod（后接 / 或结尾）时只补查询串（保留原始尾斜杠，
+//   直接拼 ?ac=…，避免 …/at/json//?ac=… 这类重复斜杠）。
 function buildVodApiUrl(apiBase, path) {
     if (!apiBase) return path;
-    const base = String(apiBase).replace(/\/+$/, '');
+    const raw = String(apiBase);
+    const base = raw.replace(/\/+$/, '');
     const qIdx = path.indexOf('?');
-    const barePath = (qIdx >= 0 ? path.slice(0, qIdx) : path).replace(/\/+$/, '');
     const query = qIdx >= 0 ? path.slice(qIdx) : '';
-    if (barePath && base.toLowerCase().endsWith(barePath.toLowerCase())) {
-        return base + query;
+    if (/\/provide\/vod(?:\/|$)/i.test(base)) {
+        return raw + query;
     }
     return base + path;
+}
+
+// 安全解析采集接口 JSON：巨量等源的 vod_id 是 18 位整数，直接 JSON.parse 会因
+// Number 精度上限（2^53）把 629659042301607941 变成 629659042301608000，
+// 再用这个错误 ID 请求详情必然为空（表现为「未找到播放源」）。
+// 仅对 ID 类字段的大整数字面量加引号，其余数字保持原类型，避免影响其它源的数据语义。
+function parseCmsJsonSafe(text) {
+    const raw = String(text == null ? '' : text);
+    const safe = raw.replace(/("(?:vod_id(?:_\d+)?|id|type_id|parent_id)"\s*:\s*)(-?\d{16,})(?=\s*[,\]}])/g, '$1"$2"');
+    return JSON.parse(safe);
 }
 
 // 个别内置源不支持标准 wd= 搜索参数（天涯资源只认 keywords=）。
@@ -203,22 +267,52 @@ function applySearchParam(path, site) {
     return path.replace(/([?&])wd=/, '$1' + param + '=');
 }
 
-// 如意资源封面图床域名归一：
-// 其旧图床 ps.ryzypics.com DNS 解析异常（AAAA 记录指向 Facebook 网段，IPv4/IPv6 均无法连通），
-// 实测同样的 /upload/... 资源路径在 pic.ry-pic.com 全部可用（返回文件字节级一致）；
-// ry-pic.com 裸域也统一归一到 pic.ry-pic.com。
-// 与豆瓣封面 img9 域名改写（见 douban.js）同理，在数据层修正，搜索/详情/换源列表统一生效
+// 封面图床域名归一（搜索/详情/换源/我的影院统一生效）：
+//   1) 如意资源旧图床 ps.ryzypics.com DNS 异常，实测同样 /upload/... 路径在 pic.ry-pic.com 可用；
+//      ry-pic.com 裸域也统一归一到 pic.ry-pic.com。
+//   2) 暴风资源 p.bfp*.com、量子资源 p.lzp*.com 图床在部分网络被解析到 127.0.0.1，
+//      实测采集主机同路径可直接出图（内容随路径变化，不是统一占位图），
+//      分别归一到 apibfzy.com / lzzyapi.com，避免列表与详情封面全部退化成占位图。
+// 与豆瓣封面 img9 域名改写（见 douban.js）同理，在数据层修正。
 function normalizeRuyiPicUrl(url) {
     if (!url || typeof url !== 'string') return url || '';
-    return url.replace(/\/\/(?:ps\.ryzypics\.com|ry-pic\.com)\//i, '//pic.ry-pic.com/');
+    return url
+        .replace(/\/\/(?:ps\.ryzypics\.com|ry-pic\.com)\//i, '//pic.ry-pic.com/')
+        .replace(/\/\/p\.bfp\d*\.com\//i, '//apibfzy.com/')
+        .replace(/\/\/p\.lzp\d*\.com\//i, '//lzzyapi.com/');
+}
+
+// 源线路：主线路固定 id=primary，备用线路来自 API_SITES[key].routes（默认不参与搜索）。
+function getSourceRoutes(source) {
+    const site = API_SITES[source];
+    if (!site) return [];
+    const out = [{ id: 'primary', label: site.primaryLabel || '默认线路', api: site.api }];
+    (Array.isArray(site.routes) ? site.routes : []).forEach(function (r) {
+        if (r && r.id && r.api && r.id !== 'primary') {
+            out.push({ id: r.id, label: r.label || r.id, api: r.api, note: r.note || '' });
+        }
+    });
+    return out;
+}
+
+function getSourceRoute(source, routeId) {
+    const routes = getSourceRoutes(source);
+    if (!routes.length) return null;
+    if (!routeId || routeId === 'primary') return routes[0];
+    return routes.find(function (r) { return r.id === routeId; }) || routes[0];
 }
 
 // 暴露到全局（只读使用：不提供运行时新增/删除源的方法，源集合以本文件为准）
 window.API_SITES = API_SITES;
 window.applySearchParam = applySearchParam;
 window.normalizeRuyiPicUrl = normalizeRuyiPicUrl;
-window.DEFAULT_SOURCE_PRIORITY = DEFAULT_SOURCE_PRIORITY;
-window.SOURCE_PRIORITY_STORAGE = SOURCE_PRIORITY_STORAGE;
+window.getSourceRoutes = getSourceRoutes;
+window.getSourceRoute = getSourceRoute;
+window.parseCmsJsonSafe = parseCmsJsonSafe;
+window.SOURCE_TIER_LEVELS = SOURCE_TIER_LEVELS;
+window.SOURCE_TIER_STORAGE = SOURCE_TIER_STORAGE;
+window.LEGACY_SOURCE_PRIORITY_STORAGE = LEGACY_SOURCE_PRIORITY_STORAGE;
+window.DEFAULT_SOURCE_TIERS = DEFAULT_SOURCE_TIERS;
 
 // 添加聚合搜索的配置选项
 const AGGREGATED_SEARCH_CONFIG = {

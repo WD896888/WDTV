@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -42,17 +42,20 @@
 
 <!-- WDTV External CSS -->
 <link rel="stylesheet" href="css/styles.css?v=8">
-<link rel="stylesheet" href="css/index.css?v=39">
+<link rel="stylesheet" href="css/index.css?v=53">
+<!-- 账号名称中文字体「演示秋鸿楷」：异步加载（媒体类型 print + onload 切换，不阻塞首屏渲染），
+     字体表自带 font-display:swap，分片按 unicode-range 按需下载 -->
+<link rel="stylesheet" href="css/slideqiuhong.css?v=1" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="css/modals.css?v=12">
-<link rel="stylesheet" href="css/downloader.css?v=4">
+<link rel="stylesheet" href="css/downloader.css?v=6">
 <link rel="stylesheet" href="css/states.css?v=1">
 
 <!-- Google Fonts 异步加载：preconnect 预热连接 + media 技巧避免阻塞首屏渲染（字体带 display=swap，晚到仅切换不遮挡文字） -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="image" href="bg-canvas.jpg">
-<!-- 仅保留 CSS 实际引用的 4 个字体族；移除 3 个从未被使用的装饰字体，减少 @font-face 规则与 CSSOM 体积 -->
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Raleway:wght@200;300&display=swap" media="print" onload="this.media='all'">
+<!-- 仅保留 CSS 实际引用的 5 个字体族；移除从未被使用的装饰字体，减少 @font-face 规则与 CSSOM 体积 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Raleway:wght@200;300&family=Sriracha&display=swap" media="print" onload="this.media='all'">
 
 <style>
 
@@ -120,7 +123,7 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-header{text-align:center;margin-bottom:32px}
 .wdtv-header .wdtv-logo{display:flex;justify-content:center;align-items:center;margin-bottom:12px}
 .wdtv-header .wdtv-logo svg{width:36px;height:36px;margin-right:8px;color:#2c4a7c;filter:drop-shadow(0 2px 8px rgba(44,74,124,0.25))}
-.wdtv-header .wdtv-title{font-family:'Cormorant Garamond',serif;font-size:2.4rem;font-weight:300;letter-spacing:0.24em;background:linear-gradient(135deg,#1a3a6b 0%,#2c5aa0 40%,#4a7cc9 70%,#6a9ae0 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 2px 12px rgba(44,90,160,0.2))}
+.wdtv-header .wdtv-title{font-family:'Sriracha','Noto Sans SC','Source Han Sans SC',cursive;font-size:4.2rem;font-weight:400;letter-spacing:0.16em;line-height:1.25;background:linear-gradient(135deg,#1a3a6b 0%,#2c5aa0 40%,#4a7cc9 70%,#6a9ae0 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 2px 12px rgba(44,90,160,0.2))}
 .wdtv-header .wdtv-slogan{font-family:'Raleway','Noto Sans SC',sans-serif;font-weight:300;font-size:0.78rem;letter-spacing:0.16em;text-transform:uppercase;color:#5a7faa;margin-top:8px}
 
 /* WDTV search area */
@@ -136,8 +139,13 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-search-glass .wdtv-search-btn:hover{background:none;color:rgba(42,58,92,0.85)}
 
 /* WDTV recent searches */
-.wdtv-recent{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+/* padding 扩大裁切边界，负 margin 抵消布局占用：记录标签单独磁性摆动时有足够上下左右余量，不会被 overflow 切边 */
+.wdtv-recent{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;padding:10px 12px;margin:-10px -12px 2px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;cursor:grab;touch-action:pan-x pan-y;overscroll-behavior-x:contain;scroll-behavior:auto}
 .wdtv-recent::-webkit-scrollbar{display:none}
+.wdtv-recent.is-dragging{cursor:grabbing;scroll-behavior:auto;-webkit-user-select:none;user-select:none}
+.wdtv-recent.is-dragging .search-tag{pointer-events:none}
+/* 仅在真正横向溢出时左右渐隐，提示可继续拖动；无溢出不加 mask */
+.wdtv-recent.has-overflow{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 12px,#000 calc(100% - 12px),transparent 100%);mask-image:linear-gradient(to right,transparent 0,#000 12px,#000 calc(100% - 12px),transparent 100%)}
 .wdtv-recent .search-tag{flex:none;min-width:0;max-width:9em;padding:3px 10px;font-size:0.72rem;white-space:nowrap}
 .wdtv-recent .search-tag span:first-child{overflow:hidden;text-overflow:ellipsis}
 .wdtv-recent .search-tag svg{width:10px;height:10px}
@@ -155,7 +163,8 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .wdtv-douban-toggle button.active{background:rgba(80,128,176,0.2);color:var(--white)}
 .wdtv-douban-refresh{display:flex;align-items:center;gap:4px;padding:5px 12px;border-radius:10px;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);cursor:pointer;font-size:0.82rem;font-family:'Noto Sans SC',sans-serif;transition:all 0.2s}
 .wdtv-douban-refresh:hover{background:rgba(80,128,176,0.15);color:var(--white);border-color:var(--accent)}
-.wdtv-douban-tags{display:flex;flex-wrap:nowrap;gap:6px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+/* 同上：给豆瓣标签横滚条留出磁性位移余量 */
+.wdtv-douban-tags{display:flex;flex-wrap:nowrap;gap:6px;padding:10px 12px;margin:-10px -12px 2px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .wdtv-douban-tags::-webkit-scrollbar{display:none}
 .wdtv-douban-tags .douban-tag{flex:none;padding:4px 12px;font-size:0.75rem;white-space:nowrap}
 .wdtv-douban-tag{padding:4px 12px;border-radius:16px;font-size:0.75rem;cursor:pointer;border:1px solid var(--glass-border);background:rgba(155,180,218,0.06);color:var(--text-secondary);transition:all 0.3s}
@@ -258,6 +267,9 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 @media (prefers-reduced-motion:reduce){.wdtv-skeleton-card{animation:none}}
 /* 聚合卡片键盘焦点：极淡内描边 + 位移，不用白色外描边、不加投影 */
 .douban-card[data-group-card]:focus-visible{outline:none;box-shadow:inset 0 0 0 1px rgba(155,185,232,0.28);transform:translateY(-1px)}
+/* 关联度增量重排：动画走 WAAPI 的独立 translate 属性，与磁性 transform 叠加不冲突 */
+.douban-card.wdtv-card-moving{position:relative;z-index:2;pointer-events:none;will-change:translate}
+.douban-card.wdtv-card-moving-primary{z-index:3;box-shadow:0 14px 34px rgba(10,18,36,0.22)}
 /* 画质探测成功后的徽章：只加一层极淡内描边区分，不改既有黄色文字与角标定位 */
 .wdtv-quality-badge.wdtv-quality-probed{box-shadow:inset 0 0 0 1px rgba(155,185,232,0.22)}
 /* 首页推荐源切换。用 id + 子选择器，不依赖 JS 生成的具体类名 */
@@ -354,17 +366,49 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 /* Mini buttons */
 .wdtv-mini-btn{padding:5px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-size:0.78rem;cursor:pointer;font-family:'Noto Serif SC',serif;letter-spacing:0.04em;transition:all 0.2s;text-shadow:none}
 .wdtv-mini-btn:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
-.wdtv-api-scroll{max-height:160px;overflow-y:auto;padding:8px;border-radius:8px;background:rgba(255,255,255,0.2);margin-bottom:12px;border:1px solid rgba(255,255,255,0.12)}
-.wdtv-api-scroll::-webkit-scrollbar{width:4px}
-.wdtv-api-scroll::-webkit-scrollbar-thumb{background:rgba(42,58,92,0.25);border-radius:2px}
+.wdtv-api-scroll{max-height:300px;overflow-y:auto;padding:8px;border-radius:8px;background:rgba(255,255,255,0.2);margin-bottom:12px;border:1px solid rgba(255,255,255,0.12)}
+/* 源优先级：浅蓝渐变滑块，越满越优先；行保持统一透明玻璃样式，不用彩色竖条 */
+.wdtv-source-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.wdtv-source-view-toggle{display:flex;gap:2px;padding:2px;border-radius:7px;background:rgba(255,255,255,0.14);border:1px solid rgba(200,220,245,0.18)}
+.wdtv-view-btn{display:inline-flex;align-items:center;justify-content:center;width:24px;height:20px;padding:0;border:0;border-radius:5px;background:transparent;color:rgba(42,58,92,0.42);cursor:pointer;transition:background 0.18s,color 0.18s}
+.wdtv-view-btn:hover{color:rgba(30,45,75,0.78);background:rgba(255,255,255,0.18)}
+.wdtv-view-btn.is-active{background:rgba(155,180,218,0.32);color:rgba(30,45,75,0.9)}
+.wdtv-source-actions{display:flex;gap:8px}
+.wdtv-source-list{display:flex;flex-direction:column;gap:6px}
+.wdtv-source-row{display:flex;flex-direction:column;gap:1px;padding:6px 9px;border-radius:8px;background:rgba(255,255,255,0.14);border:1px solid rgba(200,220,245,0.18);transition:background 0.2s,border-color 0.2s}
+.wdtv-source-row:hover{background:rgba(255,255,255,0.22);border-color:rgba(200,220,245,0.3)}
+.wdtv-source-check{flex-shrink:0;accent-color:rgba(42,90,160,0.6);width:15px;height:15px}
+/* 优先级视图：首行源名 + 当前档位，次行 0-3 滑块占满整行宽度 */
+.wdtv-source-head{display:flex;align-items:center;gap:6px;min-width:0}
+.wdtv-source-name{min-width:0;font-size:0.78rem;color:rgba(30,45,75,0.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.15}
+.wdtv-source-row.is-off .wdtv-source-name{color:rgba(30,45,75,0.5)}
+.wdtv-source-level{margin-left:auto;flex-shrink:0;font-size:0.58rem;line-height:1;letter-spacing:0.04em;color:rgba(42,90,160,0.6);font-variant-numeric:tabular-nums}
+.wdtv-source-row.is-off .wdtv-source-level{color:rgba(42,58,92,0.32)}
+/* 经典双列视图：沿用旧版紧凑勾选列表，无滑块 */
+.wdtv-source-classic{min-width:0}
+.wdtv-source-classic label{flex:1;min-width:0}
+/* 四档滑块：0 关闭，1-3 对应三/二/一级；--tier-fill 控制浅蓝渐变填充比例 */
+.wdtv-source-slider{display:flex;flex-direction:column;gap:1px;min-width:0}
+.wdtv-tier-scale{display:flex;justify-content:space-between;padding:0 4px;font-size:0.55rem;line-height:1;color:rgba(42,58,92,0.3);font-variant-numeric:tabular-nums;user-select:none;pointer-events:none}
+.wdtv-tier-range{--tier-fill:0%;-webkit-appearance:none;appearance:none;display:block;width:100%;height:18px;margin:0;background:transparent;cursor:pointer;outline:none}
+.wdtv-tier-range::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(90deg,rgba(118,168,228,0.62) 0%,rgba(84,140,212,0.92) var(--tier-fill),rgba(155,180,218,0.18) var(--tier-fill),rgba(155,180,218,0.18) 100%);box-shadow:inset 0 1px 2px rgba(30,60,100,0.07)}
+.wdtv-tier-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;margin-top:-4px;border-radius:50%;background:rgba(240,248,255,0.96);border:1px solid rgba(110,160,220,0.6);box-shadow:0 1px 5px rgba(30,60,100,0.2);transition:transform 0.15s,box-shadow 0.15s}
+.wdtv-tier-range:hover::-webkit-slider-thumb{box-shadow:0 1px 8px rgba(80,140,212,0.34)}
+.wdtv-tier-range:active::-webkit-slider-thumb{transform:scale(0.9)}
+.wdtv-tier-range::-moz-range-track{height:6px;border-radius:3px;background:rgba(155,180,218,0.18);box-shadow:inset 0 1px 2px rgba(30,60,100,0.07)}
+.wdtv-tier-range::-moz-range-progress{height:6px;border-radius:3px;background:linear-gradient(90deg,rgba(118,168,228,0.62),rgba(84,140,212,0.92))}
+.wdtv-tier-range::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:rgba(240,248,255,0.96);border:1px solid rgba(110,160,220,0.6);box-shadow:0 1px 5px rgba(30,60,100,0.2)}
+.wdtv-settings-details{margin:0}
+.wdtv-settings-details>summary{display:block;width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.3);color:#2a3a5c;font-family:'Noto Serif SC','Source Han Serif SC',serif;font-size:0.88rem;font-weight:500;letter-spacing:0.06em;text-align:center;cursor:pointer;list-style:none;transition:all 0.2s;margin-bottom:8px;text-shadow:none;user-select:none}
+.wdtv-settings-details>summary:hover{border-color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.45)}
+.wdtv-settings-details>summary::-webkit-details-marker{display:none}
+.wdtv-settings-details-body{padding:0 2px 4px}
 .wdtv-api-checkbox{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.82rem;color:rgba(30,45,75,0.85)}
 .wdtv-api-checkbox input[type=checkbox]{accent-color:rgba(42,90,160,0.6);width:16px;height:16px}
 .wdtv-api-info{display:flex;justify-content:space-between;align-items:center;font-size:0.72rem;color:rgba(42,58,92,0.5);margin-top:8px}
 .wdtv-api-info span .wdtv-count{color:rgba(30,45,75,0.9);font-weight:600}
 /* Connection test log */
 .wdtv-conn-log{max-height:220px;overflow-y:auto;padding:8px;border-radius:8px;background:rgba(20,32,55,0.85);border:1px solid rgba(200,220,245,0.2);font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:0.68rem;line-height:1.55;color:rgba(230,238,250,0.92);margin-bottom:8px;white-space:pre-wrap;word-break:break-all}
-.wdtv-conn-log::-webkit-scrollbar{width:4px}
-.wdtv-conn-log::-webkit-scrollbar-thumb{background:rgba(200,220,245,0.3);border-radius:2px}
 .wdtv-conn-log .conn-title{color:#ffd166;font-weight:700;margin:4px 0 2px}
 .wdtv-conn-log .conn-step{color:rgba(230,238,250,0.7)}
 .wdtv-conn-log .conn-ok{color:#5fda7b}
@@ -519,9 +563,9 @@ body:has(#modal:not(.hidden)) #splash{backdrop-filter:none;-webkit-backdrop-filt
 
 /* Nav icon buttons for WDTV */
 /* Nav buttons - match splash-action-btn */
-.wdtv-nav-btn{position:fixed;z-index:10;height:44px;width:44px;border-radius:12px;border:none;background:transparent;color:rgba(236,244,255,0.72);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:all 0.3s}
+.wdtv-nav-btn{position:fixed;z-index:10;height:52px;width:52px;border-radius:14px;border:none;background:transparent;color:rgba(236,244,255,0.72);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:all 0.3s}
 .wdtv-nav-btn:hover{color:rgba(236,244,255,0.96);background:rgba(200,220,245,0.12)}
-.wdtv-nav-btn svg{width:16px;height:16px;color:rgba(200,220,245,0.8)}
+.wdtv-nav-btn svg{width:17px;height:17px;color:rgba(200,220,245,0.8)}
 #history-btn{top:24px;left:24px}
 /* 账号药丸与下拉菜单的完整样式见 css/index.css（右上角账号区） */
 
@@ -537,6 +581,8 @@ body:has(#modal:not(.hidden)) #splash{backdrop-filter:none;-webkit-backdrop-filt
   .wdtv-home-wrap{padding:0}
   .wdtv-history-panel,.wdtv-settings-panel{width:300px}
   #history-btn{top:16px;left:16px}
+  .wdtv-nav-btn{height:48px;width:48px}
+  .wdtv-nav-btn svg{width:16px;height:16px}
   #account-btn{top:16px;right:16px}
   #chat-mini{right:16px;bottom:16px}
 }
@@ -600,6 +646,7 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle .wdtv-toggle-dot{box-shadow:0 0 8p
 html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + .wdtv-toggle-dot{box-shadow:0 0 12px rgba(42,90,160,0.3)!important}
 
 </style>
+<link rel="stylesheet" href="css/motion.css?v=3">
 </head>
 <body>
 <div id="preloader">
@@ -646,7 +693,7 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <div class="wdtv-home-wrap">
         <div class="wdtv-header">
           <h1 class="wdtv-title">WDTV</h1>
-          <p class="wdtv-slogan">自由观影，畅享精彩</p>
+          <p class="wdtv-slogan">这世界不停开花，我想放进你心里一朵</p>
         </div>
 
         <!-- 底栏三页面容器：我的影院 / 影视搜索 / 观影空间（切换动画见 js/dock.js 与 .wdtv-page 样式） -->
@@ -679,10 +726,10 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
           <div class="wdtv-search-wrap">
             <div class="wdtv-search-glass">
               <input type="text" id="searchInput" placeholder="搜索你喜欢的视频..." autocomplete="off" oninput="toggleClearButton()">
-              <button id="clearSearchInput" class="wdtv-clear-btn" onclick="clearSearchInput()">
+              <button id="clearSearchInput" class="wdtv-clear-btn" onclick="clearSearchInput()" aria-label="清空搜索词">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
-              <button class="wdtv-search-btn" onclick="debouncedSearch()">
+              <button class="wdtv-search-btn" onclick="debouncedSearch()" aria-label="搜索">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
               </button>
             </div>
@@ -778,7 +825,6 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
                     <p class="wsp-created-label">房间已创建，把房间码发给对方</p>
                     <div class="wsp-created-code" id="wpRoomCode">XXXXXX</div>
                     <div class="wsp-created-actions">
-                      <button type="button" id="wpCopyInvite" class="wsp-btn">复制房间码</button>
                       <button type="button" id="wpEnterRoom" class="wsp-btn wsp-btn--primary">进入房间</button>
                     </div>
                     <p class="wsp-created-count" id="wpCountdown"></p>
@@ -885,13 +931,13 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
   <!-- WDTV 底部导航栏（极简透明玻璃 Dock，图标式三页面切换） -->
   <nav id="wdtvDock" class="wdtv-dock" aria-label="主导航">
     <div class="wdtv-dock-indicator" id="wdtvDockIndicator"></div>
-    <button type="button" class="wdtv-dock-btn" data-page="cinema" aria-label="我的影院" title="我的影院">
+    <button type="button" class="wdtv-dock-btn" data-page="cinema" aria-label="我的影院">
       <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
     </button>
-    <button type="button" class="wdtv-dock-btn is-active" data-page="search" aria-label="影视搜索" title="影视搜索">
+    <button type="button" class="wdtv-dock-btn is-active" data-page="search" aria-label="影视搜索">
       <svg viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
     </button>
-    <button type="button" class="wdtv-dock-btn" data-page="space" aria-label="观影空间" title="观影空间">
+    <button type="button" class="wdtv-dock-btn" data-page="space" aria-label="观影空间">
       <svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"></rect><path d="M7 5v14M17 5v14M2.5 9.5h4.5M2.5 14.5h4.5M17 9.5h4.5M17 14.5h4.5"></path></svg>
     </button>
   </nav>
@@ -918,9 +964,37 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
   <!-- 数据源设置 -->
   <div class="wdtv-settings-block">
     <label class="block-label">数据源设置</label>
-    <div style="display:flex;gap:8px;margin-bottom:12px">
-      <button onclick="selectAllAPIs(true)" class="wdtv-mini-btn">全选</button>
-      <button onclick="selectAllAPIs(false)" class="wdtv-mini-btn">全不选</button>
+    <div class="wdtv-source-toolbar">
+      <!-- 视图切换：经典视图（默认，左）/ 优先级视图（临时调整，右） -->
+      <div class="wdtv-source-view-toggle" role="group" aria-label="数据源视图">
+        <button type="button" class="wdtv-view-btn is-active" data-view="classic" aria-label="经典视图" aria-pressed="true">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4">
+            <rect x="2" y="2" width="5" height="5" rx="1"/>
+            <rect x="9" y="2" width="5" height="5" rx="1"/>
+            <rect x="2" y="9" width="5" height="5" rx="1"/>
+            <rect x="9" y="9" width="5" height="5" rx="1"/>
+          </svg>
+        </button>
+        <button type="button" class="wdtv-view-btn" data-view="priority" aria-label="优先级视图" aria-pressed="false">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <path d="M2.5 4h6M2.5 8h8M2.5 12h4.5"/>
+            <circle cx="12.5" cy="4" r="1.1" fill="currentColor" stroke="none"/>
+            <circle cx="13.5" cy="8" r="1.1" fill="currentColor" stroke="none"/>
+            <circle cx="9.5" cy="12" r="1.1" fill="currentColor" stroke="none"/>
+          </svg>
+        </button>
+      </div>
+      <!-- 全选/全不选只服务经典视图的复选框列表，优先级视图无复选框时隐藏；
+           重置按钮只在优先级视图出现，用于恢复默认分级与选中集合 -->
+      <div class="wdtv-source-toolbar-right">
+        <div class="wdtv-source-reset" style="display:none">
+          <button type="button" id="wdtvSourceResetBtn" class="wdtv-mini-btn" onclick="resetSourceSettings()">重置</button>
+        </div>
+        <div class="wdtv-source-actions">
+          <button onclick="selectAllAPIs(true)" class="wdtv-mini-btn">全选</button>
+          <button onclick="selectAllAPIs(false)" class="wdtv-mini-btn">全不选</button>
+        </div>
+      </div>
     </div>
     <div id="apiCheckboxes" class="wdtv-api-scroll"></div>
     <div class="wdtv-api-info">
@@ -928,29 +1002,18 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <span id="siteStatus"></span>
     </div>
   </div>
-  <!-- 视频源连接测试 -->
-  <div class="wdtv-settings-block">
-    <label class="block-label">视频源连接测试</label>
-    <button onclick="runConnectionTest()" class="wdtv-settings-func-btn">测试全部视频源连接</button>
-    <div style="display:flex;gap:8px;margin-bottom:8px">
-      <button onclick="copyConnectionLog()" class="wdtv-mini-btn">复制日志</button>
-      <button onclick="clearConnectionLog()" class="wdtv-mini-btn">清空日志</button>
-    </div>
-    <div id="connectionLog" class="wdtv-conn-log"></div>
-    <div class="wdtv-api-info"><span>测试会逐一校验每个视频源 API 的连通性，日志含完整原因</span></div>
-  </div>
   <!-- 功能开关 -->
   <div class="wdtv-settings-block">
     <label class="block-label">功能开关</label>
     <div class="wdtv-settings-row">
-      <div class="wdtv-sr-text"><div class="wdtv-sr-label">动态效果</div><div class="wdtv-sr-desc">关闭后停用全部动画与视觉特效，提升性能</div></div>
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">动态效果</div><div class="wdtv-sr-desc">关闭后仅停止雨滴/水波等持续特效，保留背景光晕与界面过渡</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="dynamicEffectsToggle" checked><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
     <div class="wdtv-settings-row">
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">分片广告过滤</div><div class="wdtv-sr-desc">自动识别并剔除视频清单中的广告分片，观看和下载更清爽</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="adFilterToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
-    <div class="wdtv-settings-row" title="开启后，进入未能高置信识别的可疑广告时段时自动 seek 跳过">
+    <div class="wdtv-settings-row">
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">广告自动跳过</div><div class="wdtv-sr-desc">可疑广告时段播放时自动跳过</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="adAutoSkipToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
@@ -966,22 +1029,14 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">自动缓存</div><div class="wdtv-sr-desc">播放时自动在后台缓存整集视频</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="autoCacheToggle" checked><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
-    <div class="wdtv-settings-row" title="开启后播放分片直连与代理立即双路并行竞速、先到先用（会多消耗流量换取流畅，默认关闭）">
+    <div class="wdtv-settings-row">
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">流量竞速兜底</div><div class="wdtv-sr-desc">直连过慢时自动代理并行竞速，多耗流量换流畅</div></div>
       <label class="wdtv-toggle"><input type="checkbox" id="raceHedgeToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
-    <div class="wdtv-settings-row" title="开启后对搜索卡片探测真实分辨率，会产生少量额外请求；默认开启">
-      <div class="wdtv-sr-text"><div class="wdtv-sr-label">卡片画质探测</div><div class="wdtv-sr-desc">开启后探测真实分辨率，并用于展开面板排序</div></div>
-      <label class="wdtv-toggle"><input type="checkbox" id="wdtvQualityProbeToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
+    <div class="wdtv-settings-row">
+      <div class="wdtv-sr-text"><div class="wdtv-sr-label">备用线路切换</div><div class="wdtv-sr-desc">开启后播放页显示线路按钮，可切换备用地址/接口</div></div>
+      <label class="wdtv-toggle"><input type="checkbox" id="routeSwitchToggle"><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
-  </div>
-  <!-- 优先播放源：设置搜索排序与直接播放的前三个源，优先级从上到下（选项由 app.js 动态填充） -->
-  <div class="wdtv-settings-block">
-    <label class="block-label">优先播放源</label>
-    <div class="wdtv-api-info" style="margin-bottom:8px"><span>设置搜索排序与直接播放的前三个源，优先级从上到下</span></div>
-    <select id="sourcePriority1" aria-label="优先播放源 1" style="display:block;width:100%;box-sizing:border-box;margin-bottom:8px;padding:8px 12px;border-radius:8px;border:1px solid rgba(200,220,245,0.3);background:rgba(255,255,255,0.45);color:#2a3a5c;font-size:0.78rem;font-family:'Noto Sans SC',sans-serif;outline:none"></select>
-    <select id="sourcePriority2" aria-label="优先播放源 2" style="display:block;width:100%;box-sizing:border-box;margin-bottom:8px;padding:8px 12px;border-radius:8px;border:1px solid rgba(200,220,245,0.3);background:rgba(255,255,255,0.45);color:#2a3a5c;font-size:0.78rem;font-family:'Noto Sans SC',sans-serif;outline:none"></select>
-    <select id="sourcePriority3" aria-label="优先播放源 3" style="display:block;width:100%;box-sizing:border-box;padding:8px 12px;border-radius:8px;border:1px solid rgba(200,220,245,0.3);background:rgba(255,255,255,0.45);color:#2a3a5c;font-size:0.78rem;font-family:'Noto Sans SC',sans-serif;outline:none"></select>
   </div>
   <!-- 弹幕设置：按需求整组隐藏（保留 DOM 与初始化逻辑，避免影响现有弹幕功能） -->
   <div class="wdtv-settings-block" style="display:none" aria-hidden="true">
@@ -994,7 +1049,7 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <div class="wdtv-sr-text"><div class="wdtv-sr-label">弹幕 API 地址</div></div>
       <input type="text" id="danmuCustomApiInput" class="wdtv-danmu-input" placeholder="留空使用内置自建弹幕源；可填其他自部署/兼容端点" autocomplete="off" spellcheck="false">
     </div>
-    <div class="wdtv-api-info"><span>弹幕数据来自自建弹幕服务（阿里云函数计算，聚合爱优腾芒哔等平台，仅观看不发送）。内置源失效或想替换时，可填自部署 danmu_api 或其他弹弹play 兼容端点，支持「地址|口令」格式</span></div>
+    <div class="wdtv-api-info"><span>弹幕数据来自自建弹幕服务（聚合腾讯视频、爱奇艺、优酷、芒果TV、bilibili 等平台，仅观看不发送）。内置源失效或想替换时，可填自部署 danmu_api 或其他弹弹play 兼容端点，支持「地址|口令」格式</span></div>
   </div>
   <!-- 一般功能 -->
   <div class="wdtv-settings-block">
@@ -1004,7 +1059,19 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
       <label class="wdtv-toggle"><input type="checkbox" id="cacheEvictToggle" checked><span class="wdtv-toggle-bg"></span><span class="wdtv-toggle-dot"></span></label>
     </div>
     <button onclick="VideoCache.openManager()" class="wdtv-settings-func-btn">视频缓存管理</button>
-    <div class="wdtv-api-info"><span>查看 / 清理已缓存的视频内容</span></div>
+    <!-- 视频源连接测试：夹在视频缓存管理与隐私政策之间，默认不展开 -->
+    <details class="wdtv-settings-details">
+      <summary>视频源连接测试</summary>
+      <div class="wdtv-settings-details-body">
+        <button onclick="runConnectionTest()" class="wdtv-settings-func-btn">测试全部视频源连接</button>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button onclick="copyConnectionLog()" class="wdtv-mini-btn">复制日志</button>
+          <button onclick="clearConnectionLog()" class="wdtv-mini-btn">清空日志</button>
+        </div>
+        <div id="connectionLog" class="wdtv-conn-log"></div>
+        <div class="wdtv-api-info"><span>测试会逐一校验每个视频源 API 的连通性，日志含完整原因</span></div>
+      </div>
+    </details>
     <button onclick="window.open('about.html','_blank')" class="wdtv-settings-func-btn">隐私政策</button>
   </div>
 </div>
@@ -1053,35 +1120,38 @@ html.fx-off .wdtv-settings-panel .wdtv-toggle input:checked + .wdtv-toggle-bg + 
 <!-- Tailwind Play CDN 需同步执行以在首帧前注入样式，避免无样式闪烁；其余脚本统一 defer：
      defer 保证按文档顺序执行（依赖链不变），但不再逐个阻塞 HTML 解析，浏览器可并行下载 1.49MB 自有 JS。 -->
 <script src="libs/tailwindcss.min.js?v=1"></script>
-<script defer src="js/config.js?v=31"></script>
+<script defer src="js/config.js?v=46"></script>
 <!-- 批次2：LibreTV 优势项移植模块（零构建、defer 按文档顺序即依赖） -->
 <script defer src="js/states.js?v=1"></script>
 <script defer src="js/focus-trap.js?v=1"></script>
 <script defer src="js/image-fallback.js?v=2"></script>
 <script defer src="js/remarks.js?v=1"></script>
-<script defer src="js/aggregate.js?v=1"></script>
+<script defer src="js/aggregate.js?v=12"></script>
 <script defer src="js/quality.js?v=2"></script>
 <script defer src="js/probe-queue.js?v=2"></script>
-<script defer src="js/ad-filter.js?v=3"></script>
-<script defer src="js/video-cache.js?v=96"></script>
+<script defer src="js/ad-filter.js?v=4"></script>
+<script defer src="js/pts-ad-detector.js?v=5"></script>
+<script defer src="js/seg-batch.js?v=1"></script>
+<script defer src="js/video-cache.js?v=98"></script>
 <script defer src="js/download-utils.js?v=1"></script>
-<script defer src="js/downloader.js?v=23"></script>
-<script defer src="js/connection-test.js?v=12"></script>
-<script defer src="js/ui.js?v=19"></script>
+<script defer src="js/downloader.js?v=31"></script>
+<script defer src="js/connection-test.js?v=16"></script>
+<script defer src="js/ui.js?v=22"></script>
 <script defer src="js/source-health.js?v=3"></script>
-<script defer src="js/api.js?v=17"></script>
+<script defer src="js/api.js?v=26"></script>
 <!-- 批次3：首页推荐增源（需在 douban.js 之前；60s 榜单直连，Bangumi 可选默认关闭） -->
 <script defer src="js/recommend-sources.js?v=3"></script>
-<script defer src="js/douban.js?v=17"></script>
-<script defer src="js/search.js?v=14"></script>
-<script defer src="js/app.js?v=47"></script>
-<script defer src="js/cinema.js?v=18"></script>
+<script defer src="js/douban.js?v=20"></script>
+<script defer src="js/search.js?v=26"></script>
+<script defer src="js/app.js?v=79"></script>
+<script defer src="js/cinema.js?v=22"></script>
 <script defer src="js/pwa-register.js?v=8"></script>
 <script defer src="js/index-page.js?v=15"></script>
 <script defer src="js/dock.js?v=3"></script>
-<script defer src="js/cloud-sync.js?v=10"></script>
-<script defer src="js/cloud-sync-ui.js?v=7"></script>
-<script defer src="js/space.js?v=5"></script>
+<script defer src="js/cloud-sync.js?v=11"></script>
+<script defer src="js/cloud-sync-ui.js?v=16"></script>
+<script defer src="js/space.js?v=6"></script>
+<script defer src="js/motion.js?v=13"></script>
 
 <!-- InternalBeyond Scripts -->
 <script>

@@ -28,6 +28,10 @@
     var HOUSEKEEP_INTERVAL_MS = 15 * 60 * 1000;         // 兜底巡检间隔（不依赖播放行为）
     var AGGRESSIVE_BYTE_RATIO = 0.7;                    // 配额吃紧时的激进淘汰目标（降到上限的 70%，保证当前集可缓存）
     var WINDOW_SECONDS = 30;                            // 播放位置后 30 秒窗口（整集缓存的闸门）
+    // 批量取件：同一优先级阶段内的 K 个分片合成一次请求（服务端并发拉上游），
+    // 突破浏览器同源 6 连接上限。K 还会被当前并发额度（targetConcurrency）二次约束，
+    // 保证「在途分片数」与逐片模式完全一致，不会因为批量而抢占播放带宽。
+    var BATCH_SIZE = 4;
     var PREFETCH_CONCURRENCY_MAX = 12;                  // 预取最大并行分片数：与整集下载器（12 并发）完全一致。
                                                         // 预取顺序 = 播放位置向后排（30s 窗口优先），命中即秒播，
                                                         // 并发越高缓存越快跑到播放前面，倍速播放越流畅；
@@ -682,54 +686,85 @@
         return 0;
     }
 
-    // 按位置优先级挑下一个要下载的分片；无任务（或闸门关闭且窗口缺失分片都在播放加载中）返回 null
-    function pickNext() {
+    // 按位置优先级挑下一批要下载的分片（最多 limit 个，且只在同一阶段内取）。
+    // pickNext 就是 limit=1 的特例：两个入口共用同一套闸门，避免维护两份优先级逻辑。
+    // 阶段之间不跨越——窗口没补齐不许整集向后，后面没补齐不许回头补前段（用户规则）。
+    function pickCandidates(limit) {
         var s = state.session;
         var list = s.frags;
-        if (!list || !list.length || !state.currentKey) return null;
+        var out = [];
+        if (!list || !list.length || !state.currentKey) return out;
         var pos = playbackPosition();
         var winEnd = pos + WINDOW_SECONDS;
         var i, f, key;
+
+        function pending(f) {
+            if (state.cachedFragKeys.has(f.key)) return false;
+            if (state.inflightPlayback.has(f.key) || s.downloading.has(f.key)) return false; // 播放正在加载/下载器在途
+            return true;
+        }
 
         // 阶段一：当前观看位置后 30 秒窗口（必须最优先，闸门未开时仅允许下载这里）
         for (i = 0; i < list.length; i++) {
             f = list[i];
             if (f.end <= pos) continue;
             if (f.start >= winEnd) break;
-            key = f.key;
-            if (state.cachedFragKeys.has(key)) continue;
-            if (state.inflightPlayback.has(key) || s.downloading.has(key)) continue; // 播放正在加载/下载器在途
-            return f;
+            if (!pending(f)) continue;
+            out.push(f);
+            if (out.length >= limit) return out;
         }
+        if (out.length) return out; // 窗口内还有活：不越阶
 
         // 闸门：后 30 秒窗口必须全部已缓存，否则严禁整集缓存
         for (i = 0; i < list.length; i++) {
             f = list[i];
             if (f.end <= pos) continue;
             if (f.start >= winEnd) break;
-            if (!state.cachedFragKeys.has(f.key)) return null; // 窗口未缓存完 → 禁止向后/向前缓存
+            if (!state.cachedFragKeys.has(f.key)) return out; // 窗口未缓存完 → 禁止向后/向前缓存
         }
 
         // 阶段二：窗口之后继续向后缓存，直到本集末尾（升序）
         for (i = 0; i < list.length; i++) {
             f = list[i];
             if (f.start < winEnd) continue;
-            key = f.key;
-            if (state.cachedFragKeys.has(key)) continue;
-            if (state.inflightPlayback.has(key) || s.downloading.has(key)) continue;
-            return f;
+            if (!pending(f)) continue;
+            out.push(f);
+            if (out.length >= limit) return out;
         }
+        if (out.length) return out;
 
         // 阶段三：后面已全部缓存完 → 就近向前检测并补齐当前位置之前的遗漏（降序）
         for (i = list.length - 1; i >= 0; i--) {
             f = list[i];
             if (f.end > pos) continue;
-            key = f.key;
-            if (state.cachedFragKeys.has(key)) continue;
-            if (state.inflightPlayback.has(key) || s.downloading.has(key)) continue;
-            return f;
+            if (!pending(f)) continue;
+            out.push(f);
+            if (out.length >= limit) return out;
         }
-        return null;
+        return out;
+    }
+
+    function pickNext() {
+        return pickCandidates(1)[0] || null;
+    }
+
+    // ===== 批量取件（服务端多连接） =====
+    // 实现与协议在 js/seg-batch.js（整集下载器共用同一套）；接口不存在时 supported() 为 false，
+    // 自动退回逐片。这里只负责「合并同一阶段的分片 + 逐片落库 + 单飞登记」。
+    var batchOff = false;
+    function batchReady() {
+        return !batchOff && typeof WDTVSegBatch !== 'undefined' && WDTVSegBatch.supported();
+    }
+
+    // 逐片成功/失败簿记：逐片与批量两条通道共用，避免口径漂移
+    function fragStored(s, item) {
+        s.failStreak = 0;
+        state.cachedFragKeys.add(item.key);
+        if (s.levelKeys.has(item.key)) s.levelCached.add(item.key);
+    }
+    function fragFailed(s) {
+        s.failStreak++;
+        markPumpFailed(s);
     }
 
     // 预取并发额度：按播放"真实秒"缓冲余量动态收缩（runway = 媒体秒余量 / 倍速）。
@@ -778,6 +813,38 @@
         }
         var cap = targetConcurrency();
         while (!s.paused && s.state !== 'failed' && !isAborted() && s.inflight < cap) {
+            // 批量取件：同一优先级阶段内合并 K 片一次请求（服务端并发拉上游），
+            // 绕过浏览器同源 6 连接上限。K 受「剩余并发额度」二次约束，因此在途分片数
+            // 与逐片模式完全一致——不会因为批量而多占管道、抢播放的带宽份额。
+            let group = null;
+            var room = cap - s.inflight;
+            if (room >= 2 && batchReady()) {
+                var cand = pickCandidates(Math.min(BATCH_SIZE, room));
+                // BYTERANGE 分片必须带 Range 头，不能进批量：只取到它之前的那几片
+                var cut = cand.length;
+                for (var gi = 0; gi < cand.length; gi++) {
+                    if (cand[gi].rs != null || cand[gi].re != null) { cut = gi; break; }
+                }
+                if (cut >= 2) group = cand.slice(0, cut);
+            }
+            if (group) {
+                s.inflight += group.length;
+                group.forEach(function (it) { s.downloading.add(it.key); });
+                let job = runBatch(group);
+                group.forEach(function (it, k) { state.pumpInflight.set(it.key, job.perItem[k]); });
+                job.all.finally(function () {
+                    s.inflight -= group.length;
+                    group.forEach(function (it) {
+                        s.downloading.delete(it.key);
+                        state.pumpInflight.delete(it.key);
+                    });
+                    maybeFinish();
+                    notifyProgress();
+                    pump();
+                });
+                continue;
+            }
+
             // 必须 let：finally 回调异步执行，var 共享绑定会删错 key（历史隐患）
             let item = pickNext();
             if (!item) { maybeFinish(); return; }
@@ -1208,14 +1275,8 @@
             }
             return attemptFetch(0).then(function (buf) {
                 return putFragSafe(item.key, item.url, item.rs, item.re, buf).then(function (ok) {
-                    if (ok) {
-                        s.failStreak = 0;
-                        state.cachedFragKeys.add(item.key);
-                        if (s.levelKeys.has(item.key)) s.levelCached.add(item.key);
-                    } else {
-                        s.failStreak++;
-                        markPumpFailed(s);
-                    }
+                    if (ok) fragStored(s, item);
+                    else fragFailed(s);
                 });
             });
         })().catch(function () {
@@ -1224,6 +1285,61 @@
             s.failStreak++;
             markPumpFailed(s);
         });
+    }
+
+    // 批量取件：一次请求取回同一优先级阶段的 K 个分片（服务端并发拉上游）。
+    // 逐片语义全部保留：BYTERANGE 不进批量、落库前做截断校验、单飞 promise 逐片登记、
+    // 失败照旧计入 failStreak（泵的 1s 自愈重试逻辑不变）。
+    // 返回 { all, perItem }：all 在整批（含落库）结束后 resolve；perItem[k] 供播放 loader
+    // 单飞等待「这一片」落库，而不是等整批（避免 seek 时白等 K 片的时间）。
+    function runBatch(items) {
+        var s = state.session;
+        var myCtrl = state.abortCtrl;
+        var settled = items.map(function () {
+            var d = {};
+            d.promise = new Promise(function (resolve, reject) { d.resolve = resolve; d.reject = reject; });
+            d.promise.catch(function () { }); // 等待方可能超时后不再消费：避免 unhandledrejection
+            return d;
+        });
+        function sessionGone() { return myCtrl !== state.abortCtrl || myCtrl.signal.aborted; }
+
+        var all = WDTVSegBatch.fetch(items.map(function (it) { return it.url; }), {
+            signal: myCtrl.signal
+        }).then(function (parts) {
+            if (sessionGone()) {
+                settled.forEach(function (d) { d.reject(new Error('session-switched')); });
+                return;
+            }
+            return Promise.all(items.map(function (it, k) {
+                var p = parts[k];
+                if (!p || !p.buf) {
+                    fragFailed(s);
+                    settled[k].reject(new Error('fragment-failed'));
+                    return null;
+                }
+                // 截断校验：与逐片路径同口径（上游声明长度时，收到字节不得少于声明）。
+                // 截断分片一旦入库会被缓存永久秒回，表现为"已缓存区域固定几秒永远播不动"。
+                if (p.clen > 0 && p.buf.byteLength < p.clen) {
+                    fragFailed(s);
+                    settled[k].reject(new Error('fragment-truncated'));
+                    return null;
+                }
+                return putFragSafe(it.key, it.url, it.rs, it.re, p.buf).then(function (ok) {
+                    if (ok) { fragStored(s, it); settled[k].resolve(); }
+                    else { fragFailed(s); settled[k].reject(new Error('fragment-store-failed')); }
+                });
+            }));
+        }).catch(function (e) {
+            if (e && e.permanent) batchOff = true; // 服务端没有该接口：本会话退回逐片
+            if (!sessionGone()) {
+                // 整批请求级失败（超时/断网/5xx）：每片都算一次失败，交给泵的复活逻辑重试
+                s.failStreak += items.length;
+                markPumpFailed(s);
+            }
+            settled.forEach(function (d) { d.reject(e || new Error('batch-failed')); });
+        });
+
+        return { all: all, perItem: settled.map(function (d) { return d.promise; }) };
     }
 
     function putFragSafe(key, url, rs, re, buf) {
@@ -1955,13 +2071,17 @@
                 return;
             }
             if (e.target.closest('[data-vc-clear]')) {
-                if (window.confirm('确定清空全部视频缓存？已缓存的 ' + mgr.entries.length + ' 个视频将被删除。')) {
+                var ask = window.WDTVMotion
+                    ? window.WDTVMotion.confirm('确定清空全部视频缓存？已缓存的 ' + mgr.entries.length + ' 个视频将被删除。', { danger: true })
+                    : Promise.resolve(window.confirm('确定清空全部视频缓存？已缓存的 ' + mgr.entries.length + ' 个视频将被删除。'));
+                ask.then(function (yes) {
+                    if (!yes) return;
                     clearAll().then(function (ok) {
                         if (ok) toast('已清空全部视频缓存', 'success');
                         else toast('清空失败，请稍后重试', 'error');
                         refreshManager();
                     });
-                }
+                });
             }
         });
         if (!window.__vcEscBound) {

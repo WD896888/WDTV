@@ -63,7 +63,7 @@ console.log('\n[1] 贴片广告（前置区间·外域+广告路径）');
   t('贴片：广告分片不再出现', !r.text.includes('doubleclick'));
   t('贴片：正片分片保留', r.text.includes('s0.ts') && r.text.includes('s5.ts'));
   t('贴片：输出带 ENDLIST', r.text.includes('#EXT-X-ENDLIST'));
-  t('贴片：输出带版本标记', /^#WDTV-ADF:v2$/m.test(r.text));
+  t('贴片：输出带版本标记', /^#WDTV-ADF:v3$/m.test(r.text));
   t('贴片：removed 记录秒数', r.removed.length === 1 && r.removed[0].secs === 8, JSON.stringify(r.removed));
 }
 
@@ -238,20 +238,20 @@ console.log('\n[11] DATERANGE SCTE35 标准标记');
 console.log('\n[12] 缓存签名四态（签名与校验侧同源：只读 localStorage）');
 {
   const on = run(playlist([mainSeg(0), mainSeg(1)]));
-  t('签名：开 → v2', /^#WDTV-ADF:v2$/m.test(on.text));
+  t('签名：开 → v3', /^#WDTV-ADF:v3$/m.test(on.text));
   t('签名：on 文本匹配当前（Node 默认开）', A.textMatchesCurrentSignature(on.text) === true);
   t('签名：无标记文本不匹配', A.textMatchesCurrentSignature('#EXTM3U\n#EXTINF:10,\nx.ts') === false);
   const saved = globalThis.localStorage;
   globalThis.localStorage = { getItem: () => 'false' };
   const off = run(playlist([mainSeg(0), mainSeg(1)]));
-  t('签名：关 → v2-off', /^#WDTV-ADF:v2-off$/m.test(off.text));
+  t('签名：关 → v3-off', /^#WDTV-ADF:v3-off$/m.test(off.text));
   t('签名：localStorage 关时 off 文本匹配', A.textMatchesCurrentSignature(off.text) === true);
   t('签名：localStorage 关时 on 文本不匹配', A.textMatchesCurrentSignature(on.text) === false);
   // 回归：显式 opts.enabled 与存储冲突时，签名仍按存储生成（旧实现按 opts.enabled 生成，
   // 校验侧只读存储 → 每次命中都删缓存回源）。
   const mismatch = run(playlist([mainSeg(0), mainSeg(1)]), MAIN + 'index.m3u8', { enabled: true });
   t('签名：opts.enabled 与存储冲突时仍按存储生成，不反复回源',
-      /^#WDTV-ADF:v2-off$/m.test(mismatch.text) && A.textMatchesCurrentSignature(mismatch.text) === true);
+      /^#WDTV-ADF:v3-off$/m.test(mismatch.text) && A.textMatchesCurrentSignature(mismatch.text) === true);
   globalThis.localStorage = saved;
 }
 
@@ -306,7 +306,7 @@ console.log('\n[16] 边界：主清单（无 EXTINF）零改动仅打标记');
 {
   const master = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720\n720/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n1080/index.m3u8';
   const r = run(master);
-  const expected = '#EXTM3U\n#WDTV-ADF:v2\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720\n720/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n1080/index.m3u8';
+  const expected = '#EXTM3U\n#WDTV-ADF:v3\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720\n720/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n1080/index.m3u8';
   t('主清单：除标记外零改动', r.text === expected, JSON.stringify(r.text));
 }
 

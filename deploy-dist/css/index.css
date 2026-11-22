@@ -1091,9 +1091,9 @@
     border:1px solid rgba(255,255,255,0.14);
     background:rgba(255,255,255,0.07);
     color:var(--pale);
-    font-family:'Cormorant Garamond',serif;
-    font-size:clamp(1.05rem,4vw,1.35rem);
-    font-weight:500;
+    font-family:'Sriracha',cursive;
+    font-size:clamp(1.4rem,4.5vw,1.7rem);
+    font-weight:400;
     text-align:center;
     text-transform:uppercase;
     caret-color:rgba(122,167,230,0.9);
@@ -1128,14 +1128,19 @@
     letter-spacing:.08em;
 }
 .wsp-created-code{
-    font-family:'Cormorant Garamond',serif;
-    font-size:2.1rem;
-    font-weight:500;
-    letter-spacing:.4em;
-    text-indent:.4em; /* 抵消末位字距，视觉居中 */
+    font-family:'Sriracha',cursive;
+    font-size:2.4rem;
+    font-weight:400;
+    letter-spacing:.12em;
+    text-indent:.12em; /* 抵消末位字距，视觉居中 */
     color:var(--pale);
     line-height:1.1;
     font-variant-numeric:tabular-nums;
+    user-select:none;
+    -webkit-user-select:none;
+    -webkit-touch-callout:none;
+    cursor:pointer;
+    touch-action:manipulation;
 }
 .wsp-created-actions{
     display:flex;
@@ -1330,7 +1335,7 @@
     .wsp-panel--join{padding:14px 15px;gap:12px}
     .wsp-code{gap:6px}
     .wsp-code-seg{height:46px}
-    .wsp-created-code{font-size:1.8rem}
+    .wsp-created-code{font-size:2rem}
 }
 
 /* ---- 三端响应式：平板 / 手机缩小 Dock 尺寸 ---- */
@@ -1378,15 +1383,19 @@
     z-index:10;
     display:flex;
     align-items:center;
-    gap:9px;
-    height:44px;
-    padding:0 10px 0 12px;
+    gap:10px;
+    /* 高度跟着 46px 头像走（与账号卡片里的头像同尺寸，见 .wdtv-ab-avatar），
+       左上角历史按钮同步改成同样高度，顶部这条基线才齐 */
+    height:52px;
+    padding:0 10px 0 15px;
     border:none;
-    border-radius:12px;
+    border-radius:14px;
     background:transparent;
     color:rgba(236,244,255,0.72);
     cursor:pointer;
-    font-family:'Noto Serif SC','Source Han Serif SC',serif;
+    /* 昵称：中文用「演示秋鸿楷」（书法感、简洁端正），拉丁字母/数字沿用 WDTV 标题同款
+       手写体 Sriracha（秋鸿楷只含汉字，不含拉丁，两者按字符集自动接力）。 */
+    font-family:'Slideqiuhong','Sriracha','Noto Serif SC','Source Han Serif SC',serif;
     -webkit-tap-highlight-color:transparent;
     transition:background-color .3s ease,color .3s ease,transform .18s ease;
 }
@@ -1398,37 +1407,49 @@
 }
 #account-btn:active{transform:scale(.96)}
 
-/* 按钮内头像：圆形，占位为人形剪影图标（无背景色，内容由 cloud-sync-ui.js 渲染）；
-   无底色无边框——占位图标直接平铺在背景上，保持"无感融入" */
+/* 按钮内头像：圆形，默认是素描线稿、上传后是真实照片（内容由 cloud-sync-ui.js 渲染）；
+   无底色无边框——头像直接平铺在背景上，保持"无感融入"。
+   直径与账号卡片里的头像一致（54px），两处看到的是同一块画面、同一圈裁切 */
 .wdtv-ab-avatar{
     display:flex;
     align-items:center;
     justify-content:center;
-    width:32px;height:32px;
+    width:46px;height:46px;
     flex-shrink:0;
     border-radius:50%;
     overflow:hidden;
     border:none;
     background:transparent;
+    /* 与昵称同色：不另设白度，直接继承 #account-btn 的 color
+       （静置 rgba(236,244,255,.72)、悬停/展开 .96，跟着文字一起变），
+       头像与文字的色阶才对得齐 */
+    color:inherit;
 }
 .wdtv-ab-avatar img{
     width:100%;height:100%;
     object-fit:cover;
     display:block;
 }
-.wdtv-ab-avatar svg{
-    width:16px;height:16px;
-    stroke:rgba(200,220,245,0.8);
-    fill:none;
-    stroke-width:1.8;
-    stroke-linecap:round;
-    stroke-linejoin:round;
+/* 默认头像：素描线稿（透明底 SVG），只取线条、以 currentColor 上色，
+   同一份图形适配深色面板（浅线）与浅色底（深墨线），也不会出现「白色圆盘」。
+   占位节点自己裁圆（父级按钮不再 overflow:hidden），照片靠 img 的圆角裁 */
+.wdtv-avatar-def{
+    display:block;
+    width:100%;height:100%;
+    border-radius:50%;
+    background:currentColor;
+    -webkit-mask:url('../image/avatar-default.svg') center/92% no-repeat;
+    mask:url('../image/avatar-default.svg') center/92% no-repeat;
 }
+/* 药丸与账号卡片共用同一块画面（同一个 92% 取景、同一份线稿资源），
+   两处圆形里看到的内容范围完全一致——此前药丸为了小尺寸放大到 124%，
+   结果同一个头像在两处显示的范围不一样，画面不统一 */
 
 /* 按钮内昵称文字：超长省略，颜色跟随按钮状态（默认浅色、悬浮/展开提亮） */
 .wdtv-ab-name{
-    max-width:110px;
-    font-size:.85rem;
+    max-width:130px;
+    /* 跟着 46px 头像走（头像与文字按同一比例缩放，比例才不会散） */
+    font-size:1rem;
     font-weight:400;
     letter-spacing:.04em;
     color:inherit;
@@ -1441,7 +1462,7 @@
 /* ---- 账号下拉菜单：玻璃卡片，右上角锚定展开 ---- */
 #accountMenu{
     position:fixed;
-    top:78px;
+    top:86px;
     right:24px;
     z-index:10000;
     width:300px;
@@ -1564,7 +1585,9 @@
 }
 
 /* 卡片头像：可点击换头像（登录态），悬浮出现相机提示角标；
-   白色圆底 + 白描边（菜单玻璃本身很浅，白圈需足够不透明度才可见） */
+   白色圆底 + 白描边（菜单玻璃本身很浅，白圈需足够不透明度才可见）
+   注意：容器不再 overflow:hidden——圆由 img 自己裁，否则右下角相机角标
+   会被圆的裁切切成半块蓝斑（默认头像铺满整枚圆后尤其明显） */
 .wdtv-am-avatar-btn{
     position:relative;
     display:flex;
@@ -1576,8 +1599,10 @@
     border-radius:50%;
     border:1px solid rgba(255,255,255,0.85);
     background:rgba(255,255,255,0.65);
+    /* 线稿默认头像的上色来源（mask 取线条 + currentColor）：与昵称同色系的深蓝，
+       不依赖祖先继承，菜单里外都稳定 */
+    color:rgba(30,45,75,0.72);
     cursor:pointer;
-    overflow:hidden;
     -webkit-tap-highlight-color:transparent;
     transition:box-shadow .2s ease,transform .18s ease;
 }
@@ -1587,42 +1612,12 @@
 .wdtv-am-avatar-btn.wdtv-am-static{cursor:default;pointer-events:none}
 .wdtv-am-avatar-btn img{
     width:100%;height:100%;
+    border-radius:50%;
     object-fit:cover;
     display:block;
 }
-.wdtv-am-avatar-btn svg.wdtv-am-ph-icon{
-    width:24px;height:24px;
-    stroke:rgba(42,58,92,0.55);
-    fill:none;
-    stroke-width:1.6;
-    stroke-linecap:round;
-    stroke-linejoin:round;
-}
-/* 换头像相机角标：悬浮时淡入 */
-.wdtv-am-cam{
-    position:absolute;
-    right:-2px;bottom:-2px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    width:20px;height:20px;
-    border-radius:50%;
-    border:none;
-    background:linear-gradient(135deg,#4a78bd,#6a9ae0);
-    box-shadow:0 2px 8px rgba(10,18,32,0.3);
-    opacity:.88;
-    transition:opacity .2s ease,transform .2s ease;
-    transform:scale(.86);
-}
-.wdtv-am-avatar-btn:hover .wdtv-am-cam{opacity:1;transform:scale(1)}
-.wdtv-am-cam svg{
-    width:11px;height:11px;
-    stroke:#fff;
-    fill:none;
-    stroke-width:2;
-    stroke-linecap:round;
-    stroke-linejoin:round;
-}
+/* 换头像相机角标已移除：头像本身就是上传入口（点击头像选图），
+   右下角那个蓝标压在插图/照片上既抢视线又破坏了圆形裁切的完整感 */
 
 /* 卡片文字区：昵称 + @用户名 */
 .wdtv-am-userinfo{
@@ -1636,7 +1631,8 @@
     min-width:0;
 }
 .wdtv-am-nick{
-    font-family:'Noto Serif SC','Source Han Serif SC',serif;
+    /* 昵称：中文用「演示秋鸿楷」，拉丁字母/数字沿用 Sriracha（秋鸿楷不含拉丁字符） */
+    font-family:'Slideqiuhong','Sriracha','Noto Serif SC','Source Han Serif SC',serif;
     font-size:.98rem;
     font-weight:600;
     letter-spacing:.03em;
@@ -1859,12 +1855,12 @@
 }
 
 /* ---- 账号区响应式 ---- */
-/* 平板（≤768px）：菜单保持右上角锚定，宽度收窄 */
+/* 平板（≤768px）：菜单保持右上角锚定，宽度收窄；头像/昵称一起缩小但保持同一比例 */
 @media (max-width:768px){
-    #account-btn{gap:8px;height:40px;padding:0 8px 0 10px}
-    .wdtv-ab-avatar{width:30px;height:30px}
-    .wdtv-ab-name{max-width:84px;font-size:.8rem}
-    #accountMenu{width:280px;top:66px;right:16px}
+    #account-btn{gap:9px;height:48px;padding:0 9px 0 13px}
+    .wdtv-ab-avatar{width:42px;height:42px}
+    .wdtv-ab-name{max-width:96px;font-size:.95rem}
+    #accountMenu{width:280px;top:72px;right:16px}
 }
 /* 手机（≤640px，与 Dock 手机断点一致）：菜单改为屏幕居中弹出（横竖双向居中） */
 @media (max-width:640px){
@@ -1880,3 +1876,7 @@
         transform:translate(-50%,-50%) scale(1);
     }
 }
+
+/* ---- 数据源工具栏右侧：优先级视图重置按钮 ---- */
+.wdtv-source-toolbar-right{display:flex;align-items:center;gap:8px}
+.wdtv-source-reset{display:flex;align-items:center}

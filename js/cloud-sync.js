@@ -385,6 +385,42 @@
         }
     }
 
+    // 头像缩略图（64px JPEG）：供共同观影房间内互传用——
+    // 房间协议只接受小图（≤12KB），原始头像（约 200KB）不适合走房间广播。
+    let thumbMemory = null;
+    function shrinkAvatar(src, size, quality) {
+        return new Promise(function (resolve) {
+            try {
+                var img = new Image();
+                img.onload = function () {
+                    try {
+                        var canvas = document.createElement('canvas');
+                        canvas.width = size; canvas.height = size;
+                        var ctx = canvas.getContext('2d');
+                        if (!ctx) { resolve(''); return; }
+                        // 居中裁切为正方形（与账号上传时的方形构图一致）
+                        var side = Math.min(img.width, img.height);
+                        ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+                        resolve(canvas.toDataURL('image/jpeg', quality));
+                    } catch (e) { resolve(''); }
+                };
+                img.onerror = function () { resolve(''); };
+                img.src = src;
+            } catch (e) { resolve(''); }
+        });
+    }
+    async function getAvatarThumb() {
+        if (thumbMemory) return thumbMemory;
+        try {
+            var full = await getAvatarDataUrl();
+            if (!full || !full.dataUrl) return '';
+            thumbMemory = await shrinkAvatar(full.dataUrl, 64, 0.5);
+            return thumbMemory || '';
+        } catch (e) {
+            return '';
+        }
+    }
+
     async function uploadAvatarDataUrl(dataUrl) {
         if (!state.token) throw new Error('未登录');
         const resp = await request('POST', '/api/user/avatar', { dataUrl: dataUrl });
@@ -1022,6 +1058,7 @@
         getStatus: getStatus,
         onChange: onChange,
         getAvatarDataUrl: getAvatarDataUrl,
+        getAvatarThumb: getAvatarThumb,   // 64px 缩略图（共同观影房间内互传）
         uploadAvatarDataUrl: uploadAvatarDataUrl,
         updateNickname: updateNickname,
         isRegisterAllowed: isRegisterAllowed,

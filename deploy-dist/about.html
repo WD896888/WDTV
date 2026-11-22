@@ -35,21 +35,22 @@
 
 <!-- 与首页完全相同的外部 CSS 栈：字体基类、豆瓣卡片、组件 token 全部复用首页 -->
 <link rel="stylesheet" href="css/styles.css?v=8">
-<link rel="stylesheet" href="css/index.css?v=39">
+<link rel="stylesheet" href="css/index.css?v=53">
 <link rel="stylesheet" href="css/modals.css?v=12">
-<link rel="stylesheet" href="css/downloader.css?v=4">
+<link rel="stylesheet" href="css/downloader.css?v=6">
 <link rel="stylesheet" href="css/states.css?v=1">
 <!-- 首页内联基础层镜像：:root 深色变量 / reset / 背景层（须在外部 CSS 之后覆盖浅色 :root） -->
-<link rel="stylesheet" href="css/site-bg.css?v=1">
-<link rel="stylesheet" href="css/about.css?v=7">
+<link rel="stylesheet" href="css/site-bg.css?v=3">
+<link rel="stylesheet" href="css/about.css?v=8">
+<link rel="stylesheet" href="css/motion.css?v=3">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="image" href="bg-canvas.jpg">
-<!-- 仅保留 CSS 实际引用的 4 个字体族；移除 3 个从未被使用的装饰字体，减少 @font-face 规则与 CSSOM 体积 -->
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Raleway:wght@200;300&display=swap" media="print" onload="this.media='all'">
+<!-- 仅保留 CSS 实际引用的 5 个字体族；移除从未被使用的装饰字体，减少 @font-face 规则与 CSSOM 体积 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@400;500;600&family=Raleway:wght@200;300&family=Sriracha&display=swap" media="print" onload="this.media='all'">
 </head>
-<body>
+<body class="mo-doc">
 
 <!-- 首屏加载层（与首页一致） -->
 <div id="preloader">
@@ -157,9 +158,6 @@
 <!-- 顶栏置于 splash 之外，避免 backdrop-filter 形成的包含块影响 fixed 定位 -->
 <div class="abt-topbar">
   <a class="abt-brand" href="/" aria-label="返回 WDTV 首页">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-    </svg>
     <span class="abt-brand-name">WDTV</span>
   </a>
   <a class="abt-back" href="/">
@@ -170,5 +168,6 @@
 
 <!-- 首页同款背景动效：雨幕 / 水波涟漪 / 雾气 / preloader 淡出 -->
 <script src="js/site-fx.js?v=1"></script>
+<script defer src="js/motion.js?v=13"></script>
 </body>
 </html>

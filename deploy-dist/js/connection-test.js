@@ -130,7 +130,9 @@
         if (!resp.ok) return { verdict: 'fail', detail: describeProxyError(resp, body) };
         let json = null;
         try {
-            json = body ? JSON.parse(body) : null;
+            json = body
+                ? ((typeof parseCmsJsonSafe === 'function') ? parseCmsJsonSafe(body) : JSON.parse(body))
+                : null;
         } catch (e) {
             const head = (body || '').replace(/\s+/g, ' ').trim().substring(0, 60);
             return { verdict: 'fail', detail: `HTTP 200 但响应不是 JSON（可能为风控/跳转页）: ${head}` };
@@ -143,6 +145,21 @@
             return { verdict: 'empty', json, detail: 'JSON 结构有效但结果数为 0' };
         }
         return { verdict: 'fail', detail: `JSON 结构异常（无 list 数组，code=${json.code} ${json.msg || ''}）`.trim() };
+    }
+
+    // HTML 搜索模式（天涯资源）：站点搜索页不是 JSON，改为统计详情链接数量
+    function judgeHtmlSearchResponse(resp, body) {
+        if (!resp.ok) return { verdict: 'fail', detail: describeProxyError(resp, body) };
+        const ids = [];
+        const re = /\/vod\/detail\/id\/(\d+)\.html/g;
+        let m;
+        while ((m = re.exec(body || '')) !== null) {
+            if (ids.indexOf(m[1]) === -1) ids.push(m[1]);
+        }
+        if (ids.length > 0) {
+            return { verdict: 'ok', firstId: ids[0], detail: `HTML 搜索页返回 ${ids.length} 条结果` };
+        }
+        return { verdict: 'fail', detail: 'HTML 搜索页未找到详情链接（可能被风控或页面改版）' };
     }
 
     // 提取标准接口详情的集数（与 api.js fetchVideoDetailData 同逻辑）
@@ -186,13 +203,23 @@
         const searchPath = (typeof applySearchParam === 'function' && api)
             ? applySearchParam(API_CONFIG.search.path, api)
             : API_CONFIG.search.path;
-        const searchUrl = buildVodApiUrl(api.api, searchPath) + encodeURIComponent(TEST_QUERY);
+        // HTML 搜索模式（天涯资源）：官方 API 关闭搜索，连接测试走站点搜索页
+        const searchMode = (api && api.searchMode) || 'api';
+        const htmlSearchUrl = (api && api.searchMode === 'html' && api.searchUrl)
+            ? api.searchUrl.replace('{page}', '1').replace('{query}', encodeURIComponent(TEST_QUERY))
+            : null;
+        const suggestSearchUrl = (api && api.searchMode === 'suggest' && api.searchUrl)
+            ? api.searchUrl.replace('{query}', encodeURIComponent(TEST_QUERY))
+            : null;
+        const searchUrl = htmlSearchUrl || suggestSearchUrl
+            || (buildVodApiUrl(api.api, searchPath) + encodeURIComponent(TEST_QUERY));
+        const judge = searchMode === 'html' ? judgeHtmlSearchResponse : judgeSearchResponse;
 
         const lines = [];
         const push = (cls, text) => lines.push(`<div class="${cls}">${esc(text)}</div>`);
         const startedAt = performance.now();
 
-        push('conn-title', `════ [${name}]（${key}） detailMode=${detailMode} ════`);
+        push('conn-title', `════ [${name}]（${key}） detailMode=${detailMode} searchMode=${searchMode} ════`);
         push('conn-meta', `时间: ${now()}`);
 
         let directOk = false;
@@ -207,12 +234,13 @@
                 cache: 'no-store'
             }, DIRECT_TIMEOUT);
             const body = await resp.text().catch(() => '');
-            const j = judgeSearchResponse(resp, body);
+            const j = judge(resp, body);
             directOk = j.verdict === 'ok';
             const tag = j.verdict === 'ok' ? '✓' : (j.verdict === 'empty' ? '⚠' : '✗');
             push(j.verdict === 'ok' ? 'conn-ok' : (j.verdict === 'empty' ? 'conn-warn' : 'conn-fail'),
                 `[搜索·直连] ${tag} HTTP ${resp.status} ${elapsed}ms${retried ? '（重试后）' : ''} - ${j.detail}`);
             if (j.json) searchJson = j.json;
+            else if (j.firstId) searchJson = { list: [{ vod_id: j.firstId }] };
         } catch (e) {
             push('conn-fail', `[搜索·直连] ✗ ${classifyFetchError(e.err)}（耗时 ${e.elapsed}ms${e.retried ? '，已重试' : ''}）`);
             describeError(e.err).forEach(l => push('conn-fail', `  原因 ${esc(l)}`));
@@ -227,12 +255,15 @@
                 cache: 'no-store'
             }, PROXY_TIMEOUT);
             const body = await resp.text().catch(() => '');
-            const j = judgeSearchResponse(resp, body);
+            const j = judge(resp, body);
             proxyOk = j.verdict === 'ok';
             const tag = j.verdict === 'ok' ? '✓' : (j.verdict === 'empty' ? '⚠' : '✗');
             push(j.verdict === 'ok' ? 'conn-ok' : (j.verdict === 'empty' ? 'conn-warn' : 'conn-fail'),
                 `[搜索·代理] ${tag} HTTP ${resp.status} ${elapsed}ms${retried ? '（重试后）' : ''} - ${j.detail}`);
-            if (!searchJson && j.json) searchJson = j.json;
+            if (!searchJson) {
+                if (j.json) searchJson = j.json;
+                else if (j.firstId) searchJson = { list: [{ vod_id: j.firstId }] };
+            }
         } catch (e) {
             push('conn-fail', `[搜索·代理] ✗ ${classifyFetchError(e.err)}（耗时 ${e.elapsed}ms${e.retried ? '，已重试' : ''}）`);
         }

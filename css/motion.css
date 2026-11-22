@@ -1,0 +1,405 @@
+/* =====================================================================
+   WDTV 动效体系 · 原生样式净化层
+   ---------------------------------------------------------------------
+   本文件是全站唯一的「表现层增强」入口，5 个页面共用：
+     index.html / player.html / about.html / wd.html / wdtv-vs-libretv-analysis.html
+
+   加载约定（不可更改）：必须插在各页内联 <style> 之后。
+   各页内联 :root 会覆盖 css/styles.css 的遗留浅色 token，本文件若先于
+   内联块加载，令牌与净化规则都会被压过。
+
+   与 Tailwind Play CDN 的关系：CDN 在运行时把 <style> 注入 head 末尾，
+   永远晚于本文件。因此全局净化选择器一律带 html 前缀提权到 ≥(0,0,2)。
+
+   设计基调：雾蓝玻璃 · 克制钢青 · 衬线优雅 · 合成器柔动。
+   性能红线：动画只驱动 transform 与 opacity；不animate box-shadow/filter/
+   blur/top/left/width/height。静态状态（焦点环、颗粒）不受此限。
+
+   降级：prefers-reduced-motion 与既有 html.fx-off 双开关，任一命中即静止。
+   ===================================================================== */
+
+/* ===== 1. 档位令牌 ===== */
+:root {
+    --mo-ease: cubic-bezier(0.32, 0.72, 0.24, 1);
+    --mo-spring: cubic-bezier(0.3, 1.2, 0.35, 1);
+    --mo-enter: 420ms;
+    --mo-stagger: 45ms;
+    --mo-shift: 14px;
+    --mo-scale: 0.98;
+    --mo-micro: 180ms;
+    --mo-press: 0.97;
+    --mo-lift: -2px;
+    --mo-ring: rgba(155, 185, 232, 0.5);
+    --mo-tint: rgba(155, 180, 218, 0.12);
+    --mo-thumb: rgba(200, 220, 245, 0.3);
+    --mo-thumb-hover: rgba(200, 220, 245, 0.5);
+    --mo-sel-bg: rgba(80, 128, 176, 0.35);
+    --mo-sel-fg: #eff2fa;
+}
+
+/* 粗指针 / 无 hover：整体更轻、更快、位移更小 */
+@media (hover: none), (pointer: coarse) {
+    :root {
+        --mo-enter: 260ms;
+        --mo-stagger: 30ms;
+        --mo-shift: 8px;
+        --mo-scale: 0.99;
+        --mo-micro: 120ms;
+        --mo-press: 0.94;
+        --mo-lift: 0px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --mo-enter: 1ms;
+        --mo-stagger: 0ms;
+        --mo-shift: 0px;
+        --mo-scale: 1;
+        --mo-micro: 1ms;
+        --mo-press: 1;
+        --mo-lift: 0px;
+    }
+}
+
+/* ===== 2. 原生样式净化 ===== */
+
+/* 2.1 选中态：全站此前零定义，默认蓝底白字 */
+html ::selection {
+    background: var(--mo-sel-bg);
+    color: var(--mo-sel-fg);
+    text-shadow: none;
+}
+html input::selection,
+html textarea::selection,
+html .wp-bubble ::selection {
+    background: rgba(106, 154, 224, 0.45);
+    color: #ffffff;
+}
+
+/* 2.2 焦点：替代散落的 outline:none，保留键盘可达性。
+   只用静态内描边 + 淡底，不做位移——避免与入场/磁性写入的 transform 冲突。 */
+html :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--mo-ring);
+    background-color: var(--mo-tint);
+}
+html .douban-card:focus-visible,
+html .wdtv-result-card:focus-visible,
+html .wdtv-ep-btn:focus-visible,
+html .wp-ep:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--mo-ring);
+}
+/* 输入类已有自身聚焦描边语言，只补环不夺底色 */
+html input:focus-visible,
+html textarea:focus-visible,
+html select:focus-visible {
+    background-color: transparent;
+}
+html .wdtv-search-glass input:focus-visible {
+    box-shadow: none;
+}
+
+/* 2.3 移动端点击灰块 */
+html * {
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* 2.5 原生控件外观 */
+html select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' fill='none' stroke='%237e90b2' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 9px center;
+    padding-right: 28px;
+}
+html select::-ms-expand { display: none; }
+html input[type="number"]::-webkit-outer-spin-button,
+html input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+html input[type="number"] { -moz-appearance: textfield; }
+html input, html textarea, html select, html button {
+    caret-color: var(--accent-light, #72a8d8);
+}
+/* 弹幕滑块此前只定制了 webkit thumb，Firefox 落回原生 */
+html input[type="range"]::-moz-range-track {
+    height: 3px;
+    border-radius: 999px;
+    background: rgba(200, 220, 245, 0.22);
+    border: none;
+}
+html input[type="range"]::-moz-range-thumb {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: none;
+    background: #cfe0f5;
+}
+
+/* ===== 3. 氛围：静态噪点颗粒 ===== */
+/* 由 motion.js 注入。有 #splash 时插进其内部（辉光之上、内容之下），
+   否则插进 body（照片底遮罩之上、内容之下）。静态贴图，零逐帧成本。 */
+.mo-grain {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+}
+#splash > .mo-grain { z-index: 1; }
+
+/* ===== 4. 入场 ===== */
+/* pending 只由 JS 添加：motion.js 若未执行或抛错，内容本就完全可见。 */
+.mo-pending { opacity: 0; }
+.mo-revealing { will-change: transform, opacity; }
+
+/* ===== 5. 微交互：按压 ===== */
+/* 用显式属性列表取代既有的 transition:all —— 顺带消除 all 带来的
+   box-shadow / backdrop-filter 逐帧重绘。 */
+html :is(button, [role="button"]) {
+    transition:
+        transform var(--mo-micro) var(--mo-ease),
+        opacity var(--mo-micro) var(--mo-ease),
+        background-color var(--mo-micro) var(--mo-ease),
+        border-color var(--mo-micro) var(--mo-ease),
+        color var(--mo-micro) var(--mo-ease);
+}
+html :is(button, [role="button"]):active:not(.cinema-dragging):not([data-mo-magnet]) {
+    transform: scale(var(--mo-press));
+}
+html :is(.douban-tag, .search-tag, .wdtv-recent-tag, .wp-ep, .wdtv-ep-btn):active {
+    transform: scale(var(--mo-press));
+}
+
+/* ===== 6. 悬浮提升：仅精细指针 ===== */
+@media (hover: hover) and (pointer: fine) {
+    html .douban-card:hover,
+    html .wdtv-result-card:hover {
+        transform: translateY(var(--mo-lift));
+    }
+}
+/* 触屏：hover 会在点按后粘住，一律回落基态，改由 :active 表达 */
+@media (hover: none) {
+    html .douban-card:hover,
+    html .wdtv-result-card:hover {
+        transform: none;
+        box-shadow: none;
+    }
+    html .douban-card:hover .douban-card-image img { transform: none; }
+    html .douban-card:active { background: rgba(80, 128, 176, 0.2); }
+    html .wdtv-result-card:active { border-color: rgba(155, 185, 232, 0.38); }
+}
+
+/* ===== 7. 聚光卡片（仅精细指针，由 JS 创建） ===== */
+.mo-spot {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 240px;
+    height: 240px;
+    margin: -120px 0 0 -120px;
+    z-index: 3;
+    pointer-events: none;
+    opacity: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(198, 222, 255, 0.13) 0%, rgba(198, 222, 255, 0.05) 42%, transparent 70%);
+    transition: opacity 220ms var(--mo-ease);
+    will-change: transform;
+}
+.mo-spot-on > .mo-spot { opacity: 1; }
+
+/* ===== 8. 磁性吸附（仅精细指针，transform 由 JS 写入；弹幕写独立的 translate） ===== */
+[data-mo-magnet] { will-change: transform, translate; }
+
+/* ===== 9. 流光：一次性扫过主操作（搜索玻璃条） ===== */
+.mo-sheen-host { position: relative; overflow: hidden; }
+.mo-sheen {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    overflow: hidden;
+    border-radius: inherit;
+}
+.mo-sheen::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 45%;
+    background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, 0.42) 50%, transparent 100%);
+    transform: translateX(-160%);
+}
+.mo-sheen.mo-sheen-run::before {
+    animation: moSheen 900ms cubic-bezier(0.4, 0, 0.2, 1) 1 forwards;
+}
+@keyframes moSheen {
+    from { transform: translateX(-160%); }
+    to   { transform: translateX(320%); }
+}
+
+/* ===== 10. 阅读进度（about / analysis） ===== */
+.mo-progress {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 2px;
+    z-index: 10002;
+    pointer-events: none;
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+    background: linear-gradient(90deg, #4a78bd 0%, #6a9ae0 55%, #8fb4e8 100%);
+    will-change: transform;
+}
+
+/* ===== 11. 方向感知顶栏（about） ===== */
+html .abt-topbar {
+    transition: transform 240ms var(--mo-ease), opacity 240ms var(--mo-ease);
+    will-change: transform;
+}
+html .abt-topbar.mo-bar-hidden {
+    transform: translateY(-110%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* ===== 13. 里程滚数（wd 统计卡） ===== */
+/* 数字纵向卷轴：只 translateY，不改 textContent，避开重排。 */
+.mo-reel {
+    display: inline-flex;
+    align-items: flex-start;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+.mo-reel-d {
+    display: inline-block;
+    height: 1em;
+    overflow: hidden;
+    line-height: 1;
+}
+.mo-reel-col {
+    display: block;
+    transform: translateY(0);
+    will-change: transform;
+}
+.mo-reel-col > span {
+    display: block;
+    height: 1em;
+    line-height: 1;
+}
+.mo-reel-sep { display: inline-block; }
+
+/* ===== 14. 收藏心弹簧（WAAPI 驱动，此处只定基准） ===== */
+.mo-heart {
+    transform-box: fill-box;
+    transform-origin: 50% 55%;
+}
+
+/* 卷轴真值：读屏与复制拿到原数字，视觉由 .mo-reel 承载 */
+.mo-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ===== 15. 项目质感确认框（替代原生 window.confirm） ===== */
+.mo-confirm-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483645;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(10, 16, 32, 0.5);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    opacity: 0;
+    transition: opacity 200ms var(--mo-ease);
+}
+.mo-confirm-scrim.mo-on { opacity: 1; }
+.mo-confirm-box {
+    width: min(380px, 100%);
+    padding: 22px 24px 18px;
+    border-radius: 20px;
+    border: 1px solid rgba(200, 220, 245, 0.42);
+    background: rgba(200, 220, 245, 0.13);
+    backdrop-filter: blur(32px) saturate(1.5);
+    -webkit-backdrop-filter: blur(32px) saturate(1.5);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    color: var(--text-primary, #e0e6f2);
+    font-family: 'Noto Sans SC', -apple-system, sans-serif;
+    font-size: 0.9rem;
+    font-weight: 300;
+    line-height: 1.7;
+    transform: translateY(10px) scale(0.98);
+    transition: transform 260ms var(--mo-spring);
+}
+.mo-confirm-scrim.mo-on .mo-confirm-box { transform: none; }
+.mo-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 18px;
+}
+.mo-confirm-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(165, 188, 230, 0.2);
+    background: rgba(155, 180, 218, 0.1);
+    color: var(--text-primary, #e0e6f2);
+    font-family: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+}
+.mo-confirm-btn svg { width: 16px; height: 16px; display: block; }
+.mo-confirm-btn.mo-primary {
+    border-color: transparent;
+    background: linear-gradient(135deg, #4a78bd, #6a9ae0);
+    color: #ffffff;
+}
+.mo-confirm-btn.mo-danger {
+    background: linear-gradient(135deg, #b8455f, #e05c7a);
+}
+@media (hover: hover) and (pointer: fine) {
+    .mo-confirm-btn:hover { background: rgba(155, 180, 218, 0.2); }
+    .mo-confirm-btn.mo-primary:hover { background: linear-gradient(135deg, #5586c9, #7aa8ea); }
+    .mo-confirm-btn.mo-danger:hover { background: linear-gradient(135deg, #c9506b, #ec6a86); }
+}
+
+/* ===== 16. 双降级：系统偏好 + 站内动态效果开关 ===== */
+@media (prefers-reduced-motion: reduce) {
+    .mo-grain { opacity: 0.03; }
+    .mo-spot, .mo-sheen, .mo-progress { display: none; }
+    .mo-pending { opacity: 1; }
+    .mo-sheen.mo-sheen-run::before { animation: none; }
+    html .abt-topbar { transition: none; }
+    .mo-confirm-scrim, .mo-confirm-box { transition: none; }
+    html :is(button, [role="button"]):active { transform: none; }
+}
+html.fx-off .mo-spot,
+html.fx-off .mo-sheen { display: none; }
+html.fx-off .mo-pending { opacity: 1; }
+html.fx-off .mo-sheen.mo-sheen-run::before { animation: none; }
+html.fx-off [data-mo-magnet] { transform: none !important; translate: none !important; }
+html.fx-off .mo-reel-col { transition: none !important; }

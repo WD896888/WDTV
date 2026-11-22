@@ -37,27 +37,46 @@ function __cinemaHash(str) {
     return (h >>> 0).toString(36);
 }
 
-// 收藏唯一标识：站点视频用 源+ID；无源直链播放用 URL 哈希
-// （对 vodId/sourceCode 做白名单过滤，保证 key 可安全内插进 onclick 属性）
-function makeCinemaKey(vodId, sourceCode, directUrl) {
+// 同一部剧的归一化标题：跨源收藏只保留一条，换源后更新为最后播放的源
+function cinemaNormTitle(title) {
+    return String(title == null ? '' : title).toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+function sameCinemaTitle(a, b) {
+    const na = cinemaNormTitle(a);
+    return !!na && na === cinemaNormTitle(b);
+}
+
+// 收藏唯一标识：有片名时按「归一化片名」聚合，保证不同源同一部剧只有一个收藏；
+// 无片名直链播放仍用 URL 哈希。key 只含字母数字，可安全内插 onclick。
+function makeCinemaKey(vodId, sourceCode, directUrl, title) {
+    const norm = cinemaNormTitle(title);
+    if (norm) return `g_${__cinemaHash(norm)}`;
     const vid = String(vodId || '').replace(/[^\w-]/g, '');
     const src = String(sourceCode || '').replace(/[^\w-]/g, '');
     if (vid && src) return `s_${src}_${vid}`;
     return `d_${__cinemaHash(directUrl || '')}`;
 }
 
-function isCinemaFavorited(vodId, sourceCode, directUrl) {
-    const key = makeCinemaKey(vodId, sourceCode, directUrl);
-    return getCinemaFavorites().some(f => f.key === key);
+function findCinemaFavorite(vodId, sourceCode, directUrl, title) {
+    const key = makeCinemaKey(vodId, sourceCode, directUrl, title);
+    return getCinemaFavorites().find(f =>
+        f.key === key ||
+        (title && sameCinemaTitle(f.title, title)) ||
+        (!title && f.source_code === sourceCode && String(f.vod_id) === String(vodId))
+    );
+}
+
+function isCinemaFavorited(vodId, sourceCode, directUrl, title) {
+    return !!findCinemaFavorite(vodId, sourceCode, directUrl, title);
 }
 
 // info: { vod_id, source_code, source_name, title, cover, remarks, type_name, year, episodes, directUrl, lastEpisodeIndex }
 function addCinemaFavorite(info) {
     if (!info || !info.title) return null;
-    const key = makeCinemaKey(info.vod_id, info.source_code, info.directUrl);
+    const key = makeCinemaKey(info.vod_id, info.source_code, info.directUrl, info.title);
     const list = getCinemaFavorites();
-    const existingIdx = list.findIndex(f => f.key === key);
-    // 已存在则补充缺失的元信息（如封面后补），并置顶
+    const existingIdx = list.findIndex(f => f.key === key || sameCinemaTitle(f.title, info.title));
+    // 已存在则补充缺失的元信息（如封面后补），并置顶；key 统一改为聚合 key
     const merged = existingIdx !== -1 ? { ...list[existingIdx], ...info, key } : { ...info, key };
     merged.timestamp = Date.now();
     if (existingIdx !== -1) list.splice(existingIdx, 1);
@@ -72,12 +91,29 @@ function removeCinemaFavorite(key) {
 
 // 切换收藏状态，返回 { favorited: boolean }
 function toggleCinemaFavorite(info) {
-    if (isCinemaFavorited(info.vod_id, info.source_code, info.directUrl)) {
-        removeCinemaFavorite(makeCinemaKey(info.vod_id, info.source_code, info.directUrl));
+    const existing = findCinemaFavorite(info.vod_id, info.source_code, info.directUrl, info.title);
+    if (existing) {
+        removeCinemaFavorite(existing.key);
         return { favorited: false };
     }
     addCinemaFavorite(info);
     return { favorited: true };
+}
+
+// 换源播放后：把收藏记录更新为最后播放的源（同一部剧仍只有一条收藏）
+function updateCinemaFavoriteSource(title, sourceCode, vodId, sourceName, episodes, cover) {
+    if (!title) return;
+    const list = getCinemaFavorites();
+    const idx = list.findIndex(f => sameCinemaTitle(f.title, title));
+    if (idx < 0) return;
+    const item = list[idx];
+    item.source_code = sourceCode || '';
+    item.vod_id = vodId || '';
+    item.source_name = sourceName || item.source_name || sourceCode || '';
+    if (Array.isArray(episodes) && episodes.length) item.episodes = [...episodes];
+    if (cover && !item.cover) item.cover = cover;
+    item.timestamp = Date.now();
+    saveCinemaFavorites(list);
 }
 
 // ---------- 永久化：IndexedDB 镜像 + 自愈恢复 ----------
@@ -148,10 +184,12 @@ function updateCinemaFavoriteMeta(key, meta) {
 
 // 观看进度同步：播放页观看时更新已收藏条目的"当前集数"、"上次观看秒数"与"总时长"
 // （首页卡片显示 历史观看 集数 + 时长；单击卡片续播时从 lastPosition 回退 10 秒处还原）
-function updateCinemaFavoriteProgress(sourceCode, vodId, directUrl, episodeIndex, position, duration) {
-    const key = makeCinemaKey(vodId, sourceCode, directUrl);
+function updateCinemaFavoriteProgress(sourceCode, vodId, directUrl, episodeIndex, position, duration, title) {
+    const key = makeCinemaKey(vodId, sourceCode, directUrl, title);
     const list = getCinemaFavorites();
-    const item = list.find(f => f.key === key);
+    const item = list.find(f => f.key === key
+        || (title && sameCinemaTitle(f.title, title))
+        || (f.source_code === sourceCode && String(f.vod_id) === String(vodId)));
     if (!item) return;
     item.lastEpisodeIndex = parseInt(episodeIndex, 10) || 0;
     item.lastPosition = Math.max(0, Math.floor(parseInt(position, 10) || 0));
@@ -169,7 +207,7 @@ function __cinemaHeartSvg(filled) {
 function getCinemaModalBtnHtml(vodId, sourceCode) {
     const safeId = String(vodId || '').replace(/[^\w-]/g, '');
     const safeSource = String(sourceCode || '').replace(/[^\w-]/g, '');
-    const favorited = isCinemaFavorited(safeId, safeSource, '');
+    const favorited = isCinemaFavorited(safeId, safeSource, '', (typeof currentVideoTitle !== 'undefined' ? currentVideoTitle : ''));
     // 复用弹窗工具栏 wdtv-modal-mini-btn 胶囊风格，仅以心形填充/玫瑰色区分收藏态
     return `
         <button type="button" class="wdtv-modal-mini-btn wdtv-cinema-fav-chip${favorited ? ' active' : ''}"
@@ -266,7 +304,7 @@ function buildCinemaCard(fav) {
                 ${qualityLabel ? `<div class="wdtv-quality-badge">${qualityLabel}</div>` : ''}
                 ${safeSourceName ? `
                 <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-1.5">
-                    <div class="douban-rate-badge truncate min-w-0" title="${safeSourceName}">
+                    <div class="douban-rate-badge truncate min-w-0">
                         ${safeSourceName}
                     </div>
                 </div>
@@ -274,11 +312,10 @@ function buildCinemaCard(fav) {
             </div>
             <div class="douban-card-title-area">
                 <button class="text-sm font-medium truncate w-full transition"
-                        style="color: #1d1d1f; background: transparent; border: none; cursor: pointer; padding: 0;"
-                        title="${safeName}（按住或右键打开菜单）">
+                        style="color: #1d1d1f; background: transparent; border: none; cursor: pointer; padding: 0;">
                     ${safeName}
                 </button>
-                <div class="wdtv-remarks-badge" title="${progressText}">
+                <div class="wdtv-remarks-badge">
                     ${progressText}
                 </div>
             </div>

@@ -36,6 +36,13 @@
 
     const LS_MAP_KEY = 'danmuEpisodeMap';   // 记忆映射：标题#集数 → episodeId
     const LS_CACHE_KEY = 'danmuCache';      // 弹幕缓存：episodeId → {list, ts}
+    // 标题级弹幕缓存：标题#集数 → {list, sourceBase, ...}。episodeId 是各源本地 ID，
+    // 实例回收后会失效；仅按 ID 缓存会让「之前看过的视频」每次都撞失效 ID + 冷构建，
+    // 表现为弹幕迟迟不出。这里按剧名再存一份可直接渲染的列表，进入旧片秒开。
+    const LS_TITLE_KEY = 'danmuTitleCache';
+    const TITLE_MAX = 12;                   // 最多 12 集（与 danmuCache 同量级，受体积上限约束）
+    const TITLE_TTL = 30 * 24 * 60 * 60 * 1000;
+    const TITLE_VERSION = 1;                // 与 MEMO_VERSION 独立：新增结构不作废已有记忆/ID 缓存
 
     // 端点解析结果缓存（Promise）：解析一次反复使用；自定义端点变更时失效重解析
     // 多源故障转移：候选端点按优先级全量保留（转发层 → 自定义 → 内置默认），
@@ -63,6 +70,9 @@
     let lastCtx = null;
     let lastDanmuku = [];
     let currentEpisodeId = null;
+    // 最近一次匹配信息（播放器弹幕浮层「弹幕信息」展示用）：与 lastDanmuku 同生命周期，
+    // 记录匹配到的作品/剧集/来源/条数；初始化/未匹配时为 available:false
+    let lastMatchInfo = null;
 
     // 竞态令牌：换集/快速切换时旧请求结果直接丢弃，不污染新结果
     let matchToken = 0;
@@ -216,6 +226,58 @@
         } catch (e) { /* 丢弃，不影响功能 */ }
     }
 
+    // ---- 标题级缓存（旧片重进秒开）----
+    function titleKeyOf(ctx) {
+        return normalizeTitle((ctx && ctx.title) || '') + '#' + ((ctx && ctx.episodeIndex) || 0);
+    }
+
+    function readTitleCache(ctx) {
+        if (!ctx || !ctx.title) return null;
+        const entry = readLSJSON(LS_TITLE_KEY)[titleKeyOf(ctx)];
+        if (!entry || entry.v !== TITLE_VERSION || !Array.isArray(entry.list) || !entry.list.length) return null;
+        if (Date.now() - (entry.ts || 0) > TITLE_TTL) return null;
+        return entry;
+    }
+
+    function saveTitleCache(ctx, matched, list) {
+        try {
+            if (!ctx || !ctx.title || !list || !list.length) return;
+            const key = titleKeyOf(ctx);
+            const cache = readLSJSON(LS_TITLE_KEY);
+            cache[key] = {
+                v: TITLE_VERSION,
+                episodeId: (matched && matched.episodeId !== undefined) ? matched.episodeId : null,
+                animeTitle: (matched && matched.animeTitle) || '',
+                episodeTitle: (matched && matched.episodeTitle) || '',
+                sourceBase: (activeEndpoint && activeEndpoint.base) || null,
+                list: list,
+                ts: Date.now()
+            };
+            evictOldest(cache, TITLE_MAX);
+            if (JSON.stringify(cache).length > CACHE_SIZE_LIMIT) {
+                evictOldest(cache, Math.max(1, Math.floor(TITLE_MAX / 2)));
+            }
+            try {
+                localStorage.setItem(LS_TITLE_KEY, JSON.stringify(cache));
+            } catch (e) {
+                // 配额不足：本次新条目不写，旧条目仍保留
+                const retry = readLSJSON(LS_TITLE_KEY);
+                delete retry[key];
+                localStorage.setItem(LS_TITLE_KEY, JSON.stringify(retry));
+            }
+        } catch (e) { /* 静默 */ }
+    }
+
+    // 切源时清掉标题缓存：旧列表来自被弃用的源，留着会挡住新源的重匹配
+    function deleteTitleCache(ctx) {
+        try {
+            if (!ctx || !ctx.title) return;
+            const cache = readLSJSON(LS_TITLE_KEY);
+            const key = titleKeyOf(ctx);
+            if (cache[key]) { delete cache[key]; writeLSJSON(LS_TITLE_KEY, cache); }
+        } catch (e) { /* 静默 */ }
+    }
+
     // ------------------------------------------------------------
     // 网络层：统一 12s 超时 + 全 try/catch，失败返回 null，绝不抛错
     // （proxyToken 为可选防滥用口令，经 X-Proxy-Token 头携带——部分公共代理以此限流）
@@ -318,6 +380,80 @@
         return labelOfEndpoint(activeEndpoint);
     }
 
+    // 搜索结果里的 source 是采集端的代码（tencent/iqiyi/youku/migu…），标题尾巴
+    // 「from xxx」同样只有缩写。统一还原为平台全名，供手动匹配列表展示。
+    const SOURCE_NAMES = {
+        'tencent': '腾讯视频', 'qqlive': '腾讯视频', 'tx': '腾讯视频',
+        'iqiyi': '爱奇艺', 'qiyi': '爱奇艺',
+        'youku': '优酷', 'mgtv': '芒果TV', 'mango': '芒果TV', 'hunantv': '芒果TV',
+        'bilibili': 'bilibili', 'bili': 'bilibili', 'b站': 'bilibili',
+        'migu': '咪咕视频', 'imgo': '咪咕视频',
+        '360': '360视频', 'sohu': '搜狐视频', 'le': '乐视视频', 'pptv': 'PP视频',
+        'renren': '人人视频', 'acfun': 'AcFun', 'kukui': '酷铠',
+        'xigua': '西瓜视频', 'douyin': '抖音', 'm1905': '1905电影网', '1905': '1905电影网'
+    };
+
+    function sourceDisplayName(code, title) {
+        let c = String(code || '').trim();
+        if (!c && title) {
+            const m = String(title).match(/\bfrom\s+([^\s)）]+)/i);
+            if (m) c = m[1];
+        }
+        if (!c) return '未知来源';
+        return SOURCE_NAMES[c.toLowerCase()] || c;
+    }
+
+    // 采集端标题尾巴（【日番】from tencent）只用于匹配打分，展示时必须剥掉。
+    function cleanAnimeTitle(title) {
+        return String(title || '')
+            .replace(/\s*【[^】]*】\s*/g, ' ')
+            .replace(/\s*from\s+\S+\s*$/i, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    // 信息区「源」行要让人一眼认出平台，代码/来源尾巴还原为全名；
+    // 没有来源信息时返回空串，交由调用方回退到端点标签（自建源/公共代理）。
+    function platformLabelOf(matched) {
+        const code = (matched && matched.source) || '';
+        const title = (matched && matched.animeTitle) || '';
+        if (!code && !/\bfrom\s+/i.test(title)) return '';
+        const label = sourceDisplayName(code, title);
+        return label === '未知来源' ? '' : label;
+    }
+
+    // 记录匹配成功信息（only 非静默路径调用：后台预热不污染展示状态）
+    function markMatched(matched, ctx, list) {
+        const platform = platformLabelOf(matched);
+        const endpoint = getActiveSourceLabel();
+        lastMatchInfo = {
+            available: true,
+            animeTitle: cleanAnimeTitle(matched && matched.animeTitle),
+            episodeTitle: (matched && matched.episodeTitle) || '',
+            episodeId: (matched && matched.episodeId !== undefined) ? matched.episodeId : null,
+            sourceLabel: platform ? platform + ' · ' + endpoint : endpoint,
+            platformLabel: platform,
+            endpointLabel: endpoint,
+            count: list ? list.length : 0,
+            title: (ctx && ctx.title) || '',
+            episodeIndex: (ctx && ctx.episodeIndex) || 0
+        };
+    }
+
+    // 记录匹配失败信息（所有最终失败分支调用）
+    function markUnavailable(ctx) {
+        lastMatchInfo = {
+            available: false,
+            animeTitle: '',
+            episodeTitle: '',
+            episodeId: null,
+            sourceLabel: getActiveSourceLabel(),
+            count: 0,
+            title: (ctx && ctx.title) || '',
+            episodeIndex: (ctx && ctx.episodeIndex) || 0
+        };
+    }
+
     // 候选源清单（弹幕设置浮层的下拉框选项）：[{base, label}]，按解析优先级排序
     async function getSourceList() {
         const eps = await resolveEndpoints();
@@ -355,6 +491,7 @@
                 const map = readLSJSON(LS_MAP_KEY);
                 delete map[normalizeTitle(lastCtx.title) + '#' + lastCtx.episodeIndex];
                 writeLSJSON(LS_MAP_KEY, map);
+                deleteTitleCache(lastCtx); // 标题级列表也必须清，否则切源后仍读旧源数据
             }
         } catch (e) { /* 静默 */ }
         return getActiveSourceLabel();
@@ -489,6 +626,42 @@
             .replace(/\s+(?:19|20)\d{2}$/, '');
     }
 
+    // 标题尾部噪声：季数/分部/年份/语言画质标签。自动匹配按候选逐个尝试时，
+    // 剥掉这些尾巴可救回「剧名小变动」的资源（如 "某剧 第二季 1080P" 搜不到，
+    // "某剧" 能搜到）；连续循环剥离以处理 "第二季 国语 4K" 这类多重尾巴
+    const TITLE_TAIL_NOISE_RE = /\s*(?:第\s*[一二三四五六七八九十百\d]+\s*[季部期]|season\s*\d+|part\s*\d+|上部|下部|上篇|下篇|[（(]\s*(?:19|20)\d{2}\s*[)）]|(?:19|20)\d{2}|国语|粤语|中文|中字|日语|原声|双语|高清|超清|蓝光|原盘|4k|8k|2160p|1080p|720p|hdr)\s*$/i;
+
+    function stripTitleTail(t) {
+        let s = String(t || '').trim();
+        let prev;
+        do {
+            prev = s;
+            s = s.replace(TITLE_TAIL_NOISE_RE, '').trim();
+        } while (s && s !== prev);
+        return s;
+    }
+
+    // 自动匹配标题候选（去重保序、过滤空串）：候选越多请求越多，因此只保留
+    // 有区分度的几种变形，调用方按序逐个尝试、第一个有结果即停
+    function buildTitleCandidates(rawTitle) {
+        const seen = Object.create(null);
+        const out = [];
+        const add = function (v) {
+            const s = String(v || '').trim();
+            if (!s || seen[s]) return;
+            seen[s] = true;
+            out.push(s);
+        };
+        add(normalizeTitle(rawTitle));                  // 1. 现有规范化
+        const cleaned = cleanTitleForCompare(rawTitle); // 2. 清洗来源尾巴/年份
+        add(cleaned);
+        add(stripTitleTail(cleaned));                   // 3. 再剥季数/分部/年份/画质等尾部标签
+        // 4. 去掉成对括号内容后的基础名，再走规范化
+        add(normalizeTitle(String(rawTitle || '')
+            .replace(/【[^】]*】|\[[^\]]*\]|\([^)]*\)|（[^）]*）/g, ' ')));
+        return out;
+    }
+
     // 从候选作品列表中打分选最佳：bigram 相似度为主 + 类型小加成 + 标题等价大加分
     // + 非包含关系降权，返回按分数降序的候选数组（调用方依次尝试）
     function pickBestAnime(animes, ctxTitle) {
@@ -548,7 +721,8 @@
         return {
             episodeId: picked.episodeId,
             animeTitle: (anime && anime.animeTitle) || '',
-            episodeTitle: picked.episodeTitle || ''
+            episodeTitle: picked.episodeTitle || '',
+            source: (anime && anime.source) || ''
         };
     }
 
@@ -577,8 +751,15 @@
         //    注意不能用一步式 search/episodes 当主链路：实测其返回的集 ID 与 comment
         //    接口不同空间（当轮即 404），只能当兜底。
         //    依次尝试前 3 个候选：第一名 bangumi 偶发 404（实例路由）或无剧集时，
-        //    换下一名补救，而不是整轮失败
-        const animes = await searchAnime(normalizeTitle(ctx.title));
+        //    换下一名补救，而不是整轮失败。
+        //    关键词按标题候选逐个尝试（第一个有结果即停）：剧名季数/分部/年份等小变动
+        //    会让原样搜索返回空，剥掉尾巴的候选往往能命中；串行避免并发请求放大流量
+        const titleCandidates = buildTitleCandidates(ctx.title);
+        let animes = [];
+        for (const kw of titleCandidates) {
+            animes = await searchAnime(kw);
+            if (animes && animes.length) break;
+        }
         let matched = null;
         if (animes && animes.length) {
             const ranked = pickBestAnime(animes, ctx.title);
@@ -590,9 +771,13 @@
             }
         }
 
-        // 3. 一步式兜底：两步式无结果时的备用路径（部分端点仅支持该形态）
+        // 3. 一步式兜底：两步式无结果时的备用路径（部分端点仅支持该形态），同样按候选逐个尝试
         if (!matched) {
-            const oneShot = await searchEpisodes(normalizeTitle(ctx.title));
+            let oneShot = null;
+            for (const kw of titleCandidates) {
+                oneShot = await searchEpisodes(kw);
+                if (oneShot && oneShot.length) break;
+            }
             if (oneShot && oneShot.length) {
                 const ranked = pickBestAnime(oneShot, ctx.title);
                 for (const cand of ranked.slice(0, 3)) {
@@ -659,13 +844,15 @@
         if (cached && cached.length) {
             if (!silent) {
                 lastDanmuku = cached;
+                markMatched(matched, ctx, cached);
                 dispatchLoaded({ count: cached.length, animeTitle: matched.animeTitle, episodeTitle: matched.episodeTitle });
             }
+            saveTitleCache(ctx, matched, cached); // 老记忆仍有效时补写标题级缓存
             return { list: cached, matched, fromMemo: false };
         }
 
         // withRelated=true 必带：官方 comment 接口缺省只返回主弹幕库（近乎为空），
-        // 弹幕主体在关联库（B站/腾讯等），实测芙莉莲第1话 131 → 7310 条
+        // 弹幕主体在关联库（bilibili/腾讯视频等），实测芙莉莲第1话 131 → 7310 条
         const raw = await getComments(matched.episodeId, matchBase);
         if (token !== matchToken && !silent) return { list: [], matched: null, fromMemo: false };
         let list = raw ? sampleToMax(convertComments(raw)) : [];
@@ -685,9 +872,13 @@
         }
         if (!list.length) return { list: [], matched, fromMemo: !skipMemo }; // 重试后仍无弹幕（调用方决定是否换源重匹配；来自记忆的失败需清记忆）
 
-        if (!silent) lastDanmuku = list;
+        if (!silent) {
+            lastDanmuku = list;
+            markMatched(matched, ctx, list);
+        }
         saveCache(matched.episodeId, list);
         saveMap(normalizeTitle(ctx.title) + '#' + ctx.episodeIndex, matched);
+        if (!silent) saveTitleCache(ctx, matched, list);
         if (!silent) dispatchLoaded({ count: list.length, animeTitle: matched.animeTitle, episodeTitle: matched.episodeTitle });
         return { list, matched, fromMemo: false };
     }
@@ -703,16 +894,29 @@
     // 只有 key 变化（真正换集）才作废旧链开新一轮
     let inflightKey = null;
     let inflightPromise = null;
+    let inflightGeneration = 0;
+
+    // 手动匹配成功后调用：在途的自动匹配链已被 matchToken 作废，但它的 Promise
+    // 仍挂在 inflightPromise 上。若不摘掉，紧接着 plugin.load() 触发的同集请求会
+    // 复用这条「注定返回空」的链，画面空白且必须刷新页面才恢复。
+    function invalidateInflight() {
+        inflightGeneration++;
+        inflightKey = null;
+        inflightPromise = null;
+    }
 
     async function getForPlayer(ctx) {
         const key = ctx ? (normalizeTitle(ctx.title || '') + '#' + (ctx.episodeIndex || 0)) : '';
         if (inflightPromise && inflightKey === key) return inflightPromise;
         const token = ++matchToken;
+        const generation = ++inflightGeneration;
         inflightKey = key;
-        inflightPromise = getForPlayerInner(ctx, token).finally(() => {
-            if (inflightKey === key) { inflightKey = null; inflightPromise = null; }
+        const pending = getForPlayerInner(ctx, token).finally(() => {
+            // 只清理自己那一条链：invalidateInflight 之后的新链不能被旧链收尾抹掉
+            if (inflightGeneration === generation) { inflightKey = null; inflightPromise = null; }
         });
-        return inflightPromise;
+        inflightPromise = pending;
+        return pending;
     }
 
     async function getForPlayerInner(ctx, token) {
@@ -720,6 +924,25 @@
             // 总开关关闭：只返回空数据，不发任何事件（按钮本就不该出现）
             if (!ctx || !isEnabled()) return [];
             lastCtx = ctx;
+
+            // 第 0 轮：标题级本地缓存（之前播放过的视频）。记忆映射只存 episodeId，
+            // 自建源的 ID 是实例本地的，过期后要 90s 重试 + 全链重搜；这里直接拿
+            // 上次成功渲染过的列表先出画面，且完全不依赖网络。
+            const local = readTitleCache(ctx);
+            if (local && (!pinnedBase || local.sourceBase === pinnedBase)) {
+                const restored = local.sourceBase ? await restoreEndpointByBase(local.sourceBase) : true;
+                if (restored) {
+                    currentEpisodeId = local.episodeId || null;
+                    lastDanmuku = local.list;
+                    markMatched({
+                        episodeId: local.episodeId,
+                        animeTitle: local.animeTitle,
+                        episodeTitle: local.episodeTitle
+                    }, ctx, local.list);
+                    dispatchLoaded({ count: local.list.length, animeTitle: local.animeTitle, episodeTitle: local.episodeTitle });
+                    return local.list;
+                }
+            }
 
             // 第 1 轮：常规匹配（可能命中记忆映射）
             let r = await tryMatchAndLoad(ctx, token, false);
@@ -744,6 +967,7 @@
 
             currentEpisodeId = null;
             lastDanmuku = [];
+            markUnavailable(ctx);
             dispatchUnavailable(); // 所有候选源均失败：确定无弹幕可用
             return [];
         } catch (e) {
@@ -751,6 +975,7 @@
             if (token === matchToken) {
                 currentEpisodeId = null;
                 lastDanmuku = [];
+                markUnavailable(ctx);
                 dispatchUnavailable();
             }
             return [];
@@ -777,6 +1002,7 @@
     // 重试期间被更新请求作废（重新搜索/换集/重新自动匹配）则直接放弃
     async function manualSelect(sel) {
         const token = ++matchToken; // 作废在途的自动匹配请求
+        invalidateInflight();      // 同时摘掉旧链：否则随后的 plugin.load() 会复用空结果
         try {
             if (!sel || sel.episodeId === undefined || sel.episodeId === null) return [];
             if (!isEnabled()) return [];
@@ -800,13 +1026,21 @@
 
             currentEpisodeId = sel.episodeId;
             lastDanmuku = list;
+            markMatched({
+                episodeId: sel.episodeId,
+                animeTitle: sel.animeTitle || '',
+                episodeTitle: sel.episodeTitle || '',
+                source: sel.source || ''
+            }, lastCtx, list);
             saveCache(sel.episodeId, list);
             if (lastCtx && lastCtx.title) {
-                saveMap(normalizeTitle(lastCtx.title) + '#' + lastCtx.episodeIndex, {
+                const matched = {
                     episodeId: sel.episodeId,
                     animeTitle: sel.animeTitle || '',
                     episodeTitle: sel.episodeTitle || ''
-                });
+                };
+                saveMap(normalizeTitle(lastCtx.title) + '#' + lastCtx.episodeIndex, matched);
+                saveTitleCache(lastCtx, matched, list);
             }
             dispatchLoaded({ count: list.length, animeTitle: sel.animeTitle || '', episodeTitle: sel.episodeTitle || '' });
             return list;
@@ -821,6 +1055,20 @@
 
     function getCurrentEpisodeId() {
         return currentEpisodeId;
+    }
+
+    // 最近一次匹配信息（播放器浮层展示）：返回副本，调用方修改不影响内部状态
+    function getMatchInfo() {
+        return lastMatchInfo ? Object.assign({}, lastMatchInfo) : {
+            available: false,
+            animeTitle: '',
+            episodeTitle: '',
+            episodeId: null,
+            sourceLabel: getActiveSourceLabel(),
+            count: 0,
+            title: (lastCtx && lastCtx.title) || '',
+            episodeIndex: (lastCtx && lastCtx.episodeIndex) || 0
+        };
     }
 
     // 挂载全局（无构建语法，IIFE + window）
@@ -856,6 +1104,9 @@
         getBangumi,
         manualSelect,
         getLastDanmuku,
-        getCurrentEpisodeId
+        getCurrentEpisodeId,
+        getMatchInfo,
+        sourceDisplayName,
+        cleanAnimeTitle
     };
 })();

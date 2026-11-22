@@ -98,7 +98,10 @@ body{font-family:'Noto Sans SC',sans-serif;font-weight:300;background:var(--bg-d
 .gw-grade-c{mix-blend-mode:normal}
 .gw-grade-s{mix-blend-mode:normal}}
 
-/* === FX OFF（首页「动态效果」开关：停用一切动画与视觉特效） === */
+/* === FX OFF（动态效果关闭：只停持续跑帧/无限循环特效，保留雾气、光晕与玻璃质感） === */
 html.fx-off{scroll-behavior:auto}
-html.fx-off *{animation:none!important;transition:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;text-shadow:none!important;box-shadow:none!important;filter:none!important}
-html.fx-off #preloader,html.fx-off #rain-container,html.fx-off #gw-slot,html.fx-off #gw-ripple-bg{display:none!important}
+html.fx-off #rain-container{display:none!important}
+/* 边缘雾气/光晕层（#splash、.splash-glow、.gw-frost、.gw-depth）保持可见；
+   只暂停无限循环动画，按钮/面板过渡与背景图不受影响 */
+html.fx-off .splash-glow,html.fx-off .gw-frost,html.fx-off .gw-depth{animation:none!important}
+html.fx-off .cinema-edit-mode .douban-card,html.fx-off .wdtv-loading-spinner,html.fx-off .wdtv-skeleton-card{animation:none!important}

@@ -32,16 +32,15 @@ const queueCalls = (app.match(/PQ\.createProbeQueue\(\{/g) || []).length;
 t('只有一处 createProbeQueue 调用', queueCalls === 1, '实际 ' + queueCalls);
 t('不存在重复的 A6 独立 IIFE', !app.includes('批次2 · A6 卡片画质探测（默认关闭；开启后才产生请求）'));
 t('只有一个 QUALITY_PROBE_STORAGE 常量', (app.match(/const QUALITY_PROBE_STORAGE/g) || []).length === 1);
-t('toggle 只在初始化与 change 两处引用', (app.match(/wdtvQualityProbeToggle/g) || []).length === 2,
+t('搜索页已不再引用探测开关', (app.match(/wdtvQualityProbeToggle/g) || []).length === 0,
     String((app.match(/wdtvQualityProbeToggle/g) || []).length));
-t('存储键名一致', app.includes("'wdtvQualityProbeEnabled'") && html.includes('wdtvQualityProbeToggle'));
+t('搜索页 HTML 已移除探测开关', !html.includes('wdtvQualityProbeToggle'));
 
 console.log('\n[2] 默认开启 → 关闭时才零新增请求（静态 guard）');
-t('HTML 提供画质探测开关', /id="wdtvQualityProbeToggle"[^>]*>/.test(html));
 t('isQualityProbeEnabled 仅在显式 false 时关闭', /localStorage\.getItem\(QUALITY_PROBE_STORAGE\)\s*!==\s*'false'/.test(app));
 t('armQualityProbeRender 首行 guard', /qualityProbeArmed = isQualityProbeEnabled\(\);\s*if \(!qualityProbeArmed\) return;/.test(app));
 t('observeQualityProbeCard 双 guard', app.includes('if (!qualityProbeArmed || !isQualityProbeEnabled()) return;'));
-t('关闭开关立即中止在途', /if \(!e\.target\.checked\) cancelQualityProbes\(\)/.test(app));
+t('搜索页不再绑定探测开关事件', !app.includes('qualityProbeToggle.addEventListener'));
 t('新搜索开始时中止在途', (app.match(/cancelQualityProbes\(\)/g) || []).length >= 2);
 t('关闭/渐进阶段：observeQualityProbeCard 的真实 guard 先于 observer 创建',
     (() => {
@@ -89,7 +88,6 @@ t('onStart 标记 probing 并定向刷 loading 徽章',
     app.includes('queue.push(fresh, onStart)') && app.includes('qualityProbeProbing.add(') &&
     app.includes('updateQualityProbeBadge(sourceKey, vodId, null, true)'));
 t('describeQualityBadge 第二参按条目 probing 状态传（不再硬编码 false）',
-    app.includes('Q.describeQualityBadge(probeEntry, probing)') &&
     app.includes('Q.describeQualityBadge(entry, !!probing)'));
 t('BANDWIDTH 兜底走 WDTVQuality.inferHeightFromBitrate',
     app.includes('Q.inferHeightFromBitrate(maxBitrate)'));

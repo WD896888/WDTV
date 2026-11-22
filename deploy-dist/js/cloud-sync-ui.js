@@ -49,16 +49,10 @@
             + '<path d="' + eyePath + '"/>' + pupil + '<line x1="4" y1="4" x2="20" y2="20"/></svg>';
     }
 
-    // 人形占位图标（未登录头像）
-    function personIconHtml(cls) {
-        return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">'
-            + '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
-    }
-
-    // 相机角标（换头像提示）
-    function camIconHtml() {
-        return '<span class="wdtv-am-cam"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">'
-            + '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>';
+    // 默认头像（未上传 / 未登录）：素描线稿，样式层用 mask 取线条 + currentColor 上色
+    // （见 css/index.css 的 .wdtv-avatar-def），所以这里只输出一个空节点，不带 <img>。
+    function defaultAvatarHtml() {
+        return '<span class="wdtv-avatar-def" aria-hidden="true"></span>';
     }
 
     // 铅笔图标（编辑昵称）
@@ -223,8 +217,8 @@
         if (status.loggedIn && state.avatarDataUrl) {
             return '<img src="' + esc(state.avatarDataUrl) + '" alt="">';
         }
-        // 未上传头像（含未登录）：无背景人物剪影图标占位（不用首字文本）
-        return personIconHtml('');
+        // 未上传头像（含未登录）：默认素描头像占位（不用首字文本）
+        return defaultAvatarHtml();
     }
 
     function renderPill(status) {
@@ -245,8 +239,8 @@
         if (state.avatarDataUrl) {
             return '<img src="' + esc(state.avatarDataUrl) + '" alt="头像">';
         }
-        // 未上传头像：无背景人物剪影图标占位（不用首字文本）
-        return personIconHtml('wdtv-am-ph-icon');
+        // 未上传头像：默认素描头像占位（不用首字文本）
+        return defaultAvatarHtml();
     }
 
     function statusLineHtml(status) {
@@ -275,15 +269,14 @@
         var html = '';
         html += '<div class="wdtv-am-card">'
             + '<div class="wdtv-am-card-top">'
-            + '<button type="button" class="wdtv-am-avatar-btn" id="wdtvAmAvatarBtn" title="更换头像"'
+            + '<button type="button" class="wdtv-am-avatar-btn" id="wdtvAmAvatarBtn"'
             + (busy ? ' disabled' : '') + '>'
             + cardAvatarInnerHtml()
-            + camIconHtml()
             + '</button>'
             + '<div class="wdtv-am-userinfo">'
             + '<div class="wdtv-am-nick-row">'
             + '<span class="wdtv-am-nick">' + esc(displayName) + '</span>'
-            + (state.editingNick ? '' : '<button type="button" class="wdtv-am-nick-edit-btn" id="wdtvAmNickEditBtn" title="编辑昵称">' + pencilIconHtml() + '</button>')
+            + (state.editingNick ? '' : '<button type="button" class="wdtv-am-nick-edit-btn" id="wdtvAmNickEditBtn">' + pencilIconHtml() + '</button>')
             + '</div>'
             + '<div class="wdtv-am-username">@' + esc(status.username || '') + '</div>'
             + '</div>'
@@ -360,10 +353,9 @@
         // 访客卡片
         html += '<div class="wdtv-am-card">'
             + '<div class="wdtv-am-card-top">'
-            + '<span class="wdtv-am-avatar-btn wdtv-am-static">' + personIconHtml('wdtv-am-ph-icon') + '</span>'
+            + '<span class="wdtv-am-avatar-btn wdtv-am-static">' + defaultAvatarHtml() + '</span>'
             + '<div class="wdtv-am-userinfo">'
             + '<div class="wdtv-am-nick-row"><span class="wdtv-am-nick">未登录</span></div>'
-            + '<div class="wdtv-am-username">登录后观影数据跨设备同步</div>'
             + '</div>'
             + '</div>'
             + '</div>';
@@ -380,9 +372,8 @@
             + '<input class="wdtv-am-input" id="wdtvAmUser" type="text" autocomplete="username" placeholder="用户名" value="' + esc(state.usernameDraft) + '">'
             + '<div class="wdtv-am-passwrap">'
             + '<input class="wdtv-am-input" id="wdtvAmPass" type="password" autocomplete="' + (isReg ? 'new-password' : 'current-password') + '" placeholder="密码">'
-            + '<button type="button" class="wdtv-am-eye" id="wdtvAmEye" tabindex="-1" title="显示/隐藏密码" aria-label="显示或隐藏密码">' + eyeIconHtml(false) + '</button>'
+            + '<button type="button" class="wdtv-am-eye" id="wdtvAmEye" tabindex="-1" aria-label="显示或隐藏密码">' + eyeIconHtml(false) + '</button>'
             + '</div>'
-            + '<div class="wdtv-am-pass-hint">密码框已自动屏蔽中文输入法，请直接用键盘英文输入</div>'
             + '<button type="submit" class="wdtv-am-submit" id="wdtvAmSubmit"' + (state.submitting ? ' disabled' : '') + '>'
             + (state.submitting ? '请稍候…' : (isReg ? '注 册' : '登 录'))
             + '</button>'
@@ -390,7 +381,7 @@
         if (state.error) {
             html += '<div class="wdtv-am-error">' + esc(state.error) + '</div>';
         }
-        html += '<div class="wdtv-am-tip">登录后观影记录、进度与收藏自动跨设备同步</div>';
+        html += '<div class="wdtv-am-tip">登录后可进行数据同步以及共同观影功能</div>';
         html += '</div>';
 
         body.innerHTML = html;
@@ -421,7 +412,6 @@
                 var show = passInput.type === 'password';
                 passInput.type = show ? 'text' : 'password';
                 eyeBtn.innerHTML = eyeIconHtml(show);
-                eyeBtn.title = show ? '隐藏密码' : '显示密码';
                 passInput.focus();
             });
         }
@@ -589,7 +579,7 @@
         if (pillAv) pillAv.innerHTML = pillAvatarHtml(status);
         var cardBtn = document.getElementById('wdtvAmAvatarBtn');
         if (cardBtn) {
-            cardBtn.innerHTML = cardAvatarInnerHtml() + camIconHtml();
+            cardBtn.innerHTML = cardAvatarInnerHtml();
         } else {
             render();
         }

@@ -137,8 +137,8 @@
       p = document.createElement('div');
       p.id = 'wpInline';
       p.className = 'wp-inline player-container mb-2';
-      p.innerHTML = '<div class="wp-head"><span class="wp-title">共同观影</span>' +
-        '<button type="button" class="wp-info-toggle" title="收起房间信息">' +
+      p.innerHTML = '<div class="wp-head"><div class="wp-head-id"><span class="wp-code" id="wpCode"></span><span class="wp-title">共同观影</span></div>' +
+        '<button type="button" class="wp-info-toggle">' +
           '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>' +
         '</button></div>' +
         '<div class="wp-body"></div>';
@@ -147,8 +147,8 @@
       else document.body.appendChild(p);
     }
     if (!$('.wp-body', p)) {
-      p.innerHTML = '<div class="wp-head"><span class="wp-title">共同观影</span>' +
-        '<button type="button" class="wp-info-toggle" title="收起房间信息">' +
+      p.innerHTML = '<div class="wp-head"><div class="wp-head-id"><span class="wp-code" id="wpCode"></span><span class="wp-title">共同观影</span></div>' +
+        '<button type="button" class="wp-info-toggle">' +
           '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>' +
         '</button></div><div class="wp-body"></div>';
     }
@@ -166,9 +166,7 @@
   // 房间信息区折叠/展开：收起后聊天区独占面板（信息区仅是收窄，可随时再展开）
   function toggleInfoCollapse() {
     if (!ui.panel) return;
-    var collapsed = ui.panel.classList.toggle('wp-info-collapsed');
-    var t = $('.wp-info-toggle', ui.panel);
-    if (t) t.title = collapsed ? '展开房间信息' : '收起房间信息';
+    ui.panel.classList.toggle('wp-info-collapsed');
   }
 
   // 侧滑抽屉（正常模式）：原版玻璃面板（桌面右侧滑出 / 移动端底部抽屉）
@@ -179,7 +177,7 @@
     p.innerHTML =
       '<div class="wp-head">' +
         '<span class="wp-title">共同观影</span>' +
-        '<button type="button" class="wp-close" title="收起面板">' +
+        '<button type="button" class="wp-close">' +
           '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>' +
         '</button>' +
       '</div>' +
@@ -267,6 +265,14 @@
       closePanel(); // 抽屉使命完成（create/join 已成功），关闭防残留旧视图
       // 同步清空抽屉内残留的连接中/旧视图，杜绝任何路径重开抽屉时闪现过期内容
       if (ui.drawerBody && ui.body === ui.drawerBody) ui.drawerBody.innerHTML = '';
+      // 当前视频元数据就绪时重算播放器轨道（document 捕获阶段已兜底，这里绑一次更及时）
+      try {
+        var vL = document.querySelector('#player video');
+        if (vL && !vL._wpLayoutBound) {
+          vL._wpLayoutBound = true;
+          vL.addEventListener('loadedmetadata', scheduleWatchLayout);
+        }
+      } catch (e) { }
     } else {
       if (ui.panel) ui.panel.hidden = true; // 恢复原版界面：隐藏面板
       // 退出观影态：无条件解除纯观看锁定与视频拦截层。错误/断开路径不经过
@@ -287,6 +293,79 @@
     var connected = false;
     try { var rs0 = wp() ? wp().roomState() : null; connected = !!(rs0 && rs0.state === 'connected'); } catch (e) { }
     if (connected || !ui.restoreWatch) clearRestoring();
+    // 进入/退出观影模式时同步播放器尺寸策略：观影模式清掉 player.js 写入的
+    // 60vh 基准内联尺寸，退出后恢复普通播放页的贴合尺寸
+    try { if (typeof applyVideoFitSize === 'function') applyVideoFitSize(); } catch (e) { }
+    scheduleWatchLayout();
+  }
+
+  // ============================================================
+  // 观影模式布局轨道：以播放器实际可视宽度为「视觉轨道」，
+  // 下方片名/工具条/房态信息区与视频左右边缘对齐；
+  // 播放器比例 = clamp(视频元数据比例, 4:3, 2.4:1)，并结合视口高度收敛。
+  // ============================================================
+  var wpLayoutRaf = 0;
+  function scheduleWatchLayout() {
+    if (wpLayoutRaf) return;
+    wpLayoutRaf = requestAnimationFrame(function () {
+      wpLayoutRaf = 0;
+      applyWatchLayout();
+    });
+  }
+
+  // 读取当前视频宽高比；无元数据时回退 16:9
+  function readWatchVideoRatio() {
+    var v = null;
+    try {
+      var env = wp() ? wp().env() : null;
+      var a = env && typeof env.getArt === 'function' ? env.getArt() : null;
+      v = a && a.video;
+    } catch (e) { v = null; }
+    if (!v) v = document.querySelector('#player video');
+    if (v && v.videoWidth > 0 && v.videoHeight > 0) return v.videoWidth / v.videoHeight;
+    return 16 / 9;
+  }
+
+  function applyWatchLayout() {
+    var main = document.querySelector('main.container');
+    var pc = document.getElementById('playerContainer');
+    if (!main || !pc) return;
+    // 退出房间/正常播放页：清除内联轨道，恢复 player.css 的 60vh 与 1200 宽
+    if (!document.body.classList.contains('wp-watch-mode')) {
+      pc.style.width = '';
+      main.style.removeProperty('--wp-player-w');
+      main.style.removeProperty('--wp-player-ar');
+      delete main.dataset.wpRail;
+      return;
+    }
+    var desktop = false;
+    try { desktop = window.matchMedia('(min-width: 900px)').matches; }
+    catch (e) { desktop = window.innerWidth >= 900; }
+    // 列宽：桌面取 grid 第一列实际像素；移动端扣掉 main 的 px-4 内边距（16×2）
+    var columnWidth = 0;
+    if (desktop) {
+      try {
+        var cols = window.getComputedStyle(main).gridTemplateColumns || '';
+        columnWidth = parseFloat(cols.split(' ')[0]);
+      } catch (e) { columnWidth = 0; }
+      if (!columnWidth || !isFinite(columnWidth)) columnWidth = main.clientWidth * 0.6;
+    } else {
+      columnWidth = main.clientWidth - 32;
+    }
+    if (!isFinite(columnWidth) || columnWidth <= 0) return;
+    var ratio = Math.min(2.4, Math.max(4 / 3, readWatchVideoRatio()));
+    var rail = Math.min(columnWidth, 1200);
+    if (desktop) {
+      // 桌面：播放器可占高度受视口约束（片名/工具条/聊天上下留白约 300px）
+      var availH = Math.max(220, window.innerHeight - 300);
+      rail = Math.min(rail, availH * ratio);
+    }
+    rail = Math.max(280, Math.round(rail));
+    if (rail > columnWidth) rail = Math.max(1, Math.round(columnWidth));
+    pc.style.width = rail + 'px';
+    main.style.setProperty('--wp-player-w', rail + 'px');
+    main.style.setProperty('--wp-player-ar', String(ratio));
+    main.dataset.wpRail = rail >= 980 ? 'wide' : (rail >= 660 ? 'mid' : 'narrow');
   }
 
   // 总渲染分发：error / idle / connecting → 抽屉（正常模式）；room → 内嵌卡片（观影模式）
@@ -303,11 +382,13 @@
       useDrawerBody();
       renderError();
       if (!ui.open) showDrawer(); // 观影中断线等错误：展开抽屉呈现错误信息
+      scheduleWatchLayout();
       return;
     }
     if (!rs.code) { useDrawerBody(); renderIdle(); }
     else if (rs.state !== 'connected') { useDrawerBody(); renderConnecting(rs); }
     else { useCardBody(); renderRoom(rs); }
+    scheduleWatchLayout();
   }
 
   // ============================================================
@@ -374,7 +455,7 @@
         (ui.loginSubmitting ? '请稍候…' : (isReg ? '注 册' : '登 录')) + '</button>' +
       '</form>';
     if (ui.loginError) h += '<p class="wp-err-line">' + esc(ui.loginError) + '</p>';
-    h += '<p class="wp-hint wp-hint-center">登录后观影记录、进度与收藏自动跨设备同步</p>' +
+    h += '<p class="wp-hint wp-hint-center">登录后可进行数据同步以及共同观影功能</p>' +
       '</div>';
     return h;
   }
@@ -546,20 +627,20 @@
       tools.id = 'wpHeadTools';
       tools.className = 'wp-head-tools';
       tools.innerHTML =
-        '<button type="button" class="wp-tool-btn" id="wpSearchTool" hidden title="搜索换片：在线选片并同步给对方">' +
+        '<button type="button" class="wp-tool-btn" id="wpSearchTool" hidden>' +
           toolBtn(TOOL_ICONS.search) + '<span>换片</span></button>' +
-        '<button type="button" class="wp-tool-btn" id="wpEpisodesBtn" title="剧集选单">' +
+        '<button type="button" class="wp-tool-btn" id="wpEpisodesBtn">' +
           toolBtn(TOOL_ICONS.episodes) + '<span>剧集</span></button>' +
-        '<label class="wp-tool-btn wp-tool-toggle" id="wpCacheProgWrap" hidden title="缓存进度：显示/隐藏双方本地缓存进度条">' +
+        '<label class="wp-tool-btn wp-tool-toggle" id="wpCacheProgWrap" hidden>' +
           '<input type="checkbox" id="wpCacheProgToggle">' +
           toolBtn(TOOL_ICONS.cache) + '<span>缓存</span></label>' +
-        '<label class="wp-tool-btn wp-tool-toggle" id="wpCanvasWrap" title="画布涂鸦：双方可同步绘画">' +
+        '<label class="wp-tool-btn wp-tool-toggle" id="wpCanvasWrap">' +
           '<input type="checkbox" id="wpCanvasToggle">' +
           toolBtn(TOOL_ICONS.canvas) + '<span>画布</span></label>' +
-        '<label class="wp-tool-btn wp-tool-toggle" id="wpShareWrap" hidden title="开放后对方也可以控制播放与选片">' +
+        '<label class="wp-tool-btn wp-tool-toggle" id="wpShareWrap" hidden>' +
           '<input type="checkbox" id="wpShareToggle">' +
           toolBtn(TOOL_ICONS.share) + '<span>共享</span></label>' +
-        '<button type="button" class="wp-tool-btn wp-tool-danger" id="wpLeave" title="退出房间">' +
+        '<button type="button" class="wp-tool-btn wp-tool-danger" id="wpLeave">' +
           toolBtn(TOOL_ICONS.leave) + '<span>退出</span></button>';
       var toggle = head.querySelector('.wp-info-toggle');
       if (toggle) head.insertBefore(tools, toggle);
@@ -601,11 +682,11 @@
           '<div id="wpMsgs" class="wp-msgs"></div>' +
           '<div id="wpQuotePrev" class="wp-quote-prev" hidden>' +
             '<span class="wp-quote-prev-text" id="wpQuotePrevText"></span>' +
-            '<button type="button" class="wp-quote-cancel" id="wpQuoteCancel" title="取消引用" aria-label="取消引用">×</button>' +
+            '<button type="button" class="wp-quote-cancel" id="wpQuoteCancel" aria-label="取消引用">×</button>' +
           '</div>' +
           '<div class="wp-chat-input-row">' +
             '<input id="wpChatInput" class="wp-chat-input" type="text" maxlength="500" placeholder="说点什么...">' +
-            '<button type="button" class="wp-send" id="wpSend" aria-label="发送" title="发送">' + SEND_ICON + '</button>' +
+            '<button type="button" class="wp-send" id="wpSend" aria-label="发送">' + SEND_ICON + '</button>' +
           '</div>' +
         '</div>';
       ui.main = $('#wpMain', ui.body);
@@ -636,8 +717,6 @@
     var wrap = document.getElementById('wpShareWrap');
     if (wrap) {
       wrap.hidden = rs.role !== 'host';
-      // tooltip 随状态区分：未开放 → 引导开放；已开放 → 提示可收回
-      wrap.title = rs.shared ? '收回控制权：恢复仅你可控制播放与选片' : '开放后对方也可以控制播放与选片';
     }
     var t = document.getElementById('wpShareToggle');
     if (t) {
@@ -706,6 +785,8 @@
     var sig = [rs.state, rs.role, rs.shared ? 's' : '', rs.mode, rs.peer && rs.peer.uid, rs.peer && rs.peer.name,
       ui.online, cov, ui.ownM3File ? 'f' : '', ui.ownM3Fp ? 'p' : '', ui.ownM3Checking ? 'c' : '',
       ui.showCacheProg ? 'b' : ''].join('|');
+    syncHeadCode(rs); // 房间码与「共同观影」标题同排（面板头部），每次渲染都同步
+    loadMyAvatar();   // 拉取本端账号头像缩略图（成员区显示 + 广播给对端）
     if (sig === ui.roomSig) return;
     ui.roomSig = sig;
     var h = topHtml(rs);
@@ -737,7 +818,9 @@
     return ownPct + '/' + peerPct;
   }
 
-  // 顶区：房间码 + 复制房间码 + 成员气泡 + 状态点 + 角色/模式徽标
+  // 顶区（紧凑两行）：第一行 = 房间码 + 「共同观影」标题（房间码在左，标题紧随其右，
+  // 两者同排，见 .wp-head）；第二行 = 成员（头像 + 昵称）+ 在线状态点 + 角色/模式/共享控制徽标，
+  // M1 模式的同步提示语紧跟徽标右侧，与徽标同一行。房间码双击/长按复制，无复制按钮。
   function topHtml(rs) {
     var w = wp();
     var meUid = w.uid();
@@ -745,29 +828,130 @@
     var hasPeer = rs.peer && rs.peer.uid != null && ui.online > 1;
     var peerName = hasPeer ? (rs.peer.name || '对方') : '等待加入';
     var connCls = rs.state === 'connected' ? 'on' : (rs.state === 'connecting' ? 'mid' : 'off');
-    var rttTitle = rs.state === 'connected' && ui.lastRtt != null
-      ? 'RTT ' + ui.lastRtt + 'ms' : '未测得';
+    var peerUid = hasPeer ? String(rs.peer.uid) : '';
     return '<div class="wp-top">' +
-      '<div class="wp-code-row">' +
-        '<span class="wp-code">' + esc(rs.code) + '</span>' +
-        '<button type="button" class="wp-btn wp-btn-ghost wp-btn-sm" id="wpCopy">复制房间码</button>' +
-      '</div>' +
       '<div class="wp-members">' +
-        '<span class="wp-member">' +
-          '<span class="wp-avatar">' + PERSON_ICON + '</span>' +
+        '<span class="wp-member" data-uid="' + esc(String(meUid == null ? '' : meUid)) + '">' +
+          '<span class="wp-avatar">' + memberAvatarHtml(meUid) + '</span>' +
           '<span class="wp-name">' + esc(meName) + '</span>' +
         '</span>' +
-        '<span class="wp-member">' +
-          '<span class="wp-avatar' + (hasPeer ? '' : ' wp-avatar-ph') + '">' + PERSON_ICON + '</span>' +
+        '<span class="wp-member" data-uid="' + esc(peerUid) + '">' +
+          '<span class="wp-avatar' + (hasPeer ? '' : ' wp-avatar-ph') + '">' + memberAvatarHtml(hasPeer ? rs.peer.uid : null) + '</span>' +
           '<span class="wp-name">' + esc(peerName) + '</span>' +
         '</span>' +
-        '<span class="wp-dot ' + connCls + '" id="wpDot" title="' + esc(rttTitle) + '"></span>' +
-        '<span class="wp-chip">' + (rs.role === 'host' ? '房主' : '观影中') + '</span>' +
-        '<span class="wp-chip">' + modeBadge(rs.mode) + '</span>' +
-        (rs.shared ? '<span class="wp-chip wp-chip-share" title="控制权共享已开启：双方均可控制播放与选片">共享控制</span>' : '') +
+        '<span class="wp-dot ' + connCls + '" id="wpDot"></span>' +
+        // 徽标与同步提示语绑成不可拆分的一组：宽度够时三者同一行；
+        // 宽度不足时整组换到成员行下一行，提示语不会单独跑到行首
+        '<span class="wp-tags">' +
+          '<span class="wp-chip">' + (rs.role === 'host' ? '房主' : '观影中') + '</span>' +
+          '<span class="wp-chip">' + modeBadge(rs.mode) + '</span>' +
+          (rs.shared ? '<span class="wp-chip wp-chip-share">共享控制</span>' : '') +
+          m1SyncNote(rs) +
+        '</span>' +
+        // 对方缓冲提示并入成员行末（空时零宽），避免它另占一行把信息区撑成两行
+        '<span class="wp-peer-hint" id="wpPeerHint"></span>' +
       '</div>' +
-      '<div class="wp-peer-hint" id="wpPeerHint"></div>' +
     '</div>';
+  }
+
+  // 成员头像：优先用账号系统里的真实头像（缩略图），没有则回退默认素描头像
+  function memberAvatarHtml(uid) {
+    var url = null;
+    try {
+      var w = wp();
+      if (uid != null && w && typeof w.avatarOf === 'function') url = w.avatarOf(uid);
+    } catch (e) { }
+    if (!url && uid != null) url = (uid === myOwnUid()) ? myAvatarThumb : null;
+    if (url) return '<img src="' + esc(url) + '" alt="">';
+    return DEFAULT_AVATAR_HTML;
+  }
+
+  function myOwnUid() {
+    try { var w = wp(); return w ? w.uid() : null; } catch (e) { return null; }
+  }
+
+  // 本端账号头像缩略图：拉取后既显示在成员区，也通过房间协议广播给对端。
+  // 账号系统可能尚未就绪（profile / 头像接口未返回），失败要能重试，
+  // 否则本端永远停留在人形占位图标上。
+  var myAvatarThumb = '';
+  var myAvatarLoading = false;
+  var myAvatarRetryTimer = 0;
+  var myAvatarRetryCount = 0;
+  var MY_AVATAR_MAX_RETRY = 6;
+  function loadMyAvatar() {
+    if (myAvatarThumb || myAvatarLoading) return;
+    myAvatarLoading = true;
+    try {
+      if (!window.CloudSync || typeof window.CloudSync.getAvatarThumb !== 'function') {
+        myAvatarLoading = false;
+        scheduleMyAvatarRetry();
+        return;
+      }
+      Promise.resolve(window.CloudSync.getAvatarThumb()).then(function (thumb) {
+        myAvatarLoading = false;
+        if (!thumb) { scheduleMyAvatarRetry(); return; }
+        myAvatarThumb = thumb;
+        try {
+          var w = wp();
+          if (w && typeof w.setMyAvatar === 'function') w.setMyAvatar(thumb);
+        } catch (e) { }
+        paintMemberAvatar(myOwnUid(), thumb);
+      }).catch(function () {
+        myAvatarLoading = false;
+        scheduleMyAvatarRetry();
+      });
+    } catch (e) {
+      myAvatarLoading = false;
+      scheduleMyAvatarRetry();
+    }
+  }
+  function scheduleMyAvatarRetry() {
+    if (myAvatarThumb || myAvatarRetryTimer) return;
+    if (myAvatarRetryCount >= MY_AVATAR_MAX_RETRY) return;
+    myAvatarRetryCount++;
+    myAvatarRetryTimer = setTimeout(function () {
+      myAvatarRetryTimer = 0;
+      loadMyAvatar();
+    }, 2500);
+  }
+
+  // 就地把某个成员的头像换成真实头像（不整块重渲染，避免打断聊天输入）
+  function paintMemberAvatar(uid, url) {
+    if (!url || uid == null) return;
+    var key = String(uid);
+    var nodes = document.querySelectorAll('#wpInline .wp-member[data-uid]');
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].getAttribute('data-uid') !== key) continue;
+      var av = nodes[i].querySelector('.wp-avatar');
+      // 已有真实头像（<img>）就不再覆盖；默认线稿占位是 <span>，允许替换
+      if (!av || av.querySelector('img')) return;
+      av.innerHTML = '<img src="' + esc(url) + '" alt="">';
+      return;
+    }
+  }
+
+  // M1（在线共看）同步提示语：与成员行徽标同排（紧跟徽标右侧）。
+  // 非 M1 模式返回空串——M2/M3 的说明仍留在各自小节内。
+  function m1SyncNote(rs) {
+    if (!rs || rs.mode !== 'M1') return '';
+    var text;
+    if (canControl(rs)) {
+      text = rs.role === 'host'
+        ? '你的播放、暂停与进度操作将实时同步给对方'
+        : '控制权已共享：你的操作将实时同步给对方';
+    } else {
+      text = '正在同步观看对方分享的影片，播放由房主控制';
+    }
+    return '<span class="wp-peer-note">' + esc(text) + '</span>';
+  }
+
+  // 房间码写入面板头部（与「共同观影」标题同排，位于标题左侧）
+  function syncHeadCode(rs) {
+    var el = document.getElementById('wpCode');
+    if (!el || !rs) return;
+    var code = rs.code ? String(rs.code) : '';
+    if (el.textContent !== code) el.textContent = code;
+    el.style.display = code ? '' : 'none';
   }
 
   function modeBadge(mode) {
@@ -795,9 +979,9 @@
     play: '<path d="M7 5.5v13l11-6.5z"/>',
     cache: '<path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/>'
   };
-  // 人形剪影头像（成员气泡占位，无背景色；与账号界面占位同形状）
-  var PERSON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+  // 默认头像（未上传 / 等待对端）：素描线稿节点，线条颜色由 .wp-avatar 的 currentColor 决定
+  // （css/watch-party.css 的 .wp-avatar-def 用 mask 取线稿），因此不带 <img>。
+  var DEFAULT_AVATAR_HTML = '<span class="wp-avatar-def" aria-hidden="true"></span>';
   // 发送图标（聊天输入框内嵌按钮）
   var SEND_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>';
@@ -1107,10 +1291,9 @@
       if (cur && roomUrl && String(cur) !== String(roomUrl)) {
         h += '<button type="button" class="wp-btn wp-btn-primary wp-btn-block" id="wpSwitchM1">更换为当前影片</button>';
       }
-      h += '<p class="wp-hint">' + (rs.role === 'host' ? '你的播放、暂停与进度操作将实时同步给对方' : '控制权已共享：你的操作将实时同步给对方') + '</p>';
-    } else {
-      h += '<p class="wp-hint">正在同步观看对方分享的影片，播放由房主控制</p>';
     }
+    // 同步提示语（房主 / 已共享 / 纯观看三种措辞）已上移到成员行、
+    // 紧跟「房主 / M1 在线」徽标右侧（见 topHtml → m1SyncNote），此处不再重复。
     h += '</div>';
     return h;
   }
@@ -1213,8 +1396,6 @@
 
   // ---------- 主区事件绑定 ----------
   function bindMain(rs) {
-    var copy = $('#wpCopy', ui.main);
-    if (copy) copy.addEventListener('click', function () { copyInvite(rs.code); });
     var s1 = $('#wpStartM1', ui.main);
     if (s1) s1.addEventListener('click', function () { doStartCoWatch('M1'); });
     var sw = $('#wpSwitchM1', ui.main);
@@ -1659,17 +1840,18 @@
     el.addEventListener('pointermove', onMsgPointerMove);
     el.addEventListener('pointerup', cancelMsgPress);
     el.addEventListener('pointercancel', cancelMsgPress);
+    el.addEventListener('pointerleave', cancelMsgPress); // 指针离开消息区即取消长按
     el.addEventListener('contextmenu', function (e) {
       var item = e.target && e.target.closest ? e.target.closest('.wp-msg') : null;
       if (!item || item.classList.contains('wp-msg-sys')) return;
       e.preventDefault(); // 桌面右键 / 移动端系统长按菜单统一接管
       cancelMsgPress();
-      openMsgMenu(item, e.clientX, e.clientY);
+      openMsgMenu(item);
     });
   }
 
   function onMsgPointerDown(e) {
-    if (e.pointerType === 'mouse') return; // 桌面走右键菜单，避免与拖选冲突
+    if (e.button !== 0) return; // 仅主键参与长按；右键交给 contextmenu
     var el = e.target && e.target.closest ? e.target.closest('.wp-msg') : null;
     if (!el || el.classList.contains('wp-msg-sys')) return;
     cancelMsgPress();
@@ -1678,7 +1860,7 @@
       timer: setTimeout(function () {
         var it = msgPress;
         msgPress = null;
-        if (it) openMsgMenu(it.el, it.x, it.y);
+        if (it) openMsgMenu(it.el);
       }, 500)
     };
   }
@@ -1733,7 +1915,9 @@
     return null;
   }
 
-  function openMsgMenu(el, x, y) {
+  // 菜单定位：以消息气泡为锚点，默认显示在气泡上方（放不下回退到下方），
+  // 本人消息右对齐、对方消息左对齐，再夹取到视口内
+  function openMsgMenu(el) {
     var it = findMsgItem(el);
     if (!it || !it.text) return;
     var w = wp();
@@ -1742,15 +1926,29 @@
     var menu = ensureChatMenu();
     var recallBtn = menu.querySelector('button[data-act="recall"]');
     if (recallBtn) recallBtn.hidden = !(mine && it.seq != null);
+    var anchor = el.querySelector('.wp-bubble');
+    var r = anchor && anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : el.getBoundingClientRect();
     menu.hidden = false;
     menu.style.left = '0px';
     menu.style.top = '0px';
-    var r = menu.getBoundingClientRect();
+    var mr = menu.getBoundingClientRect();
     var pad = 8;
-    var left = Math.min(Math.max(pad, x - r.width / 2), Math.max(pad, window.innerWidth - r.width - pad));
-    var top = y + 12;
-    if (top + r.height > window.innerHeight - pad) top = y - r.height - 12;
-    top = Math.max(pad, top);
+    // 水平：本人消息菜单右边缘对齐气泡右边缘，对方消息左边缘对齐气泡左边缘
+    var left = mine ? (r.right - mr.width) : r.left;
+    left = Math.min(Math.max(pad, left), Math.max(pad, window.innerWidth - mr.width - pad));
+    // 垂直：默认上方；上方放不下则回退到气泡下方
+    var top = r.top - mr.height - 10;
+    var side = 'above';
+    if (top < pad) {
+      top = r.bottom + 10;
+      side = 'below';
+    }
+    if (top + mr.height > window.innerHeight - pad) {
+      top = window.innerHeight - mr.height - pad;
+    }
+    if (top < pad) top = pad;
+    menu.dataset.side = side;
+    menu.dataset.mine = mine ? '1' : '0';
     menu.style.left = Math.round(left) + 'px';
     menu.style.top = Math.round(top) + 'px';
   }
@@ -1890,22 +2088,22 @@
     bar.className = 'wp-canvas-bar';
     // 一级 dock：画笔（兼二级面板开关，笔尖染当前色）/ 橡皮 / 撤销 / 清空 / 关闭
     var h =
-      '<button type="button" class="wp-canvas-icon wp-canvas-pen" data-act="pen" title="画笔（点击开合选色面板；橡皮模式下点击取蓝色·中等画笔）" aria-expanded="false" aria-haspopup="true" aria-label="画笔：蓝色，中等粗细">' + canvasIcon('pen') + '</button>' +
-      '<button type="button" class="wp-canvas-icon" data-act="erase" title="橡皮擦（再点一次切回画笔）" aria-label="橡皮擦">' + canvasIcon('erase') + '</button>' +
-      '<button type="button" class="wp-canvas-icon" data-act="undo" title="撤销上一笔" aria-label="撤销">' + canvasIcon('undo') + '</button>' +
-      '<button type="button" class="wp-canvas-icon" data-act="clear" title="清空画布" aria-label="清空画布">' + canvasIcon('clear') + '</button>' +
-      '<button type="button" class="wp-canvas-icon" data-act="close" title="关闭画布" aria-label="关闭画布">' + canvasIcon('close') + '</button>' +
+      '<button type="button" class="wp-canvas-icon wp-canvas-pen" data-act="pen" aria-expanded="false" aria-haspopup="true" aria-label="画笔：蓝色，中等粗细">' + canvasIcon('pen') + '</button>' +
+      '<button type="button" class="wp-canvas-icon" data-act="erase" aria-label="橡皮擦">' + canvasIcon('erase') + '</button>' +
+      '<button type="button" class="wp-canvas-icon" data-act="undo" aria-label="撤销">' + canvasIcon('undo') + '</button>' +
+      '<button type="button" class="wp-canvas-icon" data-act="clear" aria-label="清空画布">' + canvasIcon('clear') + '</button>' +
+      '<button type="button" class="wp-canvas-icon" data-act="close" aria-label="关闭画布">' + canvasIcon('close') + '</button>' +
       // 二级折叠面板：默认收起，悬于 dock 上方
       '<div class="wp-canvas-tray" role="group" aria-label="画笔颜色与粗细">' +
         '<span class="wp-canvas-tray-row" role="group" aria-label="画笔颜色">';
     for (var i = 0; i < CANVAS_COLORS.length; i++) {
-      h += '<button type="button" class="wp-canvas-dot" data-c="' + CANVAS_COLORS[i] + '" style="--c:' + CANVAS_COLORS[i] + '" title="颜色" aria-label="画笔颜色"></button>';
+      h += '<button type="button" class="wp-canvas-dot" data-c="' + CANVAS_COLORS[i] + '" style="--c:' + CANVAS_COLORS[i] + '" aria-label="画笔颜色"></button>';
     }
     h += '</span><span class="wp-canvas-sizes" role="group" aria-label="画笔粗细">';
     var SIZE_NAMES = ['细', '中', '粗'];
     for (var j = 0; j < CANVAS_SIZES.length; j++) {
       // 视觉直径 (w+3)px 折算为 em（基准 13px），随工具栏整体缩放：细0.385/中0.538/粗0.769
-      h += '<button type="button" class="wp-canvas-size" data-w="' + CANVAS_SIZES[j] + '" style="--d:' + ((CANVAS_SIZES[j] + 3) / 13).toFixed(3) + 'em" title="画笔粗细：' + (SIZE_NAMES[j] || CANVAS_SIZES[j]) + '" aria-label="画笔粗细：' + (SIZE_NAMES[j] || CANVAS_SIZES[j]) + '"></button>';
+      h += '<button type="button" class="wp-canvas-size" data-w="' + CANVAS_SIZES[j] + '" style="--d:' + ((CANVAS_SIZES[j] + 3) / 13).toFixed(3) + 'em" aria-label="画笔粗细：' + (SIZE_NAMES[j] || CANVAS_SIZES[j]) + '"></button>';
     }
     h += '</span></div>';
     bar.innerHTML = h;
@@ -1962,7 +2160,6 @@
             toast('画布已清空');
           } else {
             bar.classList.add('confirm-clear');
-            btn.title = '再点一次确认清空';
             toast('再点一次确认清空画布');
             clearTimeout(ui.cClearT);
             ui.cClearT = setTimeout(disarmClearConfirm, 2600);
@@ -1993,8 +2190,6 @@
     ui.cClearT = null;
     if (!ui.cbar) return;
     ui.cbar.classList.remove('confirm-clear');
-    var btn = ui.cbar.querySelector('[data-act="clear"]');
-    if (btn) btn.title = '清空画布';
   }
 
   // 二级折叠面板（色板+粗细）开合
@@ -2084,7 +2279,6 @@
     var rs = w.roomState();
     var cls = rs.state === 'connected' ? 'on' : (rs.state === 'connecting' ? 'mid' : 'off');
     d.className = 'wp-dot ' + cls;
-    d.title = rs.state === 'connected' && ui.lastRtt != null ? 'RTT ' + ui.lastRtt + 'ms' : '未测得';
   }
 
   function updatePeerHint() {
@@ -2181,6 +2375,11 @@
     w.on('peerbuf', function (m) {
       if (m && typeof m.cached === 'number') ui.lastPeerCached = m.cached;
       updatePeerHint();
+    });
+    // 对端头像（房间内互传的缩略图）：就地替换成员区头像，不整块重渲染
+    w.on('avatar', function (m) {
+      if (!m || !m.dataUrl || m.uid == null) return;
+      paintMemberAvatar(m.uid, m.dataUrl);
     });
     w.on('error', function (p) { showError((p && p.code) || 'unknown'); });
   }
@@ -2289,7 +2488,8 @@
     btn.addEventListener('click', togglePanel);
     // 优先挂在片名行动作区（#cinemaFavChip 旁，爱奇艺式标题行右侧动作位）；
     // 兜底挂到剧集工具行行首
-    var anchor = document.getElementById('cinemaFavChip');
+    // 顺序：加入我的影院 → 批量下载 / 下载管理 → 换源 → 共同观影
+    var anchor = document.getElementById('switchSourceBtn') || document.getElementById('cinemaFavChip');
     if (anchor) anchor.insertAdjacentElement('afterend', btn);
     else bar.insertBefore(btn, bar.firstChild);
     ui.entryBtn = btn;
@@ -2300,6 +2500,13 @@
   // ============================================================
   bindEvents();
   bindRoomCodeCopy(); // 房间码双击/长按复制（document 委托，重渲染后仍生效）
+  // 观影轨道重算：视口尺寸/方向变化 + 视频元数据就绪（loadedmetadata 不冒泡，捕获阶段监听）
+  window.addEventListener('resize', scheduleWatchLayout);
+  window.addEventListener('orientationchange', scheduleWatchLayout);
+  document.addEventListener('loadedmetadata', function (e) {
+    if (e.target && e.target.tagName === 'VIDEO') scheduleWatchLayout();
+  }, true);
+  scheduleWatchLayout();
 
   // 移动端切回前台：若此前处于观影布局，先同步加回 wp-watch-mode 再渲染，
   // 避免闪回普通界面；正在重连时保持观影布局与既有占位（连上/退出后由 apply 移除）

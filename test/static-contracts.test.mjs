@@ -15,6 +15,7 @@ const watchParty = read('js/watch-party.js');
 const cloudSync = read('js/cloud-sync.js');
 const config = read('js/config.js');
 const app = read('js/app.js');
+const searchJs = read('js/search.js');
 const douban = read('js/douban.js');
 const playerHtml = read('player.html');
 const distHtml = read('deploy-dist/player.html');
@@ -76,7 +77,7 @@ t('A7-b: Esc 退出全屏已实现', player.includes("e.key === 'Escape'"));
 t('A7-b: 进度监听随 video 重建重挂', player.includes('bindProgressListeners(video)'));
 t('A7-b: 原 setInterval(waitForVideo,200) 已移除', !player.includes('const waitForVideo = setInterval'));
 t('B1: 直接 replaceState 仅 helper 内 1 处', count(player, /window\.history\.replaceState/g) === 1);
-t('B1: replaceUrlState 定义 1 处 + 调用 4 处', count(player, /replaceUrlState\(/g) === 5);
+t('B1: replaceUrlState 定义 1 处 + 调用 5 处', count(player, /replaceUrlState\(/g) === 6);
 t('B1: popstate 监听恰好 1 处', count(player, /addEventListener\('popstate'/g) === 1);
 t('B1: room 绝不删除（patch 与 removes 双重保护）', count(player, /k === 'room'/g) === 2);
 t('B1: helper 不做 pushState', !/function replaceUrlState[\s\S]{0,800}?pushState/.test(player));
@@ -118,7 +119,7 @@ t('页面: 自定义源接入钩子已移除且源集合全部内置',
     !playerHtml.includes('js/customer_site.js') &&
     !config.includes('window.extendAPISites') &&
     !config.includes('removeAPISitesByPrefix') &&
-    config.includes('qiqi: {') && config.includes("name: '七七资源'"));
+    config.includes('const API_SITES = {') && config.includes('ffzy: {'));
 t('全局: app.js 旧标记读写已移除',
     !app.includes('function wdtvReadSkipMarksStore()') && !app.includes('function wdtvWriteSkipMarksEnabled('));
 t('全局: README 不再提供 Shift 标记快捷键',
@@ -247,7 +248,8 @@ t('播放器: 入口为纯图标按钮（无可见文字/徽标）',
     !/wdtv-skip-switch[^\n]*<span>/.test(player) &&
     player.includes("el.dataset.hasData") && player.includes("el.dataset.manual") &&
     player.includes("el.setAttribute('aria-label', '跳片头尾设置，当前：' + desc)") &&
-    player.includes('el.title = \'跳片头尾：\' + desc'));
+    player.includes("el.dataset.tip = '跳片头尾：' + desc") &&
+    !player.includes('el.title = \'跳片头尾：\' + desc'));
 t('播放器: 面板/工具组内键盘不触发播放器快捷键',
     player.includes("target.closest('.wdtv-skip-menu, .wdtv-dm-topbtns')"));
 t('播放器: 自定义段为高置信、复用自动 seek 与撤销',
@@ -327,6 +329,60 @@ t('图片降级: 耗尽时 onfallback 不再被事件派发结果屏蔽',
 t('错误恢复: 导出策略对象已冻结', /Object\.freeze/.test(prSrc));
 t('页面: 页级错误兜底已挂载',
     indexHtml.includes("addEventListener('unhandledrejection'") && indexHtml.includes("addEventListener('error'"));
+
+// ---- 8) 搜索结果排序：关联度优先于源优先级 ----
+// 搜索接口多按更新时间返回且常混入只沾边的条目；若排序退回「源优先级/到达顺序」，
+// 真正要搜的片名会被挤到后面。这里锁住排序入口与比较器的主次关系。
+const aggregateSrc = read('js/aggregate.js');
+t('搜索: 结果排序走关联度模块且传入当前关键词',
+    app.includes('rankGroupsByRelevance(groups, currentSearchQuery') &&
+    aggregateSrc.includes('function rankGroupsByRelevance('));
+t('搜索: 列表只按关联度排序，源优先级不参与',
+    /\(b\.score - a\.score\)\s*\|\|\s*\(a\.idx - b\.idx\)/.test(aggregateSrc) &&
+    !/minRank/.test(aggregateSrc));
+t('搜索: 源等级仍用于组内选源',
+    /function sortGroupItems[\s\S]{0,400}?getSourceTier\(/.test(app));
+const openResultCardBody = (app.match(/function openResultCard\([\s\S]*?\n\}/) || [''])[0];
+t('搜索: 多源/单源卡片点击统一打开详情',
+    openResultCardBody.length > 200 &&
+    openResultCardBody.includes('showDetails(') &&
+    !app.includes('directPlayBestSource'));
+t('搜索: 同视频聚合与渐进去重保留',
+    app.includes('function isSameDisplayedGroup') &&
+    app.includes('deriveOrderedGroupedResults') &&
+    aggregateSrc.includes('function aggregateResults('));
+t('搜索: 稳定聚合键与增量渲染已接线',
+    aggregateSrc.includes('titleGroupKey: titleGroupKey') &&
+    app.includes('function getOrderedSearchGroups(') &&
+    app.includes('appendOnly'));
+t('页面: 优先级视图重置按钮已接线',
+    indexHtml.includes('wdtvSourceResetBtn') &&
+    indexHtml.includes('resetSourceSettings') &&
+    app.includes('function resetSourceSettings('));
+t('搜索: 三级源等级滑块与 UI 已接线',
+    config.includes('SOURCE_TIER_LEVELS = 3') &&
+    config.includes("SOURCE_TIER_STORAGE = 'wdtvSourceTiers'") &&
+    app.includes('function getSourceTier(') &&
+    app.includes('function setSourceTier(') &&
+    app.includes('wdtv-tier-range') &&
+    app.includes('function updateTierRange(') &&
+    !indexHtml.includes('wdtv-tier-legend') &&
+    !indexHtml.includes('wdtv-tier-chip') &&
+    !indexHtml.includes('wdtv-tier-btn'));
+t('搜索: 数据源按优先级排序且支持双视图',
+    app.includes('function getSourceView(') &&
+    app.includes('function setSourceView(') &&
+    app.includes('function initSourceViewToggle(') &&
+    app.includes('wdtv-source-classic') &&
+    app.includes('getSourceTier(a) - getSourceTier(b)') &&
+    indexHtml.includes('wdtv-source-view-toggle') &&
+    indexHtml.includes('data-view="priority"') &&
+    indexHtml.includes('data-view="classic"'));
+t('搜索: 旧的固定前三源机制已移除',
+    !app.includes('SOURCE_PRIORITY_LIMIT') &&
+    !app.includes('getSourcePriority(') &&
+    !indexHtml.includes('sourcePriority1') &&
+    !indexHtml.includes('wdtv-priority-dropdown'));
 // .wsp-panel 是观影空间的常驻内容区（index.html:819），不是弹层；给它加 focus trap 会锁死键盘焦点。
 // 这里锁住三个真实弹层的接线，并显式断言不会把常驻区误当弹层。
 const panelsBody = (indexHtml.match(/var PANELS = \[[\s\S]*?\];/) || [''])[0];
@@ -334,5 +390,302 @@ t('页面: 焦点陷阱覆盖三个真实弹层且不误锁 .wsp-panel',
     panelsBody.length > 50 &&
     ["id:'settingsPanel'", "id:'historyPanel'", "id:'modal'"].every(s => panelsBody.includes(s)) &&
     !/\.wsp-panel/.test(panelsBody));
+// ---- 9) 本轮 UI 收敛的防回归（悬浮提示 / 图标 / 房间码 / 下载文案 / 滚动条 / 弹幕 / 共同观影）----
+const wdHtml = read('wd.html');
+const aboutHtml = read('about.html');
+const motionJs = read('js/motion.js');
+const motionCss = read('css/motion.css');
+const spaceJs = read('js/space.js');
+const danmuJs = read('js/danmu.js');
+const watchPartyCss = read('css/watch-party.css');
+const dlCss = read('css/downloader.css');
+const uiJs = read('js/ui.js');
+const watchPartyUi = read('js/watch-party-ui.js');
+const cloudSyncUi = read('js/cloud-sync-ui.js');
+const localServer = read('server.mjs');
+const doWorker = read('sync-worker/src/index.js');
+
+// 悬浮提示：全站改用原生 title 语义移除，避免自绘 tip 层与 data-tip 数据源
+t('提示: 三个页面均无 data-tip',
+    !indexHtml.includes('data-tip') && !playerHtml.includes('data-tip') && !wdHtml.includes('data-tip'));
+t('提示: motion.js 不再有 tip 数据源与启动函数',
+    !motionJs.includes('mo-tip') && !motionJs.includes('startTips') && !motionJs.includes("setAttribute('data-tip'"));
+t('提示: motion.css 无 .mo-tip 样式', !motionCss.includes('.mo-tip'));
+
+// 摄像头图标：单个采集站源已下线，对应相机 path 全仓库源码清零
+const CAMERA_PATH = 'M15 10l4.553';
+t('图标: player.html / about.html 无摄像头 path',
+    !playerHtml.includes(CAMERA_PATH) && !aboutHtml.includes(CAMERA_PATH));
+function walkFiles(dir) {
+    const out = [];
+    for (const name of fs.readdirSync(path.join(root, dir))) {
+        const rel = dir + '/' + name;
+        const stat = fs.statSync(path.join(root, rel));
+        if (stat.isDirectory()) out.push(...walkFiles(rel));
+        else out.push(rel);
+    }
+    return out;
+}
+const srcDirs = [...walkFiles('js'), ...walkFiles('css')];
+t('图标: 全仓库 css/js 源码无摄像头 path',
+    srcDirs.every(f => !read(f).includes(CAMERA_PATH)),
+    srcDirs.filter(f => read(f).includes(CAMERA_PATH)).join(', '));
+
+// 房间码：只保留双击/长按复制，不再有常驻「复制房间码」按钮
+t('房间码: index.html 无复制按钮', !indexHtml.includes('wpCopyInvite') && !indexHtml.includes('复制房间码'));
+t('房间码: space.js 无 copyBtn 但保留双击/指针复制',
+    !spaceJs.includes('copyBtn') && spaceJs.includes('bindRoomCodeCopy') &&
+    spaceJs.includes('dblclick') && spaceJs.includes('pointerdown'));
+
+// 下载入口：播放页动作区（片名行右侧）提供「批量下载」，与首页详情弹窗共用同一批量下载弹窗；
+// 播放器右上角不再有下载按钮，旧「下载本集」面板与文案随之清除
+t('下载: 视频下方动作区含批量下载入口',
+    playerHtml.includes('id="batchDownloadBtn"') &&
+    playerHtml.includes('openPlayerBatchDownload(event)') &&
+    player.includes('function openPlayerBatchDownload(') &&
+    player.includes('openBatchDownloadModal'));
+t('下载: 播放器内下载按钮与「下载本集」面板已移除',
+    !player.includes('wdtv-dm-dlbtn') &&
+    !player.includes('wdtv-dl-panel-btn') &&
+    !player.includes('下载本集</span>') &&
+    !player.includes('下载本集（MP4）'));
+
+// 数据源优先级重置：按钮 + 回调 + 容器样式三处接线
+t('优先级: 重置入口含容器样式与回调',
+    indexHtml.includes('wdtvSourceResetBtn') && indexHtml.includes('resetSourceSettings') &&
+    app.includes('function resetSourceSettings(') && app.includes('.wdtv-source-reset'));
+
+// 共同观影：输入框聚焦态、消息菜单横排、系统/撤回提示居中
+const msgMenuBody = (watchPartyCss.match(/\.wp-msg-menu\s*\{[\s\S]*?\n\}/) || [''])[0];
+t('共同观影: 输入框聚焦态已定义', watchPartyCss.includes('.wp-chat .wp-chat-input:focus'));
+t('共同观影: 消息菜单横排', msgMenuBody.includes('flex-direction: row'));
+t('共同观影: 系统/撤回提示居中',
+    /\.wp-msg\.wp-msg-sys\s*\{[\s\S]*?justify-content:\s*center/.test(watchPartyCss));
+
+// 搜索历史拖动 / 搜索结果单卡重排 / 共同观影布局
+const orderedGroupsBody = (app.match(/function getOrderedSearchGroups\([\s\S]*?\n\}/) || [''])[0];
+t('搜索历史: 拖动绑定与溢出渐隐已接线',
+    uiJs.includes('function bindRecentSearchDrag(') && uiJs.includes('recentDragBound') &&
+    uiJs.includes('has-overflow') && uiJs.includes('runInertia') &&
+    indexHtml.includes('.wdtv-recent.is-dragging') &&
+    indexHtml.includes('.wdtv-recent.has-overflow'));
+t('搜索: 关联度顺序驱动增量卡片同步',
+    orderedGroupsBody.includes('deriveOrderedGroupedResults') &&
+    !orderedGroupsBody.includes('searchGroupOrder.forEach') &&
+    app.includes('function syncSearchResultCards(') &&
+    app.includes('function animateSearchCardMoves(') &&
+    app.includes("translate: '0px 0px'") &&
+    app.includes('wdtv-card-moving-primary'));
+t('搜索: 单卡重排尊重减少动效',
+    app.includes("prefers-reduced-motion: reduce") &&
+    app.includes("classList.contains('fx-off')"));
+// 徽标随成员同排：绿色状态点后面紧跟徽标组（删除复制房间码按钮后不再上移到房间码行）
+const wpUiFlat = watchPartyUi.replace(/\s+/g, ' ');
+t('共同观影: 房态无复制按钮且房间码可长按复制，徽标与成员同排',
+    !watchPartyUi.includes('id="wpCopy"') && !watchPartyUi.includes('>复制房间码<') &&
+    watchPartyUi.includes('bindRoomCodeCopy') &&
+    watchPartyUi.includes('class="wp-tags"') &&
+    // 绿色状态点先出现、徽标组在其后
+    wpUiFlat.indexOf('id="wpDot"></span>') >= 0 &&
+    wpUiFlat.indexOf('id="wpDot"></span>') < wpUiFlat.indexOf('class="wp-tags"') &&
+    !watchPartyUi.includes('wp-top-chips'));
+// 房间码与「共同观影」标题同排（房间码在左，标题在右）；M1 同步提示语与徽标同行
+t('共同观影: 房间码与标题同排且提示语紧跟徽标',
+    watchPartyUi.includes('function syncHeadCode(') &&
+    watchPartyUi.includes("document.getElementById('wpCode')") &&
+    watchPartyUi.includes('function m1SyncNote(') &&
+    watchPartyUi.includes('<span class="wp-peer-note">') &&
+    playerHtml.includes('<span class="wp-code" id="wpCode"></span>') &&
+    watchPartyCss.includes('.wp-head-id') &&
+    watchPartyCss.includes('.wp-peer-note') &&
+    // 同步提示语全文只出现一次（M1 小节里不再重复输出）
+    (watchPartyUi.match(/你的播放、暂停与进度操作将实时同步给对方/g) || []).length === 1);
+t('共同观影: 右键与长按均可开菜单且位于气泡上方',
+    watchPartyUi.includes("el.addEventListener('contextmenu'") &&
+    /function onMsgPointerDown\(e\)[\s\S]{0,240}?e\.button !== 0/.test(watchPartyUi) &&
+    watchPartyUi.includes('menu.dataset.side = side') &&
+    watchPartyUi.includes('r.top - mr.height - 10'));
+t('共同观影: 引用块无左侧竖条',
+    !/\.wp-quote\s*\{[^}]*border-left/.test(watchPartyCss) &&
+    !/\.wp-msg\.me \.wp-quote\s*\{[^}]*border-left/.test(watchPartyCss));
+// 头像/状态点改为跟随鼠标的磁力摆动（不再有自动摆动动画抢 transform 通道）
+t('共同观影: 头像/状态点改用磁力摆动且保留减少动效降级',
+    !watchPartyCss.includes('@keyframes wpAvatarSway') &&
+    !watchPartyCss.includes('@keyframes wpDotSway') &&
+    !/wp-avatar[\s\S]{0,80}?animation:\s*wpAvatarSway/.test(watchPartyCss) &&
+    !/\.wp-dot\.on\s*\{[^}]*animation/.test(watchPartyCss) &&
+    // 已接入 motion.js 的磁性名单（磁性位移写 transform，动画会顶掉它）
+    /MAGNET_SEL[\s\S]{0,900}?\.wp-avatar/.test(motionJs) &&
+    /MAGNET_SEL[\s\S]{0,900}?\.wp-dot/.test(motionJs) &&
+    watchPartyCss.includes('html.fx-off .wp-avatar') &&
+    watchPartyCss.includes('animation: none !important'));
+t('共同观影: 播放器轨道与设备分区已接线',
+    watchPartyUi.includes('function applyWatchLayout(') &&
+    watchPartyUi.includes('main.dataset.wpRail') &&
+    watchPartyUi.includes('--wp-player-w') &&
+    // 信息区改为一行两区后，轨道分档只剩 narrow 需要单独排版（wide/mid 共用 flex 布局）
+    watchPartyCss.includes('data-wp-rail="narrow"') &&
+    watchPartyCss.includes('aspect-ratio: var(--wp-player-ar') &&
+    watchPartyCss.includes('clamp(320px, 24vw, 400px)'));
+t('共同观影: 观影模式播放器尺寸由轨道接管',
+    /function applyVideoFitSize\(\)[\s\S]{0,600}?classList\.contains\('wp-watch-mode'\)/.test(player) &&
+    watchPartyUi.includes('applyVideoFitSize()'));
+
+// 弹幕：信息窗口 + 剧名变体匹配；详情按钮不再被隐藏
+t('弹幕: 播放器信息窗口与匹配信息已接线',
+    player.includes('wdtv-dm-info') && player.includes('getMatchInfo') &&
+    danmuJs.includes('function getMatchInfo(') && danmuJs.includes('buildTitleCandidates'));
+t('弹幕: 详情按钮不再被强制隐藏', !player.includes("detailBtn.style.display = 'none'"));
+// 旧片重进：标题级缓存保证即使 episodeId 失效也能直接出弹幕；
+// 手动匹配：作废在途链，避免 plugin.load() 复用空 Promise 造成「匹配成功却空白」。
+t('弹幕: 旧片秒开与手动匹配重建链路已接线',
+    danmuJs.includes('LS_TITLE_KEY') && danmuJs.includes('function saveTitleCache(') &&
+    danmuJs.includes('function invalidateInflight()') && danmuJs.includes('invalidateInflight();'));
+// 手动匹配列表展示平台全名，不再把采集端代码/来源缩写丢给用户
+t('弹幕: 搜索结果展示来源全名而非缩写',
+    danmuJs.includes('function sourceDisplayName(') && danmuJs.includes("'tencent': '腾讯视频'") &&
+    player.includes('cleanDanmuAnimeTitle(') && player.includes('wdtv-danmu-src-tag') &&
+    read('css/player.css').includes('.wdtv-danmu-src-tag') &&
+    !indexHtml.includes('爱优腾芒哔'));
+// 信息区同样不能把采集端尾巴（from tencent）直接丢给用户；「源」行要带平台全名
+t('弹幕: 信息区显示平台全名与去尾巴剧名',
+    danmuJs.includes('function cleanAnimeTitle(') && danmuJs.includes('function platformLabelOf(') &&
+    danmuJs.includes("platform ? platform + ' · ' + endpoint : endpoint") &&
+    player.includes('cleanDanmuAnimeTitle(info.animeTitle)'));
+// 显示区域：浅色块代表可用范围，必须从顶部向下画；切换要同步插件 option 并重排已入队弹幕
+const dmAreaCss = (read('css/player.css').match(/\.wdtv-dm-area i \{[\s\S]*?\}/) || [''])[0];
+t('弹幕: 显示区域图标自顶部填充且切换立即重排',
+    /top:\s*0/.test(dmAreaCss) && !/bottom:\s*0/.test(dmAreaCss) &&
+    player.includes('function applyDanmuMargin(') && player.includes('plugin.config({ margin: val })') &&
+    player.includes('applyDanmuMargin(val);'));
+
+// 滚动条：统一隐藏，移除旧的分区滚动条美化
+t('滚动条: 设置面板与下载器旧规则已移除',
+    !motionCss.includes('html .wdtv-settings-panel::-webkit-scrollbar') &&
+    !dlCss.includes('::-webkit-scrollbar') &&
+    !indexHtml.includes('.wdtv-api-scroll::-webkit-scrollbar'));
+
+// 搜索稳定性与同名合并去重
+// 共同观影：成员区显示真实头像（房间内互传，不落库）
+t('共看: 头像缩略图协议已接线且服务端只转发',
+    watchParty.includes("case 'avatar':") &&
+    watchParty.includes('function setMyAvatar(') &&
+    watchParty.includes('avatarOf:') &&
+    watchPartyUi.includes('function memberAvatarHtml(') &&
+    watchPartyUi.includes('function loadMyAvatar(') &&
+    watchPartyUi.includes('function paintMemberAvatar(') &&
+    cloudSync.includes('function getAvatarThumb(') &&
+    cloudSync.includes('getAvatarThumb: getAvatarThumb') &&
+    // 服务端：限长 + 限定 data:image + 只广播给其他成员（不落库、不进房间状态）
+    /case 'avatar'[\s\S]{0,600}?dataUrl\.length > 12000/.test(localServer) &&
+    /case 'avatar'[\s\S]{0,600}?dataUrl\.length > 12000/.test(doWorker) &&
+    /case 'avatar'[\s\S]{0,900}?roomBroadcast\(room, \{ t: 'avatar'/.test(localServer) &&
+    /case 'avatar'[\s\S]{0,900}?this\.broadcast\(\{ t: 'avatar'/.test(doWorker) &&
+    // 头像不得进房间持久状态
+    !/case 'avatar'[\s\S]{0,900}?room\.state\.[a-zA-Z]*avatar/.test(localServer) &&
+    !/case 'avatar'[\s\S]{0,900}?this\.state\.[a-zA-Z]*avatar/.test(doWorker));
+t('共看: 信息区一行两区且分设备适配',
+    /body\.wp-watch-mode \.wp-main\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*wrap[^}]*align-items:\s*center/.test(watchPartyCss) &&
+    /body\.wp-watch-mode \.wp-top\s*\{[^}]*flex:\s*1 1 0/.test(watchPartyCss) &&
+    /body\.wp-watch-mode \.wp-sec\s*\{[^}]*margin-left:\s*auto/.test(watchPartyCss) &&
+    watchPartyCss.includes('@media (min-width: 900px) and (max-width: 1199px)') &&
+    /@media \(max-width: 899px\)[\s\S]{0,1400}?body\.wp-watch-mode \.wp-main\s*\{[^}]*flex-direction:\s*column/.test(watchPartyCss));
+t('共看: 房间码与标题同排且字号协调',
+    watchPartyCss.includes('.wp-head-id') &&
+    /\.wp-head \.wp-code\s*\{[^}]*font-size:\s*18px/.test(watchPartyCss) &&
+    /\.wp-head-id\s*\{[^}]*align-items:\s*baseline/.test(watchPartyCss));
+// 首页账号：相机角标整体移除（头像本身就是上传入口）
+t('账号: 相机角标已移除',
+    !cloudSyncUi.includes('wdtv-am-cam') &&
+    !read('css/index.css').includes('.wdtv-am-cam'));
+t('账号: 昵称中文用演示秋鸿楷、拉丁用 Sriracha',
+    /#account-btn\{[\s\S]{0,900}?font-family:'Slideqiuhong','Sriracha','Noto Serif SC'/.test(read('css/index.css')) &&
+    /\.wdtv-am-nick\{[\s\S]{0,200}?font-family:'Slideqiuhong','Sriracha','Noto Serif SC'/.test(read('css/index.css')) &&
+    /\.wp-name \{[\s\S]{0,240}?font-family: 'Slideqiuhong', 'Sriracha'/.test(watchPartyCss));
+t('账号: 秋鸿楷字体表带 swap 且页面已引入',
+    // 原包 font.css 缺 font-display（默认 auto 会在字体加载期间把昵称整段藏起来 = FOIT）
+    read('css/slideqiuhong.css').includes('font-display: swap') &&
+    /url\('https:\/\/cdn\.jsdelivr\.net\/npm\/cn-fontsource-slideqiuhong-regular/.test(read('css/slideqiuhong.css')) &&
+    indexHtml.includes('css/slideqiuhong.css?v=1') &&
+    playerHtml.includes('css/slideqiuhong.css?v=1') &&
+    fs.existsSync(path.join(root, 'scripts', 'build-slideqiuhong-font.mjs')));
+// 药丸头像与账号卡片里的头像是同一尺寸、同一块画面；昵称跟着放大
+t('账号: 药丸头像 46px、与账号卡片同一取景，昵称同比例',
+    /\.wdtv-ab-avatar\{[\s\S]{0,320}?width:46px;height:46px/.test(read('css/index.css')) &&
+    /\.wdtv-am-avatar-btn\{[\s\S]{0,400}?width:54px;height:54px/.test(read('css/index.css')) &&
+    /\.wdtv-ab-name\{[\s\S]{0,240}?font-size:1rem/.test(read('css/index.css')) &&
+    /\.wdtv-ab-avatar img\{[\s\S]{0,120}?object-fit:cover/.test(read('css/index.css')) &&
+    /\.wp-avatar \{[\s\S]{0,320}?width: 26px;[\s\S]{0,80}?height: 26px/.test(watchPartyCss) &&
+    /\.wp-name \{[\s\S]{0,200}?font-size: 13px/.test(watchPartyCss) &&
+    /\.wp-avatar img \{[\s\S]{0,160}?object-fit: cover/.test(watchPartyCss));
+// 默认头像 = 透明底素描线稿（只留线条，不再是线性人形剪影，也不要白色圆盘底）
+// 线条颜色由 CSS mask + currentColor 决定；小尺寸另有加粗版（同一条线在 26~30px
+// 不足 1 个像素，必须按比例加粗，否则首页亮背景上根本看不见）
+t('账号: 默认头像是透明底线稿，小尺寸用加粗版',
+    !/<rect/.test(read('image/avatar-default.svg')) &&
+    !/<rect/.test(read('image/avatar-default-sm.svg')) &&
+    /\.wdtv-avatar-def\{[\s\S]{0,300}?mask:url\('\.\.\/image\/avatar-default\.svg'\)/.test(read('css/index.css')) &&
+    !/\.wdtv-ab-avatar \.wdtv-avatar-def\{/.test(read('css/index.css')) &&
+    /\.wdtv-avatar-def\{[\s\S]{0,200}?center\/92%/.test(read('css/index.css')) &&
+    /\.wp-avatar-def \{[\s\S]{0,300}?mask: url\('\.\.\/image\/avatar-default-sm\.svg'\)/.test(watchPartyCss) &&
+    cloudSyncUi.includes('wdtv-avatar-def') &&
+    watchPartyUi.includes('wp-avatar-def') &&
+    !/M20 21v-2a4 4 0 0 0-4-4H8/.test(cloudSyncUi + watchPartyUi) &&
+    fs.existsSync(path.join(root, 'image', 'avatar-default.svg')) &&
+    fs.existsSync(path.join(root, 'image', 'avatar-default-sm.svg')));
+// 药丸里的线稿必须与昵称同一个色阶（继承 #account-btn），不另设更白的颜色，
+// 也不加描边晕——否则看起来总比文字亮一档
+t('账号: 药丸线稿头像与昵称同色（继承按钮色阶）',
+    /\.wdtv-ab-avatar\{[\s\S]{0,900}?color:inherit;/.test(read('css/index.css')) &&
+    /#account-btn\{[\s\S]{0,1200}?color:rgba\(236,244,255,0\.72\)/.test(read('css/index.css')) &&
+    !/\.wdtv-ab-avatar \.wdtv-avatar-def\{[\s\S]{0,400}?filter:drop-shadow/.test(read('css/index.css')));
+// 账号卡片是白底（54px），线稿仍用深墨色，否则白线落在白底上等于消失
+t('账号: 卡片线稿用深墨色（白底可见）',
+    /\.wdtv-am-avatar-btn\{[\s\S]{0,900}?color:rgba\(30,45,75,0\.72\)/.test(read('css/index.css')));
+// 占位节点必须自己裁圆：父级按钮为露出相机角标去掉了 overflow:hidden，
+// 方形遮罩不补 border-radius 会把线条漏到圆外（真照片靠 img 的圆角裁）
+t('账号: 默认头像节点自带圆形裁切',
+    /\.wdtv-avatar-def\{[\s\S]{0,300}?border-radius:50%/.test(read('css/index.css')) &&
+    /\.wp-avatar-def \{[\s\S]{0,300}?border-radius: 50%/.test(watchPartyCss));
+// 顶部导航：历史按钮与账号药丸同高、同一基线（药丸长高后必须一起对齐）
+t('首页: 顶部历史按钮与账号药丸同高对齐',
+    /\.wdtv-nav-btn\{[^}]*height:52px;width:52px/.test(indexHtml) &&
+    /#account-btn\{[\s\S]{0,600}?height:52px/.test(read('css/index.css')));
+// 共看成员头像占位（span 线稿）可被真实头像（img）替换
+t('共看: 默认线稿占位可被真实头像覆盖',
+    /if \(!av \|\| av\.querySelector\('img'\)\) return;/.test(watchPartyUi) &&
+    watchPartyUi.includes("'<span class=\"wp-avatar-def\""));
+t('搜索: 稳定渲染入口与摘要增量更新',
+    app.includes('getOrderedSearchGroups') && app.includes('appendOnly') &&
+    app.includes('updateSearchSummaryOnly') && aggregateSrc.includes('titleGroupKey'));
+
+// 入场观察器：appendChild 移动卡片不得取消观察（否则卡片永远停在 opacity:0，整片结果看不见）
+t('搜索: 入场观察器仅在节点真正脱离文档时取消观察',
+    motionJs.includes('var observed = new WeakSet();') &&
+    motionJs.includes('if (!gone.isConnected)') &&
+    motionJs.includes('observed.delete(gone)') &&
+    motionJs.includes('observed.has(el)') &&
+    !/removedNodes[\s\S]{0,240}?io\.unobserve\(gone\);[\s\S]{0,80}?queued\.delete\(gone\);\s*\}/.test(motionJs));
+t('搜索: 入场有看门狗兜底放行（内容不得永远停在 opacity:0）',
+    motionJs.includes('function guardTick()') && motionJs.includes('function armGuard()') &&
+    motionJs.includes("doc.querySelectorAll('.mo-pending')"));
+
+// 成人/伦理过滤：写死在代码里、默认开启、界面不得出现开关或说明
+t('过滤: 成人关键词名单与判定写死在 search.js',
+    searchJs.includes('WDTV_ADULT_FILTER_KEYWORDS') &&
+    searchJs.includes('function filterAdultSearchItems') &&
+    searchJs.includes('function isAdultFilteredItem'));
+t('过滤: 四条搜索结果入口都经过成人过滤',
+    searchJs.includes('items.push(...filterAdultSearchItems(list))') &&
+    searchJs.includes('return filterAdultSearchItems(items).map') &&
+    searchJs.includes('.filter(item => !isAdultFilteredItem(item))') &&
+    searchJs.includes('const results = filterAdultSearchItems(data.list.map'));
+t('过滤: app 最终渲染与会话缓存恢复都兜底过滤',
+    app.includes('? filterAdultSearchItems(lastSearchResults) : lastSearchResults') &&
+    app.includes('? filterAdultSearchItems(parsed.results) : parsed.results'));
+t('过滤: 界面无任何成人过滤开关或描述',
+    !/yellowFilter|成人过滤|伦理过滤|屏蔽伦理|屏蔽成人/.test(indexHtml) &&
+    !/yellowFilterEnabled/.test(app) && !/yellowFilterEnabled/.test(searchJs));
+
 console.log(`结果：${pass} 通过，${fail} 失败`);
 if (fail) { console.log('失败用例：' + fails.join(' | ')); process.exit(1); }

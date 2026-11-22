@@ -38,10 +38,12 @@
     </script>
 
     <script src="libs/tailwindcss.min.js?v=1"></script>
-    <link rel="stylesheet" href="css/styles.css">
-    <link rel="stylesheet" href="css/player.css?v=101">
-    <link rel="stylesheet" href="css/downloader.css?v=4">
-    <link rel="stylesheet" href="css/watch-party.css?v=51">
+    <link rel="stylesheet" href="css/styles.css?v=8">
+    <link rel="stylesheet" href="css/player.css?v=107">
+    <link rel="stylesheet" href="css/downloader.css?v=6">
+    <link rel="stylesheet" href="css/watch-party.css?v=64">
+    <!-- 账号名称中文字体「演示秋鸿楷」：异步加载（不阻塞首屏），自带 font-display:swap -->
+    <link rel="stylesheet" href="css/slideqiuhong.css?v=1" media="print" onload="this.media='all'">
     <!-- 观影模式极早恢复：房号有效且本地存在座位令牌时，首帧前就进入占位/隐蔽状态，避免闪烁 -->
     <script>
     (function(){try{var m=/[?&]room=([A-Za-z0-9]{6})/.exec(location.search);if(!m)return;var c=m[1].toUpperCase();if(!localStorage.getItem('wdtvWatchToken:'+c))return;document.documentElement.classList.add('wp-watch-mode','wp-restoring');}catch(e){}})();
@@ -193,6 +195,7 @@
     @keyframes wdtvSpin{to{transform:rotate(360deg)}}
     .wdtv-loading-text{color:rgba(236,244,255,0.96);font-size:0.88rem}
     </style>
+    <link rel="stylesheet" href="css/motion.css?v=3">
 </head>
 <body class="player-page-bg">
     <!-- Preloader -->
@@ -229,7 +232,7 @@
     </div>
 
     <!-- 沉浸式无页头：返回键为左上角悬浮玻璃胶囊，片名以一行小字置于播放器上方（内容流内，不压视频） -->
-    <button id="goBack" type="button" onclick="goBack(event)" class="player-back-fab" aria-label="返回上一页" title="返回上一页">
+    <button id="goBack" type="button" onclick="goBack(event)" class="player-back-fab" aria-label="返回上一页">
         <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
             <path d="M5.25 11h15a1.5 1.5 0 1 1 0 3H5.25a1.5 1.5 0 0 1 0-3z"/>
             <path d="M5.55 12 11.3 17.3a1.5 1.5 0 1 1-2.12 2.12L3 12l6.18-6.18a1.5 1.5 0 1 1 2.12 2.12L5.55 12z"/>
@@ -260,6 +263,27 @@
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                     <span id="cinemaFavChipText">加入我的影院</span>
                 </button>
+                <button id="batchDownloadBtn" type="button" class="wdtv-modal-mini-btn"
+                        onclick="openPlayerBatchDownload(event)">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>
+                    <span>批量下载</span>
+                </button>
+                <button id="downloadManagerBtn" type="button" class="wdtv-modal-mini-btn"
+                        title="下载管理" aria-label="下载管理"
+                        onclick="openPlayerDownloadManager(event)" style="display:none">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l1.8 2.2h9A1.5 1.5 0 0 1 21 9.7v7.8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><path d="M12 10.8v4.4m-2-2.2 2 2 2-2"/></svg>
+                    <span>下载管理</span>
+                </button>
+                <button id="switchSourceBtn" type="button" class="wdtv-modal-mini-btn"
+                        onclick="showSwitchResourceModal()">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11l-3-3"/><path d="M20 17H9l3 3"/><path d="M4 7l3 3M20 17l-3-3"/></svg>
+                    <span>换源</span>
+                </button>
+                <button id="switchRouteBtn" type="button" class="wdtv-modal-mini-btn"
+                        onclick="showRouteSwitchModal()" style="display:none">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h16"/><circle cx="18" cy="12" r="2"/></svg>
+                    <span>线路</span>
+                </button>
                 <!-- 「共同观影」入口按钮由 watch-party-ui.js 注入到 #cinemaFavChip 之后 -->
             </div>
         </div>
@@ -283,7 +307,7 @@
                 <div class="episodes-modal-head">
                     <span class="episodes-modal-title">剧集选单</span>
                     <span id="resolutionInfo" class="resource-info-bar-resolution" style="display:none"></span>
-                    <button type="button" class="episodes-modal-close" onclick="closeEpisodesModal()" title="关闭">&times;</button>
+                    <button type="button" class="episodes-modal-close" onclick="closeEpisodesModal()" aria-label="关闭">&times;</button>
                 </div>
                 <div class="episodes-modal-body">
                     <!-- 信息行：当前集数进度（左），低饱和小字 -->
@@ -319,13 +343,13 @@
                                     class="wdtv-modal-mini-btn num-mode">原集数</button>
                             <button data-nummode="both" onclick="setVarietyNumberMode('both')"
                                     class="wdtv-modal-mini-btn num-mode">双显</button>
-                            <span class="wdtv-threshold-label" title="按时长划分两组的分界线">分组线
+                            <span class="wdtv-threshold-label">分组线
                                 <span id="thresholdDropdown" class="wdtv-name-dropdown wdtv-inline-dropdown">
                                     <span class="wdtv-name-dropdown-toggle wdtv-threshold-toggle" onclick="toggleThresholdDropdown(event)">
                                         <input id="varietyThresholdInput" type="number" min="1" step="1"
                                                value="60" onchange="setVarietyThreshold(this.value)"
                                                onclick="event.stopPropagation()" class="wdtv-threshold-input"
-                                               title="输入自定义分组线（分钟），回车生效">分钟
+                                               aria-label="自定义分组线（分钟）">分钟
                                         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                                     </span>
                                     <div id="thresholdDropdownMenu" class="wdtv-name-dropdown-menu hidden"></div>
@@ -341,7 +365,7 @@
                         </span>
                         <span class="ep-tool-spacer"></span>
                         <div id="epMoreDropdown" class="wdtv-name-dropdown">
-                            <button type="button" class="wdtv-name-dropdown-toggle ep-more-toggle" onclick="toggleEpMoreDropdown(event)" title="更多剧集工具">
+                            <button type="button" class="wdtv-name-dropdown-toggle ep-more-toggle" onclick="toggleEpMoreDropdown(event)">
                                 <span>更多</span>
                                 <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                             </button>
@@ -352,8 +376,7 @@
                                     </svg>
                                     <span id="detectDurationLabel">检测时长</span>
                                 </button>
-                                <button id="episodeViewBtn" type="button" onclick="toggleEpisodeView()" class="wdtv-modal-mini-btn"
-                                        title="切换剧集布局：数字方块 / 详细列表（显示完整集名）">
+                                <button id="episodeViewBtn" type="button" onclick="toggleEpisodeView()" class="wdtv-modal-mini-btn">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
                                     </svg>
@@ -380,8 +403,8 @@
              头部折叠按钮可收起信息区，把面板空间主要留给聊天） -->
         <div id="wpInline" class="wp-inline player-container mb-2" hidden>
             <div class="wp-head">
-                <span class="wp-title">共同观影</span>
-                <button type="button" class="wp-info-toggle" title="收起房间信息">
+                <div class="wp-head-id"><span class="wp-code" id="wpCode"></span><span class="wp-title">共同观影</span></div>
+                <button type="button" class="wp-info-toggle" aria-label="收起房间信息">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
                 </button>
             </div>
@@ -403,9 +426,6 @@
             <div class="flex flex-col md:flex-row justify-between items-center">
                 <div class="mb-4 md:mb-0">
                     <div class="flex items-center justify-center md:justify-start">
-                        <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                        </svg>
                         <span class="gradient-text font-bold">WDTV</span>
                     </div>
                     <p class="text-gray-500 text-sm mt-2 text-center md:text-left">© 2026 WDTV - 自由观影，畅享精彩</p>
@@ -444,28 +464,32 @@
     <script defer src="libs/artplayer.min.js?v=1" crossorigin="anonymous"></script>
     <script defer src="libs/artplayer-plugin-danmuku.min.js?v=1" crossorigin="anonymous"></script>
 
-    <script defer src="js/config.js?v=31"></script>
+    <script defer src="js/config.js?v=46"></script>
     <script defer src="js/states.js?v=1"></script>
     <script defer src="js/focus-trap.js?v=1"></script>
-    <script defer src="js/ui.js?v=19"></script>
+    <script defer src="js/ui.js?v=22"></script>
     <script defer src="js/source-health.js?v=3"></script>
-    <script defer src="js/api.js?v=17"></script>
-    <script defer src="js/search.js?v=14"></script>
-    <script defer src="js/ad-filter.js?v=3"></script>
-    <script defer src="js/video-cache.js?v=96"></script>
+    <script defer src="js/aggregate.js?v=12"></script>
+    <script defer src="js/api.js?v=26"></script>
+    <script defer src="js/search.js?v=26"></script>
+    <script defer src="js/ad-filter.js?v=4"></script>
+    <script defer src="js/pts-ad-detector.js?v=5"></script>
+    <script defer src="js/seg-batch.js?v=1"></script>
+    <script defer src="js/video-cache.js?v=98"></script>
     <script defer src="js/download-utils.js?v=1"></script>
-    <script defer src="js/downloader.js?v=23"></script>
-    <script defer src="js/cinema.js?v=18"></script>
-    <script defer src="js/danmu.js?v=27"></script>
-    <script defer src="js/watch-party.js?v=27"></script>
+    <script defer src="js/downloader.js?v=31"></script>
+    <script defer src="js/cinema.js?v=22"></script>
+    <script defer src="js/danmu.js?v=31"></script>
+    <script defer src="js/watch-party.js?v=28"></script>
     <script defer src="js/watch-party-local.js?v=7"></script>
-    <script defer src="js/watch-party-ui.js?v=48"></script>
+    <script defer src="js/watch-party-ui.js?v=59"></script>
     <!-- 批次4：A3 错误恢复纯决策 / 片头片尾跳过（含取数层），均须在 player.js 之前加载 -->
     <script defer src="js/playback-recovery.js?v=2"></script>
     <script defer src="js/skip-marks.js?v=4"></script>
     <script defer src="js/skip-source.js?v=4"></script>
-    <script defer src="js/player.js?v=173"></script>
-    <script defer src="js/cloud-sync.js?v=10"></script>
+    <script defer src="js/player.js?v=197"></script>
+    <script defer src="js/cloud-sync.js?v=11"></script>
+    <script defer src="js/motion.js?v=13"></script>
 
     <!-- Preloader -->
     <script>

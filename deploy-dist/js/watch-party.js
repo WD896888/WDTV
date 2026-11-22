@@ -52,6 +52,8 @@
     online: [],               // 在线 uid 列表（snap/presence 维护）
     peer: { uid: null, name: null, time: null, buf: null, cached: null },
     readyMap: {},             // String(uid) -> info（对端 M2 覆盖率 / M3 指纹与时长）
+    avatars: {},              // String(uid) -> dataUrl（房间内互传的头像缩略图）
+    myAvatar: '',             // 本端头像缩略图（dataURL），待广播给对端
     pendingAlign: null,       // {time, playing, rate} 待视频元数据就绪后应用的对齐
     pendingM2Report: null,    // M2 mediaKey：视频未就绪时暂存，对齐成功后补报覆盖率
     autoSrc: false,           // 房主带 room 选片场景：视频就绪且房间无片源时自动发起一次 M1 共看
@@ -505,6 +507,13 @@
         st.readyMap[String(m.uid)] = m.info || {};
         emit('ready', { uid: m.uid, info: m.info });
         break;
+      case 'avatar':
+        // 房间内互传的头像缩略图：只认对端 uid，本端自己不上（服务端不回显）
+        if (m.uid !== undefined && String(m.uid) !== String(myUid()) && m.dataUrl) {
+          st.avatars[String(m.uid)] = String(m.dataUrl);
+          emit('avatar', { uid: m.uid, dataUrl: m.dataUrl });
+        }
+        break;
       case 'src': applySrcMsg(m); break;
       case 'shared':
         // 控制权共享开关（房主切换）：guest 端更新本地权限并提示。
@@ -603,6 +612,8 @@
     });
     // 断线期间积压的聊天补发
     flushChatQueue();
+    // 头像：对端可能刚进房，此时把本端缩略头像再发一次（服务端不落库，只转发）
+    sendMyAvatar();
     // 片源对齐：url 不同则换片（整页跳转由 UI/local 模块处理）；相同则待元数据就绪后对齐进度
     var cur = null;
     if (s.url) {
@@ -726,6 +737,8 @@
       emit('toast', { text: (m.leave.name || '对方') + ' 离开了房间' });
     }
     emit('presence', m);
+    // 成员变化（含对端加入）后重发本端头像缩略图：保证后进房的一方也能看到
+    sendMyAvatar();
   }
 
   function applyPeerPos(m) {
@@ -1224,6 +1237,23 @@
   }
 
   // ============================================================
+  // 头像缩略图：房间内互传（服务端只转发、不落库）
+  // UI 侧把本端账号头像压成 64px 小图后交给本函数，连接就绪 / presence 变化时广播；
+  // 对端收到后存入 avatars 并 emit('avatar')，成员区改渲染真实头像。
+  // ============================================================
+  function sendMyAvatar() {
+    if (!st.myAvatar) return false;
+    return send({ t: 'avatar', dataUrl: st.myAvatar });
+  }
+
+  function setMyAvatar(dataUrl) {
+    var v = dataUrl ? String(dataUrl) : '';
+    if (v === st.myAvatar) return;
+    st.myAvatar = v;
+    if (st.myAvatar) sendMyAvatar();
+  }
+
+  // ============================================================
   // 共享画布 CanvasLayer（整笔折线模型，支持撤销 / 清空 / 中途进房重放）
   // ============================================================
   var canvasLayer = {
@@ -1637,6 +1667,11 @@
     uid: myUid,               // 当前登录 uid（UI 判定消息左右/成员身份）
     name: myName,             // 当前昵称（UI 乐观渲染自己的消息）
     sendReady: sendReady,     // 就绪上报（M2 覆盖率 / M3 指纹，watch-party-local 使用）
+    setMyAvatar: setMyAvatar, // 设置本端头像缩略图（dataURL），自动广播给对端
+    avatarOf: function (uid) { // 取某个 uid 的头像缩略图（对端由服务端转发而来）
+      if (uid == null) return null;
+      return st.avatars[String(uid)] || null;
+    },
     canvas: canvasApi,        // {setEnabled,isEnabled,setColor,setWidth,undo,clear}
     onMetadata: onMetadata,   // player.js 在 video:loadedmetadata 里调用
     onEpisodeSwitch: onEpisodeSwitch, // player.js 在 playEpisode 里调用（共享控制下换集广播）

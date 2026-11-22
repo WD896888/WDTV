@@ -406,6 +406,16 @@ export class WatchRoom {
         this.broadcast({ t: 'ready', uid, info: m.info }, ws);
         return;
       }
+      // ---- 房间内头像缩略图：只转发给其他成员，不落 DO state / 不进历史 ----
+      // 头像只在房间内互传（不开放给房间外，避免跨用户数据泄露）；
+      // 限长 + 限定 data:image 协议，防止塞入任意内容。
+      case 'avatar': {
+        const dataUrl = typeof m.dataUrl === 'string' ? m.dataUrl : '';
+        if (!dataUrl || dataUrl.length > 12000) return;
+        if (!/^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(dataUrl)) return;
+        this.broadcast({ t: 'avatar', uid, dataUrl }, ws);
+        return;
+      }
       // ---- 聊天：限速（10 条/5s/uid）+ 落历史（≤100）+ 广播（不回显发送者）----
       case 'chat': {
         const text = String(m.text || '').slice(0, 500);

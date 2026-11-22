@@ -74,10 +74,10 @@
 .abt-brand:hover{background:rgba(200,220,245,0.12);color:rgba(236,244,255,0.96)}
 .abt-brand svg{width:17px;height:17px;color:rgba(200,220,245,0.8)}
 .abt-brand-name{
-  font-family:'Cormorant Garamond',serif;
-  font-size:1.15rem;
-  font-weight:600;
-  letter-spacing:.14em;
+  font-family:'Sriracha',cursive;
+  font-size:1.4rem;
+  font-weight:400;
+  letter-spacing:.06em;
   color:rgba(236,244,255,0.9);
 }
 .abt-back{
