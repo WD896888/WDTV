@@ -8,7 +8,7 @@
 //
 // 因此改为：先把明确允许公开的文件复制到 deploy-dist/，再部署该目录。
 // 用法：node deploy-pages.mjs   （内部自动调用 `npx wrangler pages deploy`）
-import { cpSync, rmSync, mkdirSync, existsSync } from 'fs';
+import { cpSync, rmSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { spawnSync } from 'child_process';
@@ -48,13 +48,25 @@ for (const f of ROOT_FILES) {
   cpSync(src, join(dist, f));
 }
 
+// 逐文件复制而非 cpSync(recursive)：Node 22 在部分 Windows 环境对递归 cpSync 会崩溃
+// （STATUS_STACK_BUFFER_OVERRUN），逐文件走同一套 cpSync 则稳定，且两端行为一致。
+function copyDir(from, to) {
+  mkdirSync(to, { recursive: true });
+  for (const name of readdirSync(from)) {
+    const src = join(from, name);
+    const dst = join(to, name);
+    if (statSync(src).isDirectory()) copyDir(src, dst);
+    else cpSync(src, dst);
+  }
+}
+
 for (const d of ROOT_DIRS) {
   const src = join(root, d);
   if (!existsSync(src)) {
     console.warn(`[deploy] 警告：白名单目录不存在，跳过 ${d}/`);
     continue;
   }
-  cpSync(src, join(dist, d), { recursive: true });
+  copyDir(src, join(dist, d));
 }
 
 console.log('[deploy] deploy-dist 构建完成：');
